@@ -54,10 +54,17 @@ from .models import DreamerV3WorldModel, TDMPC2WorldModel
 def __getattr__(name: str):
     if name == "training":
         from . import training
+
         return training
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
-__version__ = "0.1.0"
+
+try:
+    from importlib.metadata import PackageNotFoundError, version
+
+    __version__ = version("worldmodels")
+except PackageNotFoundError:
+    __version__ = "0.1.0.dev0"
 
 __all__ = [
     # Simple API (recommended)
