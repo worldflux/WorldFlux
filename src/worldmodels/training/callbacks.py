@@ -133,10 +133,7 @@ class LoggingCallback(Callback):
 
     def on_train_end(self, trainer: Trainer) -> None:
         elapsed = time.time() - self._start_time
-        logger.info(
-            f"Training completed in {elapsed:.1f}s "
-            f"({trainer.state.global_step} steps)"
-        )
+        logger.info(f"Training completed in {elapsed:.1f}s ({trainer.state.global_step} steps)")
 
         if self._wandb_run is not None:
             self._wandb_run.finish()
@@ -166,9 +163,7 @@ class LoggingCallback(Callback):
 
         loss_str = ", ".join(f"{k}={v:.4f}" for k, v in metrics.items())
         logger.info(
-            f"Step {step}/{total_steps} ({progress:.1f}%) | "
-            f"{loss_str} | "
-            f"{speed:.1f} steps/s"
+            f"Step {step}/{total_steps} ({progress:.1f}%) | {loss_str} | {speed:.1f} steps/s"
         )
 
         # Log to wandb
@@ -293,9 +288,7 @@ class EarlyStoppingCallback(Callback):
             self._steps_without_improvement += 1
 
         if self._steps_without_improvement >= self.patience:
-            logger.info(
-                f"Early stopping: no improvement for {self.patience} steps"
-            )
+            logger.info(f"Early stopping: no improvement for {self.patience} steps")
             trainer.state.should_stop = True
 
 

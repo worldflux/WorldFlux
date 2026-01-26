@@ -58,13 +58,9 @@ class GaussianLatentSpace(LatentSpace):
         p_std = self.min_std + (self.max_std - self.min_std) * torch.sigmoid(p_raw_std)
         q_std = self.min_std + (self.max_std - self.min_std) * torch.sigmoid(q_raw_std)
 
-        p_var, q_var = p_std ** 2, q_std ** 2
+        p_var, q_var = p_std**2, q_std**2
 
-        kl = 0.5 * (
-            torch.log(q_var / p_var)
-            + (p_var + (p_mean - q_mean) ** 2) / q_var
-            - 1
-        )
+        kl = 0.5 * (torch.log(q_var / p_var) + (p_var + (p_mean - q_mean) ** 2) / q_var - 1)
         return kl.sum(dim=-1)
 
 
@@ -76,7 +72,7 @@ class CategoricalLatentSpace(LatentSpace):
         num_categoricals: int = 32,
         num_classes: int = 32,
         temperature: float = 1.0,
-        straight_through: bool = True
+        straight_through: bool = True,
     ):
         super().__init__()
         self.num_categoricals = num_categoricals
@@ -106,10 +102,7 @@ class CategoricalLatentSpace(LatentSpace):
             return F.gumbel_softmax(logits, tau=self.temperature, hard=False, dim=-1)
 
     def kl_divergence(
-        self,
-        posterior_logits: Tensor,
-        prior_logits: Tensor,
-        free_nats: float = 0.0
+        self, posterior_logits: Tensor, prior_logits: Tensor, free_nats: float = 0.0
     ) -> Tensor:
         if posterior_logits.dim() == 2:
             posterior_logits = posterior_logits.view(-1, self.num_categoricals, self.num_classes)
@@ -117,10 +110,10 @@ class CategoricalLatentSpace(LatentSpace):
 
         posterior = F.softmax(posterior_logits, dim=-1)
 
-        kl = (posterior * (
-            F.log_softmax(posterior_logits, dim=-1) -
-            F.log_softmax(prior_logits, dim=-1)
-        )).sum(dim=-1)
+        kl = (
+            posterior
+            * (F.log_softmax(posterior_logits, dim=-1) - F.log_softmax(prior_logits, dim=-1))
+        ).sum(dim=-1)
 
         if free_nats > 0:
             kl = torch.clamp(kl - free_nats, min=0.0)

@@ -1,6 +1,5 @@
 """DreamerV3 World Model implementation."""
 
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -20,7 +19,7 @@ from .rssm import RSSM
 class DreamerV3WorldModel(nn.Module):
     """
     DreamerV3 world model implementation.
-    
+
     Components:
         - Encoder: observation -> embedding
         - RSSM: latent state transitions
@@ -42,8 +41,11 @@ class DreamerV3WorldModel(nn.Module):
                 kernels=config.cnn_kernels,
             )
         else:
-            obs_dim = config.obs_shape[0] if len(config.obs_shape) == 1 else \
-                      int(torch.prod(torch.tensor(config.obs_shape)).item())
+            obs_dim = (
+                config.obs_shape[0]
+                if len(config.obs_shape) == 1
+                else int(torch.prod(torch.tensor(config.obs_shape)).item())
+            )
             self.encoder = MLPEncoder(
                 input_dim=obs_dim,
                 hidden_dim=config.hidden_dim,
@@ -108,20 +110,12 @@ class DreamerV3WorldModel(nn.Module):
         return state
 
     def predict(
-        self,
-        state: LatentState,
-        action: Tensor,
-        deterministic: bool = False
+        self, state: LatentState, action: Tensor, deterministic: bool = False
     ) -> LatentState:
         """Predict next state (prior, for imagination)."""
         return self.rssm.prior_step(state, action, deterministic=deterministic)
 
-    def observe(
-        self,
-        state: LatentState,
-        action: Tensor,
-        obs: Tensor
-    ) -> LatentState:
+    def observe(self, state: LatentState, action: Tensor, obs: Tensor) -> LatentState:
         """Update state with observation (posterior)."""
         embed = self.encoder(obs)
         return self.rssm.posterior_step(state, action, embed)
@@ -137,10 +131,7 @@ class DreamerV3WorldModel(nn.Module):
         }
 
     def imagine(
-        self,
-        initial_state: LatentState,
-        actions: Tensor,
-        deterministic: bool = False
+        self, initial_state: LatentState, actions: Tensor, deterministic: bool = False
     ) -> Trajectory:
         """Multi-step imagination rollout."""
         horizon = actions.shape[0]
@@ -164,11 +155,7 @@ class DreamerV3WorldModel(nn.Module):
             continues=torch.stack(continues, dim=0).squeeze(-1),
         )
 
-    def initial_state(
-        self,
-        batch_size: int,
-        device: torch.device | None = None
-    ) -> LatentState:
+    def initial_state(self, batch_size: int, device: torch.device | None = None) -> LatentState:
         """Create initial state."""
         if device is None:
             device = self.device
@@ -177,7 +164,7 @@ class DreamerV3WorldModel(nn.Module):
     def compute_loss(self, batch: dict[str, Tensor]) -> dict[str, Tensor]:
         """
         Compute training losses.
-        
+
         Args:
             batch:
                 - obs: [batch, seq_len, *obs_shape]
@@ -254,10 +241,10 @@ class DreamerV3WorldModel(nn.Module):
 
         # Total loss
         losses["loss"] = (
-            self.config.loss_scales["reconstruction"] * losses["reconstruction"] +
-            self.config.loss_scales["kl"] * losses["kl"] +
-            self.config.loss_scales["reward"] * losses["reward"] +
-            self.config.loss_scales["continue"] * losses["continue"]
+            self.config.loss_scales["reconstruction"] * losses["reconstruction"]
+            + self.config.loss_scales["kl"] * losses["kl"]
+            + self.config.loss_scales["reward"] * losses["reward"]
+            + self.config.loss_scales["continue"] * losses["continue"]
         )
 
         return losses
@@ -265,12 +252,14 @@ class DreamerV3WorldModel(nn.Module):
     @classmethod
     def from_pretrained(cls, name_or_path: str, **kwargs) -> "DreamerV3WorldModel":
         from ...core.registry import WorldModelRegistry
+
         model = WorldModelRegistry.from_pretrained(name_or_path, **kwargs)
         assert isinstance(model, cls)
         return model
 
     def save_pretrained(self, path: str) -> None:
         import os
+
         os.makedirs(path, exist_ok=True)
         self.config.save(os.path.join(path, "config.json"))
         torch.save(self.state_dict(), os.path.join(path, "model.pt"))

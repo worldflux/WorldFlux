@@ -12,7 +12,7 @@ from .state import LatentState
 class Trajectory:
     """
     Imagination rollout trajectory in latent space.
-    
+
     Attributes:
         states: List of latent states [T+1] (initial + T steps)
         actions: Action tensor [T, batch, action_dim]
@@ -20,6 +20,7 @@ class Trajectory:
         values: Predicted values [T+1, batch] (optional)
         continues: Continue probabilities [T, batch] (optional)
     """
+
     states: list[LatentState]
     actions: Tensor
     rewards: Tensor | None = None

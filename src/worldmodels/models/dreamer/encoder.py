@@ -1,6 +1,5 @@
 """Encoder modules for DreamerV3."""
 
-
 import torch
 import torch.nn as nn
 from torch import Tensor
@@ -24,13 +23,20 @@ class CNNEncoder(nn.Module):
         layers = []
 
         for i, kernel in enumerate(kernels):
-            out_channels = depth * (2 ** i)
-            layers.extend([
-                nn.Conv2d(in_channels, out_channels, kernel, stride, padding=kernel // 2 - 1),
-                nn.LayerNorm([out_channels, obs_shape[1] // (stride ** (i + 1)),
-                             obs_shape[2] // (stride ** (i + 1))]),
-                nn.SiLU(),
-            ])
+            out_channels = depth * (2**i)
+            layers.extend(
+                [
+                    nn.Conv2d(in_channels, out_channels, kernel, stride, padding=kernel // 2 - 1),
+                    nn.LayerNorm(
+                        [
+                            out_channels,
+                            obs_shape[1] // (stride ** (i + 1)),
+                            obs_shape[2] // (stride ** (i + 1)),
+                        ]
+                    ),
+                    nn.SiLU(),
+                ]
+            )
             in_channels = out_channels
 
         self.conv = nn.Sequential(*layers)
@@ -66,11 +72,13 @@ class MLPEncoder(nn.Module):
         layers = []
         in_dim = input_dim
         for _ in range(num_layers - 1):
-            layers.extend([
-                nn.Linear(in_dim, hidden_dim),
-                nn.LayerNorm(hidden_dim),
-                nn.SiLU(),
-            ])
+            layers.extend(
+                [
+                    nn.Linear(in_dim, hidden_dim),
+                    nn.LayerNorm(hidden_dim),
+                    nn.SiLU(),
+                ]
+            )
             in_dim = hidden_dim
 
         layers.append(nn.Linear(in_dim, output_dim))

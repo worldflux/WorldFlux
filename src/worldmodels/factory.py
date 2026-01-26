@@ -226,10 +226,7 @@ def get_model_info(model: str) -> dict[str, Any]:
             info["alias"] = model
         return info
 
-    raise ValueError(
-        f"Unknown model: {model}. "
-        f"Available models: {list(MODEL_CATALOG.keys())}"
-    )
+    raise ValueError(f"Unknown model: {model}. Available models: {list(MODEL_CATALOG.keys())}")
 
 
 def get_config(
@@ -267,8 +264,7 @@ def get_config(
 
     if ":" not in resolved:
         raise ValueError(
-            f"Invalid model format: {model}. "
-            f"Expected 'type:size' format like 'dreamerv3:size12m'"
+            f"Invalid model format: {model}. Expected 'type:size' format like 'dreamerv3:size12m'"
         )
 
     model_type, size = resolved.split(":", 1)

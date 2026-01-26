@@ -1,6 +1,5 @@
 """Decoder modules for DreamerV3."""
 
-
 import torch.nn as nn
 from torch import Tensor
 
@@ -22,8 +21,8 @@ class CNNDecoder(nn.Module):
 
         # Calculate initial spatial size
         num_layers = len(kernels)
-        self.init_h = obs_shape[1] // (stride ** num_layers)
-        self.init_w = obs_shape[2] // (stride ** num_layers)
+        self.init_h = obs_shape[1] // (stride**num_layers)
+        self.init_w = obs_shape[2] // (stride**num_layers)
         self.init_channels = depth * (2 ** (num_layers - 1))
 
         # Project features to spatial
@@ -41,17 +40,28 @@ class CNNDecoder(nn.Module):
 
             layers.append(
                 nn.ConvTranspose2d(
-                    in_channels, out_channels, kernel, stride,
-                    padding=kernel // 2 - 1, output_padding=0
+                    in_channels,
+                    out_channels,
+                    kernel,
+                    stride,
+                    padding=kernel // 2 - 1,
+                    output_padding=0,
                 )
             )
 
             if i < num_layers - 1:
-                layers.extend([
-                    nn.LayerNorm([out_channels, self.init_h * (stride ** (i + 1)),
-                                 self.init_w * (stride ** (i + 1))]),
-                    nn.SiLU(),
-                ])
+                layers.extend(
+                    [
+                        nn.LayerNorm(
+                            [
+                                out_channels,
+                                self.init_h * (stride ** (i + 1)),
+                                self.init_w * (stride ** (i + 1)),
+                            ]
+                        ),
+                        nn.SiLU(),
+                    ]
+                )
 
             in_channels = out_channels
 
@@ -83,11 +93,13 @@ class MLPDecoder(nn.Module):
         layers = []
         in_dim = feature_dim
         for _ in range(num_layers - 1):
-            layers.extend([
-                nn.Linear(in_dim, hidden_dim),
-                nn.LayerNorm(hidden_dim),
-                nn.SiLU(),
-            ])
+            layers.extend(
+                [
+                    nn.Linear(in_dim, hidden_dim),
+                    nn.LayerNorm(hidden_dim),
+                    nn.SiLU(),
+                ]
+            )
             in_dim = hidden_dim
 
         layers.append(nn.Linear(in_dim, output_dim))

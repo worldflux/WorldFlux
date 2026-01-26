@@ -534,8 +534,7 @@ class TDMPC2Config(WorldModelConfig):
 
         if self.num_elites > self.num_samples:
             raise ConfigurationError(
-                f"num_elites ({self.num_elites}) cannot exceed "
-                f"num_samples ({self.num_samples})",
+                f"num_elites ({self.num_elites}) cannot exceed num_samples ({self.num_samples})",
                 config_name=self.model_name,
             )
 

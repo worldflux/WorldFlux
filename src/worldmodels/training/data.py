@@ -110,13 +110,11 @@ class ReplayBuffer:
         # Validate shapes
         if obs.shape[1:] != self.obs_shape:
             raise ShapeMismatchError(
-                f"Observation shape mismatch: expected {self.obs_shape}, "
-                f"got {obs.shape[1:]}"
+                f"Observation shape mismatch: expected {self.obs_shape}, got {obs.shape[1:]}"
             )
         if actions.shape[1] != self.action_dim:
             raise ShapeMismatchError(
-                f"Action dimension mismatch: expected {self.action_dim}, "
-                f"got {actions.shape[1]}"
+                f"Action dimension mismatch: expected {self.action_dim}, got {actions.shape[1]}"
             )
 
         if dones is None:
@@ -137,13 +135,13 @@ class ReplayBuffer:
             # Wrap around
             first_part = self.capacity - start_pos
             self._obs[start_pos:] = obs[:first_part]
-            self._obs[:episode_len - first_part] = obs[first_part:]
+            self._obs[: episode_len - first_part] = obs[first_part:]
             self._actions[start_pos:] = actions[:first_part]
-            self._actions[:episode_len - first_part] = actions[first_part:]
+            self._actions[: episode_len - first_part] = actions[first_part:]
             self._rewards[start_pos:] = rewards[:first_part]
-            self._rewards[:episode_len - first_part] = rewards[first_part:]
+            self._rewards[: episode_len - first_part] = rewards[first_part:]
             self._dones[start_pos:] = dones[:first_part]
-            self._dones[:episode_len - first_part] = dones[first_part:]
+            self._dones[: episode_len - first_part] = dones[first_part:]
             end_pos = end_pos % self.capacity
 
         # Update episode boundaries
@@ -274,10 +272,10 @@ class ReplayBuffer:
         path.parent.mkdir(parents=True, exist_ok=True)
         np.savez_compressed(
             path,
-            obs=self._obs[:self._size],
-            actions=self._actions[:self._size],
-            rewards=self._rewards[:self._size],
-            dones=self._dones[:self._size],
+            obs=self._obs[: self._size],
+            actions=self._actions[: self._size],
+            rewards=self._rewards[: self._size],
+            dones=self._dones[: self._size],
             obs_shape=np.array(self.obs_shape),
             action_dim=np.array(self.action_dim),
             capacity=np.array(self.capacity),
