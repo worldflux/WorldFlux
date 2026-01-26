@@ -11,7 +11,7 @@ from ...core.state import LatentState
 class RSSM(nn.Module):
     """
     Recurrent State-Space Model (DreamerV3).
-    
+
     Combines deterministic state (h) and stochastic state (z):
         h_t = GRU(h_{t-1}, [z_{t-1}, a_{t-1}])  # Sequence Model
         z_t_prior = prior(h_t)                   # Prior (imagination)
@@ -75,10 +75,7 @@ class RSSM(nn.Module):
         )
 
     def prior_step(
-        self,
-        state: LatentState,
-        action: Tensor,
-        deterministic: bool = False
+        self, state: LatentState, action: Tensor, deterministic: bool = False
     ) -> LatentState:
         """Prior transition (no observation, for imagination)."""
         assert state.stochastic is not None, "RSSM requires stochastic state"
@@ -99,12 +96,7 @@ class RSSM(nn.Module):
             latent_type="categorical",
         )
 
-    def posterior_step(
-        self,
-        state: LatentState,
-        action: Tensor,
-        obs_embed: Tensor
-    ) -> LatentState:
+    def posterior_step(self, state: LatentState, action: Tensor, obs_embed: Tensor) -> LatentState:
         """Posterior transition (with observation, for learning)."""
         assert state.stochastic is not None, "RSSM requires stochastic state"
         z_flat = state.stochastic.flatten(start_dim=1)

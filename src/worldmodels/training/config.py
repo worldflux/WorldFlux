@@ -94,23 +94,15 @@ class TrainingConfig:
                 f"sequence_length must be positive, got {self.sequence_length}"
             )
         if self.learning_rate <= 0:
-            raise ConfigurationError(
-                f"learning_rate must be positive, got {self.learning_rate}"
-            )
+            raise ConfigurationError(f"learning_rate must be positive, got {self.learning_rate}")
         if self.grad_clip < 0:
             raise ConfigurationError(f"grad_clip must be non-negative, got {self.grad_clip}")
         if self.weight_decay < 0:
-            raise ConfigurationError(
-                f"weight_decay must be non-negative, got {self.weight_decay}"
-            )
+            raise ConfigurationError(f"weight_decay must be non-negative, got {self.weight_decay}")
         if self.warmup_steps < 0:
-            raise ConfigurationError(
-                f"warmup_steps must be non-negative, got {self.warmup_steps}"
-            )
+            raise ConfigurationError(f"warmup_steps must be non-negative, got {self.warmup_steps}")
         if self.num_workers < 0:
-            raise ConfigurationError(
-                f"num_workers must be non-negative, got {self.num_workers}"
-            )
+            raise ConfigurationError(f"num_workers must be non-negative, got {self.num_workers}")
         if self.optimizer not in ("adamw", "adam", "sgd"):
             raise ConfigurationError(
                 f"optimizer must be 'adamw', 'adam', or 'sgd', got '{self.optimizer}'"
@@ -121,9 +113,7 @@ class TrainingConfig:
                 f"got '{self.scheduler}'"
             )
         if self.ema_decay is not None and not (0.0 < self.ema_decay < 1.0):
-            raise ConfigurationError(
-                f"ema_decay must be in (0, 1), got {self.ema_decay}"
-            )
+            raise ConfigurationError(f"ema_decay must be in (0, 1), got {self.ema_decay}")
 
     def to_dict(self) -> dict[str, Any]:
         """Convert config to dictionary."""
@@ -152,6 +142,7 @@ class TrainingConfig:
         """Resolve 'auto' device to actual device."""
         if self.device == "auto":
             import torch
+
             return "cuda" if torch.cuda.is_available() else "cpu"
         return self.device
 

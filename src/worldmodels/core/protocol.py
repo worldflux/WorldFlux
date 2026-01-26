@@ -14,18 +14,19 @@ from .trajectory import Trajectory
 class WorldModel(Protocol):
     """
     Unified interface for all world models.
-    
+
     Core operations:
     1. encode: observation -> initial latent state
     2. predict: (state, action) -> next state (prior/imagination)
     3. observe: (state, action, observation) -> next state (posterior)
     4. decode: state -> predictions (obs, reward, continue)
-    
+
     Compound operations:
     5. imagine: multi-step imagination rollout
     6. initial_state: create initial state for new episode
     7. compute_loss: compute training losses
     """
+
     config: WorldModelConfig
 
     def encode(self, obs: Tensor, deterministic: bool = False) -> LatentState:
@@ -33,20 +34,12 @@ class WorldModel(Protocol):
         ...
 
     def predict(
-        self,
-        state: LatentState,
-        action: Tensor,
-        deterministic: bool = False
+        self, state: LatentState, action: Tensor, deterministic: bool = False
     ) -> LatentState:
         """Predict next state given action (prior/imagination mode)."""
         ...
 
-    def observe(
-        self,
-        state: LatentState,
-        action: Tensor,
-        obs: Tensor
-    ) -> LatentState:
+    def observe(self, state: LatentState, action: Tensor, obs: Tensor) -> LatentState:
         """Update state with observation (posterior)."""
         ...
 
@@ -55,19 +48,12 @@ class WorldModel(Protocol):
         ...
 
     def imagine(
-        self,
-        initial_state: LatentState,
-        actions: Tensor,
-        deterministic: bool = False
+        self, initial_state: LatentState, actions: Tensor, deterministic: bool = False
     ) -> Trajectory:
         """Multi-step imagination rollout."""
         ...
 
-    def initial_state(
-        self,
-        batch_size: int,
-        device: torch.device | None = None
-    ) -> LatentState:
+    def initial_state(self, batch_size: int, device: torch.device | None = None) -> LatentState:
         """Create initial latent state for new episode."""
         ...
 

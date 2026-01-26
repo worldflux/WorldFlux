@@ -11,14 +11,15 @@ from .protocol import WorldModel
 class WorldModelRegistry:
     """
     World model auto-registration and resolution system.
-    
+
     Usage:
         @WorldModelRegistry.register("dreamer")
         class DreamerWorldModel(nn.Module):
             ...
-        
+
         model = WorldModelRegistry.from_pretrained("dreamerv3:size12m")
     """
+
     _model_registry: dict[str, type] = {}
     _config_registry: dict[str, type[WorldModelConfig]] = {}
     _presets: dict[str, dict] = {}
@@ -26,11 +27,13 @@ class WorldModelRegistry:
     @classmethod
     def register(cls, model_type: str, config_class: type[WorldModelConfig] | None = None):
         """Register a model class with decorator."""
+
         def decorator(model_class: type):
             cls._model_registry[model_type] = model_class
             if config_class is not None:
                 cls._config_registry[model_type] = config_class
             return model_class
+
         return decorator
 
     @classmethod
@@ -42,7 +45,7 @@ class WorldModelRegistry:
     def from_pretrained(cls, name_or_path: str, **kwargs) -> WorldModel:
         """
         Load model from preset or path.
-        
+
         Args:
             name_or_path:
                 - "dreamerv3:size12m" - registered preset

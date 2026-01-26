@@ -1,6 +1,5 @@
 """TD-MPC2 World Model implementation."""
 
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -17,7 +16,7 @@ from ...core.trajectory import Trajectory
 class TDMPC2WorldModel(nn.Module):
     """
     TD-MPC2 world model implementation.
-    
+
     Features:
         - No decoder (implicit model)
         - SimNorm latent space
@@ -36,8 +35,11 @@ class TDMPC2WorldModel(nn.Module):
         )
 
         # Encoder
-        obs_dim = config.obs_shape[0] if len(config.obs_shape) == 1 else \
-                  int(torch.prod(torch.tensor(config.obs_shape)).item())
+        obs_dim = (
+            config.obs_shape[0]
+            if len(config.obs_shape) == 1
+            else int(torch.prod(torch.tensor(config.obs_shape)).item())
+        )
 
         self.encoder = nn.Sequential(
             nn.Linear(obs_dim, config.hidden_dim),
@@ -75,18 +77,20 @@ class TDMPC2WorldModel(nn.Module):
         )
 
         # Q-function ensemble
-        self.q_networks = nn.ModuleList([
-            nn.Sequential(
-                nn.Linear(config.latent_dim + config.action_dim, config.hidden_dim),
-                nn.LayerNorm(config.hidden_dim),
-                nn.Mish(),
-                nn.Linear(config.hidden_dim, config.hidden_dim),
-                nn.LayerNorm(config.hidden_dim),
-                nn.Mish(),
-                nn.Linear(config.hidden_dim, 1),
-            )
-            for _ in range(config.num_q_networks)
-        ])
+        self.q_networks = nn.ModuleList(
+            [
+                nn.Sequential(
+                    nn.Linear(config.latent_dim + config.action_dim, config.hidden_dim),
+                    nn.LayerNorm(config.hidden_dim),
+                    nn.Mish(),
+                    nn.Linear(config.hidden_dim, config.hidden_dim),
+                    nn.LayerNorm(config.hidden_dim),
+                    nn.Mish(),
+                    nn.Linear(config.hidden_dim, 1),
+                )
+                for _ in range(config.num_q_networks)
+            ]
+        )
 
         # Policy (for MPC warm-start)
         self.policy = nn.Sequential(
@@ -123,7 +127,7 @@ class TDMPC2WorldModel(nn.Module):
         state: LatentState,
         action: Tensor,
         deterministic: bool = False,
-        task_id: Tensor | None = None
+        task_id: Tensor | None = None,
     ) -> LatentState:
         """Predict next state."""
         assert state.deterministic is not None, "TD-MPC2 requires deterministic state"
@@ -145,12 +149,7 @@ class TDMPC2WorldModel(nn.Module):
             latent_type="simnorm",
         )
 
-    def observe(
-        self,
-        state: LatentState,
-        action: Tensor,
-        obs: Tensor
-    ) -> LatentState:
+    def observe(self, state: LatentState, action: Tensor, obs: Tensor) -> LatentState:
         """TD-MPC2 directly encodes observations (no posterior like RSSM)."""
         return self.encode(obs)
 
@@ -171,10 +170,7 @@ class TDMPC2WorldModel(nn.Module):
         }
 
     def imagine(
-        self,
-        initial_state: LatentState,
-        actions: Tensor,
-        deterministic: bool = False
+        self, initial_state: LatentState, actions: Tensor, deterministic: bool = False
     ) -> Trajectory:
         """Multi-step imagination."""
         horizon = actions.shape[0]
@@ -198,11 +194,7 @@ class TDMPC2WorldModel(nn.Module):
             rewards=torch.stack(rewards, dim=0).squeeze(-1),
         )
 
-    def initial_state(
-        self,
-        batch_size: int,
-        device: torch.device | None = None
-    ) -> LatentState:
+    def initial_state(self, batch_size: int, device: torch.device | None = None) -> LatentState:
         """Initial state (uniform SimNorm)."""
         if device is None:
             device = self.device
@@ -253,8 +245,7 @@ class TDMPC2WorldModel(nn.Module):
             z_t = state_t.deterministic
 
             pred_state = self.predict(
-                LatentState(deterministic=z_t, latent_type="simnorm"),
-                actions[:, t]
+                LatentState(deterministic=z_t, latent_type="simnorm"), actions[:, t]
             )
             assert pred_state.deterministic is not None
             z_pred = pred_state.deterministic
@@ -276,8 +267,7 @@ class TDMPC2WorldModel(nn.Module):
             z_t = state_t.deterministic
 
             pred_reward = self.predict_reward(
-                LatentState(deterministic=z_t, latent_type="simnorm"),
-                actions[:, t]
+                LatentState(deterministic=z_t, latent_type="simnorm"), actions[:, t]
             )
             reward_loss = reward_loss + F.mse_loss(pred_reward, rewards[:, t + 1])
 
@@ -314,12 +304,14 @@ class TDMPC2WorldModel(nn.Module):
     @classmethod
     def from_pretrained(cls, name_or_path: str, **kwargs) -> "TDMPC2WorldModel":
         from ...core.registry import WorldModelRegistry
+
         model = WorldModelRegistry.from_pretrained(name_or_path, **kwargs)
         assert isinstance(model, cls)
         return model
 
     def save_pretrained(self, path: str) -> None:
         import os
+
         os.makedirs(path, exist_ok=True)
         self.config.save(os.path.join(path, "config.json"))
         torch.save(self.state_dict(), os.path.join(path, "model.pt"))
