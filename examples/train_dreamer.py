@@ -19,14 +19,11 @@ Usage:
 import argparse
 import logging
 
-import torch
-
 from worldmodels import create_world_model
 from worldmodels.training import (
     ReplayBuffer,
     Trainer,
     TrainingConfig,
-    train,
 )
 from worldmodels.training.callbacks import EarlyStoppingCallback, ProgressCallback
 from worldmodels.training.data import create_random_buffer

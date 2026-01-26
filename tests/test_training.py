@@ -10,13 +10,12 @@ import torch
 from worldmodels import create_world_model
 from worldmodels.core.exceptions import ConfigurationError
 from worldmodels.training import (
-    Callback,
     CheckpointCallback,
     LoggingCallback,
     ReplayBuffer,
-    TrajectoryDataset,
     Trainer,
     TrainingConfig,
+    TrajectoryDataset,
     train,
 )
 from worldmodels.training.callbacks import EarlyStoppingCallback, ProgressCallback
@@ -495,8 +494,8 @@ class TestCreateRandomBuffer:
         )
 
         # Same seed should produce same data
-        batch1 = buffer1.sample(batch_size=1, seq_len=5)
-        batch2 = buffer2.sample(batch_size=1, seq_len=5)
+        _batch1 = buffer1.sample(batch_size=1, seq_len=5)
+        _batch2 = buffer2.sample(batch_size=1, seq_len=5)
 
         # Note: Sampling is random, so we just check buffer sizes match
         assert len(buffer1) == len(buffer2)
