@@ -1,13 +1,13 @@
-"""Custom exceptions for World Models SDK."""
+"""Custom exceptions for WorldLoom."""
 
 
-class WorldModelsError(Exception):
-    """Base exception for all World Models errors."""
+class WorldLoomError(Exception):
+    """Base exception for all WorldLoom errors."""
 
     pass
 
 
-class ConfigurationError(WorldModelsError):
+class ConfigurationError(WorldLoomError):
     """Raised when model configuration is invalid."""
 
     def __init__(self, message: str, config_name: str | None = None):
@@ -17,7 +17,7 @@ class ConfigurationError(WorldModelsError):
         super().__init__(message)
 
 
-class ShapeMismatchError(WorldModelsError):
+class ShapeMismatchError(WorldLoomError):
     """Raised when tensor shapes don't match expected dimensions."""
 
     def __init__(
@@ -33,13 +33,13 @@ class ShapeMismatchError(WorldModelsError):
         super().__init__(message)
 
 
-class StateError(WorldModelsError):
+class StateError(WorldLoomError):
     """Raised when LatentState is in an invalid state."""
 
     pass
 
 
-class ModelNotFoundError(WorldModelsError):
+class ModelNotFoundError(WorldLoomError):
     """Raised when a requested model is not found in the registry."""
 
     def __init__(self, model_name: str, available: list[str] | None = None):
@@ -51,19 +51,19 @@ class ModelNotFoundError(WorldModelsError):
         super().__init__(message)
 
 
-class CheckpointError(WorldModelsError):
+class CheckpointError(WorldLoomError):
     """Raised when checkpoint loading/saving fails."""
 
     pass
 
 
-class TrainingError(WorldModelsError):
+class TrainingError(WorldLoomError):
     """Raised when training encounters an error."""
 
     pass
 
 
-class BufferError(WorldModelsError):
+class BufferError(WorldLoomError):
     """Raised when replay buffer operations fail."""
 
     pass

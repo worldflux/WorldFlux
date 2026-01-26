@@ -9,7 +9,7 @@ import torch
 from torch import Tensor
 from torch.utils.data import Dataset
 
-from worldmodels.core.exceptions import BufferError, ConfigurationError, ShapeMismatchError
+from worldloom.core.exceptions import BufferError, ConfigurationError, ShapeMismatchError
 
 
 class ReplayBuffer:

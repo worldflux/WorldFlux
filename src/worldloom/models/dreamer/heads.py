@@ -11,8 +11,13 @@ def symlog(x: Tensor) -> Tensor:
 
 
 def symexp(x: Tensor) -> Tensor:
-    """Inverse symlog: sign(x) * (exp(|x|) - 1)"""
-    return torch.sign(x) * (torch.exp(torch.abs(x)) - 1)
+    """Inverse symlog: sign(x) * (exp(|x|) - 1) with overflow protection.
+
+    The exponential function overflows for inputs > ~88 (float32).
+    We clamp the absolute value to prevent NaN propagation.
+    """
+    x_clipped = torch.clamp(torch.abs(x), max=88.0)
+    return torch.sign(x) * (torch.exp(x_clipped) - 1)
 
 
 class RewardHead(nn.Module):

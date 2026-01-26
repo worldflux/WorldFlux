@@ -1,4 +1,4 @@
-"""Trainer for World Models."""
+"""Trainer for WorldLoom."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ import torch.nn as nn
 from torch.optim import AdamW, Optimizer
 from torch.optim.lr_scheduler import LRScheduler
 
-from worldmodels.core.exceptions import CheckpointError, ConfigurationError, TrainingError
+from worldloom.core.exceptions import CheckpointError, ConfigurationError, TrainingError
 
 from .callbacks import Callback, CallbackList, CheckpointCallback, LoggingCallback
 from .config import TrainingConfig
@@ -45,7 +45,7 @@ class TrainingState:
 
 class Trainer:
     """
-    HuggingFace-style trainer for World Models.
+    HuggingFace-style trainer for WorldLoom.
 
     Provides a simple interface for training world models with:
     - Automatic device placement
@@ -62,8 +62,8 @@ class Trainer:
         scheduler: Optional learning rate scheduler.
 
     Example:
-        >>> from worldmodels import create_world_model
-        >>> from worldmodels.training import Trainer, TrainingConfig, ReplayBuffer
+        >>> from worldloom import create_world_model
+        >>> from worldloom.training import Trainer, TrainingConfig, ReplayBuffer
         >>>
         >>> model = create_world_model("dreamerv3:size12m")
         >>> buffer = ReplayBuffer.load("data.npz")
@@ -389,8 +389,8 @@ def train(
         Trained model.
 
     Example:
-        >>> from worldmodels import create_world_model
-        >>> from worldmodels.training import train, ReplayBuffer
+        >>> from worldloom import create_world_model
+        >>> from worldloom.training import train, ReplayBuffer
         >>>
         >>> model = create_world_model("dreamerv3:size12m")
         >>> buffer = ReplayBuffer.load("data.npz")

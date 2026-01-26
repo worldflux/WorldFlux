@@ -484,6 +484,9 @@ class TDMPC2Config(WorldModelConfig):
     temperature: float = 0.5
     momentum: float = 0.1
 
+    # TD learning
+    gamma: float = 0.99
+
     # TD-MPC2 is implicit by default
     use_decoder: bool = False
 
@@ -547,6 +550,12 @@ class TDMPC2Config(WorldModelConfig):
         if not (0 <= self.momentum <= 1):
             raise ConfigurationError(
                 f"momentum must be in [0, 1], got {self.momentum}",
+                config_name=self.model_name,
+            )
+
+        if not (0 < self.gamma <= 1):
+            raise ConfigurationError(
+                f"gamma must be in (0, 1], got {self.gamma}",
                 config_name=self.model_name,
             )
 
