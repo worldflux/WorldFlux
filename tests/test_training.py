@@ -7,9 +7,9 @@ import numpy as np
 import pytest
 import torch
 
-from worldmodels import create_world_model
-from worldmodels.core.exceptions import ConfigurationError
-from worldmodels.training import (
+from worldloom import create_world_model
+from worldloom.core.exceptions import ConfigurationError
+from worldloom.training import (
     CheckpointCallback,
     LoggingCallback,
     ReplayBuffer,
@@ -18,8 +18,8 @@ from worldmodels.training import (
     TrajectoryDataset,
     train,
 )
-from worldmodels.training.callbacks import EarlyStoppingCallback, ProgressCallback
-from worldmodels.training.data import create_random_buffer
+from worldloom.training.callbacks import EarlyStoppingCallback, ProgressCallback
+from worldloom.training.data import create_random_buffer
 
 
 class TestTrainingConfig:

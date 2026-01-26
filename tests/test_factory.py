@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from worldmodels import (
+from worldloom import (
     MODEL_ALIASES,
     MODEL_CATALOG,
     create_world_model,
@@ -11,8 +11,8 @@ from worldmodels import (
     get_model_info,
     list_models,
 )
-from worldmodels.models.dreamer import DreamerV3WorldModel
-from worldmodels.models.tdmpc2 import TDMPC2WorldModel
+from worldloom.models.dreamer import DreamerV3WorldModel
+from worldloom.models.tdmpc2 import TDMPC2WorldModel
 
 
 class TestListModels:

@@ -3,8 +3,8 @@
 import pytest
 import torch
 
-from worldmodels.core.exceptions import StateError
-from worldmodels.core.state import LatentState
+from worldloom.core.exceptions import StateError
+from worldloom.core.state import LatentState
 
 
 class TestLatentState:
