@@ -1,1 +1,1 @@
-"""World Models SDK tests."""
+"""WorldLoom tests."""

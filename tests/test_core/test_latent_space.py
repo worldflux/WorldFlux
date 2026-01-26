@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from worldmodels.core.latent_space import (
+from worldloom.core.latent_space import (
     CategoricalLatentSpace,
     GaussianLatentSpace,
     SimNormLatentSpace,
