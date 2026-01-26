@@ -19,22 +19,27 @@ A unified Python interface for latent world models used in reinforcement learnin
 
 ## Installation
 
+### From Source (recommended)
+
 ```bash
-pip install worldmodels
+git clone https://github.com/yoshihyoda/worldloom.git
+cd worldloom
+pip install -e "."
 
 # With training dependencies
-pip install worldmodels[training]
+pip install -e ".[training]"
 
 # With all optional dependencies
-pip install worldmodels[all]
+pip install -e ".[all]"
+
+# For development
+pip install -e ".[dev]"
 ```
 
-For development:
+### From PyPI (coming soon)
 
 ```bash
-git clone https://github.com/worldmodels/worldmodels-sdk
-cd worldmodels-sdk
-pip install -e ".[dev]"
+pip install worldmodels
 ```
 
 ## Quick Start
