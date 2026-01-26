@@ -3,14 +3,14 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "worldmodels"
+name = "worldloom"
 version = "0.1.0"
 description = "Unified SDK for latent world models (DreamerV3, TD-MPC2, V-JEPA)"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
 authors = [
-    {name = "World Models SDK Contributors"}
+    {name = "WorldLoom Contributors"}
 ]
 keywords = ["world-models", "reinforcement-learning", "dreamer", "td-mpc", "robotics"]
 classifiers = [
@@ -48,13 +48,13 @@ logging = [
     "wandb>=0.15.0",
 ]
 all = [
-    "worldmodels[dev,training,env,logging]",
+    "worldloom[dev,training,env,logging]",
 ]
 
 [project.urls]
-Homepage = "https://github.com/worldmodels/worldmodels-sdk"
-Documentation = "https://worldmodels.readthedocs.io"
-Repository = "https://github.com/worldmodels/worldmodels-sdk"
+Homepage = "https://github.com/yoshihyoda/worldloom"
+Documentation = "https://worldloom.readthedocs.io"
+Repository = "https://github.com/yoshihyoda/worldloom"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -71,15 +71,15 @@ warn_unused_configs = true
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = "worldmodels.models.dreamer.*"
+module = "worldloom.models.dreamer.*"
 disallow_untyped_defs = false
 
 [[tool.mypy.overrides]]
-module = "worldmodels.models.tdmpc2.*"
+module = "worldloom.models.tdmpc2.*"
 disallow_untyped_defs = false
 
 [[tool.mypy.overrides]]
-module = "worldmodels.training.*"
+module = "worldloom.training.*"
 disallow_untyped_defs = false
 
 [tool.ruff]

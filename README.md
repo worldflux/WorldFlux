@@ -1,7 +1,7 @@
-# World Models SDK
+# WorldLoom
 
-[![CI](https://github.com/worldmodels/worldmodels-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/worldmodels/worldmodels-sdk/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/worldmodels/worldmodels-sdk/branch/main/graph/badge.svg)](https://codecov.io/gh/worldmodels/worldmodels-sdk)
+[![CI](https://github.com/yoshihyoda/worldloom/actions/workflows/ci.yml/badge.svg)](https://github.com/yoshihyoda/worldloom/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/yoshihyoda/worldloom/branch/main/graph/badge.svg)](https://codecov.io/gh/yoshihyoda/worldloom)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![PyTorch 2.0+](https://img.shields.io/badge/pytorch-2.0+-ee4c2c.svg)](https://pytorch.org/)
@@ -39,7 +39,7 @@ pip install -e ".[dev]"
 ### From PyPI (coming soon)
 
 ```bash
-pip install worldmodels
+pip install worldloom
 ```
 
 ## Quick Start
@@ -47,7 +47,7 @@ pip install worldmodels
 ### Create a Model
 
 ```python
-from worldmodels import create_world_model
+from worldloom import create_world_model
 
 # DreamerV3 (image observations)
 model = create_world_model("dreamerv3:size12m")
@@ -59,8 +59,8 @@ model = create_world_model("tdmpc2:5m", obs_shape=(39,), action_dim=6)
 ### Train a Model
 
 ```python
-from worldmodels import create_world_model
-from worldmodels.training import train, ReplayBuffer
+from worldloom import create_world_model
+from worldloom.training import train, ReplayBuffer
 
 # Create model
 model = create_world_model("dreamerv3:size12m", obs_shape=(4,), action_dim=2)
@@ -78,8 +78,8 @@ trained_model.save_pretrained("./my_model")
 ### Full Training Control
 
 ```python
-from worldmodels import create_world_model
-from worldmodels.training import Trainer, TrainingConfig, ReplayBuffer
+from worldloom import create_world_model
+from worldloom.training import Trainer, TrainingConfig, ReplayBuffer
 
 model = create_world_model("tdmpc2:5m", obs_shape=(39,), action_dim=6)
 buffer = ReplayBuffer(capacity=100_000, obs_shape=(39,), action_dim=6)
@@ -144,7 +144,7 @@ losses = model.compute_loss(batch)  # {"loss", "kl", "reconstruction", ...}
 ### Training API
 
 ```python
-from worldmodels.training import (
+from worldloom.training import (
     Trainer,
     TrainingConfig,
     ReplayBuffer,
@@ -161,7 +161,7 @@ config = TrainingConfig(
 )
 
 # Callbacks
-from worldmodels.training.callbacks import (
+from worldloom.training.callbacks import (
     LoggingCallback,
     CheckpointCallback,
     EarlyStoppingCallback,
@@ -201,9 +201,9 @@ Contributions are welcome! Please read our contributing guidelines before submit
 If you use this library in your research, please cite:
 
 ```bibtex
-@software{worldmodels_sdk,
-  title = {World Models SDK},
+@software{worldloom,
+  title = {WorldLoom},
   year = {2024},
-  url = {https://github.com/worldmodels/worldmodels-sdk}
+  url = {https://github.com/yoshihyoda/worldloom}
 }
 ```

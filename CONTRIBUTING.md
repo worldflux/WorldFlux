@@ -1,13 +1,13 @@
-# Contributing to World Models SDK
+# Contributing to WorldLoom
 
-Thank you for your interest in contributing to World Models SDK! This document provides guidelines and information for contributors.
+Thank you for your interest in contributing to WorldLoom! This document provides guidelines and information for contributors.
 
 ## Development Setup
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/worldmodels/worldmodels-sdk.git
-   cd worldmodels-sdk
+   git clone https://github.com/yoshihyoda/worldloom.git
+   cd worldloom
    ```
 
 2. **Create a virtual environment**
@@ -30,7 +30,7 @@ We maintain high code quality standards. Before submitting a PR, ensure your cod
 pytest tests/ -v
 
 # Type checking
-mypy src/worldmodels/
+mypy src/worldloom/
 
 # Linting
 ruff check src/
@@ -90,7 +90,7 @@ pytest tests/ -v
 pytest tests/test_training.py -v
 
 # Run with coverage
-pytest tests/ --cov=worldmodels --cov-report=html
+pytest tests/ --cov=worldloom --cov-report=html
 ```
 
 ### Writing Tests
@@ -116,7 +116,7 @@ pytest tests/ --cov=worldmodels --cov-report=html
 3. **Ensure all checks pass**
    ```bash
    pytest tests/ -v
-   mypy src/worldmodels/
+   mypy src/worldloom/
    ruff check src/
    ```
 
@@ -157,7 +157,7 @@ docs(readme): add training examples
 
 To add a new world model implementation:
 
-1. **Create configuration class** in `src/worldmodels/core/config.py`
+1. **Create configuration class** in `src/worldloom/core/config.py`
    ```python
    @dataclass
    class NewModelConfig(WorldModelConfig):
@@ -165,7 +165,7 @@ To add a new world model implementation:
        # Add model-specific parameters
    ```
 
-2. **Implement the model** in `src/worldmodels/models/newmodel/`
+2. **Implement the model** in `src/worldloom/models/newmodel/`
    - Create `__init__.py` with exports
    - Create `world_model.py` implementing the `WorldModel` protocol
    - Register with `@WorldModelRegistry.register("newmodel", NewModelConfig)`
@@ -175,7 +175,7 @@ To add a new world model implementation:
    - Test configuration validation
    - Test save/load functionality
 
-4. **Update factory** in `src/worldmodels/factory.py`
+4. **Update factory** in `src/worldloom/factory.py`
    - Add size presets to `MODEL_CATALOG`
    - Add aliases to `MODEL_ALIASES`
 

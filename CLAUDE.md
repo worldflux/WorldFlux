@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-WorldModels SDK is a unified Python interface for latent world models used in reinforcement learning (DreamerV3, TD-MPC2, with V-JEPA planned). It provides a common API across different architectures for encoding observations, predicting dynamics, and imagination rollouts.
+WorldLoom is a unified Python interface for latent world models used in reinforcement learning (DreamerV3, TD-MPC2, with V-JEPA planned). It provides a common API across different architectures for encoding observations, predicting dynamics, and imagination rollouts.
 
 ## Commands
 
@@ -33,7 +33,7 @@ ruff check --fix src/
 
 ## Architecture
 
-### Core Protocol (`src/worldmodels/core/protocol.py`)
+### Core Protocol (`src/worldloom/core/protocol.py`)
 
 The `WorldModel` Protocol defines the unified interface all models must implement:
 - `encode(obs)` → `LatentState` - Observation to latent state
@@ -43,7 +43,7 @@ The `WorldModel` Protocol defines the unified interface all models must implemen
 - `imagine(initial_state, actions)` → `Trajectory` - Multi-step rollout
 - `compute_loss(batch)` → losses dict - Training losses
 
-### State Representation (`src/worldmodels/core/state.py`)
+### State Representation (`src/worldloom/core/state.py`)
 
 `LatentState` is a universal dataclass supporting multiple architectures:
 - DreamerV3: `deterministic` (h) + `stochastic` (z) + `posterior_logits`/`prior_logits`
@@ -52,14 +52,14 @@ The `WorldModel` Protocol defines the unified interface all models must implemen
 
 The `.features` property concatenates components for downstream heads.
 
-### Latent Spaces (`src/worldmodels/core/latent_space.py`)
+### Latent Spaces (`src/worldloom/core/latent_space.py`)
 
 Three implementations extending `LatentSpace` ABC:
 - `GaussianLatentSpace` - Continuous with reparameterization
 - `CategoricalLatentSpace` - Discrete with Gumbel-Softmax (DreamerV3)
 - `SimNormLatentSpace` - Simplicial normalization (TD-MPC2)
 
-### Model Registry (`src/worldmodels/core/registry.py`)
+### Model Registry (`src/worldloom/core/registry.py`)
 
 HuggingFace-style auto-loading with decorators:
 ```python
@@ -74,19 +74,19 @@ model = AutoWorldModel.from_pretrained("tdmpc2:5m")
 
 ### Model Implementations
 
-**DreamerV3** (`src/worldmodels/models/dreamer/`):
+**DreamerV3** (`src/worldloom/models/dreamer/`):
 - RSSM dynamics with categorical stochastic state
 - CNN/MLP encoder-decoder
 - Reward and continue prediction heads
 - Size presets: size12m, size25m, size50m, size100m, size200m
 
-**TD-MPC2** (`src/worldmodels/models/tdmpc2/`):
+**TD-MPC2** (`src/worldloom/models/tdmpc2/`):
 - Implicit model (no decoder)
 - SimNorm latent space
 - Q-function ensemble for planning
 - Size presets: 5m, 19m, 48m, 317m
 
-### Configuration (`src/worldmodels/core/config.py`)
+### Configuration (`src/worldloom/core/config.py`)
 
 Dataclass configs with `from_size()` factory methods for standard presets. Configs serialize to JSON for `save_pretrained`/`from_pretrained`.
 
