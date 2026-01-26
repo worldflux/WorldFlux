@@ -334,7 +334,9 @@ class Trainer:
         try:
             # Note: weights_only=False is required to load optimizer states.
             # Only load checkpoints from trusted sources.
-            checkpoint = torch.load(path, map_location=self.device, weights_only=False)
+            checkpoint = torch.load(  # nosec B614
+                path, map_location=self.device, weights_only=False
+            )
         except Exception as e:
             raise CheckpointError(f"Failed to load checkpoint from {path}: {e}") from e
 
