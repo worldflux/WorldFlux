@@ -275,7 +275,7 @@ class TDMPC2WorldModel(nn.Module):
 
         # TD loss
         td_loss = torch.tensor(0.0, device=device)
-        gamma = 0.99
+        gamma = self.config.gamma
         for t in range(seq_len - 1):
             state_t = self.encode(obs[:, t])
             assert state_t.deterministic is not None

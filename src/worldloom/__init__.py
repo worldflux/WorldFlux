@@ -1,8 +1,8 @@
 """
-World Models SDK - Unified interface for latent world models.
+WorldLoom - Unified interface for latent world models.
 
 Simple Usage:
-    from worldmodels import create_world_model
+    from worldloom import create_world_model
 
     # Create a DreamerV3 model
     model = create_world_model("dreamerv3:size12m")
@@ -62,7 +62,7 @@ def __getattr__(name: str):
 try:
     from importlib.metadata import PackageNotFoundError, version
 
-    __version__ = version("worldmodels")
+    __version__ = version("worldloom")
 except PackageNotFoundError:
     __version__ = "0.1.0.dev0"
 

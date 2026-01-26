@@ -1,4 +1,4 @@
-"""Training infrastructure for World Models SDK."""
+"""Training infrastructure for WorldLoom."""
 
 from .callbacks import Callback, CheckpointCallback, LoggingCallback
 from .config import TrainingConfig

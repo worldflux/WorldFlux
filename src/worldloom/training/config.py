@@ -1,11 +1,11 @@
-"""Training configuration for World Models."""
+"""Training configuration for WorldLoom."""
 
 import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from worldmodels.core.exceptions import ConfigurationError
+from worldloom.core.exceptions import ConfigurationError
 
 
 @dataclass

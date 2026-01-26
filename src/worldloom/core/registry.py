@@ -1,11 +1,60 @@
 """Model registry and auto-loading utilities."""
 
+import json
 import os
+from typing import Any
 
 import torch
 
 from .config import DreamerV3Config, TDMPC2Config, WorldModelConfig
+from .exceptions import ConfigurationError
 from .protocol import WorldModel
+
+
+def _validate_config_json(config_path: str) -> dict[str, Any]:
+    """
+    Validate and load a config.json file.
+
+    Args:
+        config_path: Path to the config.json file.
+
+    Returns:
+        Validated configuration dictionary.
+
+    Raises:
+        FileNotFoundError: If config file doesn't exist.
+        ConfigurationError: If config is invalid or missing required fields.
+    """
+    if not os.path.exists(config_path):
+        raise FileNotFoundError(f"Config file not found: {config_path}")
+
+    try:
+        with open(config_path) as f:
+            config_dict = json.load(f)
+    except json.JSONDecodeError as e:
+        raise ConfigurationError(
+            f"Invalid JSON in config file: {e}",
+            config_name=config_path,
+        ) from e
+
+    # Validate required fields
+    required_fields = ["model_type"]
+    for field in required_fields:
+        if field not in config_dict:
+            raise ConfigurationError(
+                f"Config missing required field: {field}",
+                config_name=config_path,
+            )
+
+    # Validate model_type is known
+    valid_types = {"base", "dreamer", "tdmpc2"}
+    if config_dict["model_type"] not in valid_types:
+        raise ConfigurationError(
+            f"Unknown model_type: {config_dict['model_type']}. Valid types: {valid_types}",
+            config_name=config_path,
+        )
+
+    return config_dict
 
 
 class WorldModelRegistry:
@@ -55,7 +104,19 @@ class WorldModelRegistry:
         # Local path
         if os.path.exists(name_or_path):
             config_path = os.path.join(name_or_path, "config.json")
+
+            # Validate config before loading
+            _validate_config_json(config_path)
+
             config = WorldModelConfig.load(config_path)
+
+            if config.model_type not in cls._model_registry:
+                raise ConfigurationError(
+                    f"Model type '{config.model_type}' not registered. "
+                    f"Available: {list(cls._model_registry.keys())}",
+                    config_name=config_path,
+                )
+
             model_class = cls._model_registry[config.model_type]
             model = model_class(config)
 
