@@ -17,7 +17,7 @@
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/worldloom/WorldLoom/blob/main/examples/worldloom_quickstart.ipynb)
 [![Hugging Face Spaces](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Spaces-blue)](https://huggingface.co/spaces/WorldLoom/demo)
 [![PyPI](https://img.shields.io/pypi/v/worldloom.svg)](https://pypi.org/project/worldloom/)
-[![Discord](https://img.shields.io/badge/Discord-Join%20Community-7289da?logo=discord&logoColor=white)](https://discord.gg/yFaSFBVMMY)
+[![Discord](https://img.shields.io/badge/Discord-Join%20Community-7289da?logo=discord&logoColor=white)](https://discord.gg/ZUBn9UEp2z)
 
 </div>
 
@@ -290,7 +290,7 @@ Results on standard benchmarks:
 
 ## Community
 
-Join our [Discord](https://discord.gg/yFaSFBVMMY) to discuss world models, get help, and connect with other researchers and developers.
+Join our [Discord](https://discord.gg/ZUBn9UEp2z) to discuss world models, get help, and connect with other researchers and developers.
 
 ## Security
 
