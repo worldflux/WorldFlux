@@ -1,7 +1,7 @@
 site_name: WorldLoom
 site_url: https://worldloom.readthedocs.io
-repo_url: https://github.com/yoshihyoda/worldloom
-repo_name: yoshihyoda/worldloom
+repo_url: https://github.com/worldloom/WorldLoom
+repo_name: worldloom/WorldLoom
 
 theme:
   name: material

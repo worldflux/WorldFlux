@@ -12,7 +12,23 @@ requires-python = ">=3.10"
 authors = [
     {name = "WorldLoom Contributors"}
 ]
-keywords = ["world-models", "reinforcement-learning", "dreamer", "td-mpc", "robotics"]
+keywords = [
+    "world-models",
+    "reinforcement-learning",
+    "dreamer",
+    "dreamerv3",
+    "td-mpc",
+    "td-mpc2",
+    "robotics",
+    "model-based-rl",
+    "latent-dynamics",
+    "imagination",
+    "rssm",
+    "planning",
+    "atari",
+    "mujoco",
+    "pytorch",
+]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -71,9 +87,11 @@ all = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yoshihyoda/worldloom"
+Homepage = "https://github.com/worldloom/WorldLoom"
 Documentation = "https://worldloom.readthedocs.io"
-Repository = "https://github.com/yoshihyoda/worldloom"
+Repository = "https://github.com/worldloom/WorldLoom"
+Changelog = "https://github.com/worldloom/WorldLoom/blob/main/CHANGELOG.md"
+Issues = "https://github.com/worldloom/WorldLoom/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]

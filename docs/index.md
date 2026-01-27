@@ -4,8 +4,8 @@
 
 *One API. Multiple Architectures. Infinite Imagination.*
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/yoshihyoda/worldloom/blob/main/examples/worldloom_quickstart.ipynb)
-[![GitHub](https://img.shields.io/badge/GitHub-worldloom-blue?logo=github)](https://github.com/yoshihyoda/worldloom)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/worldloom/WorldLoom/blob/main/examples/worldloom_quickstart.ipynb)
+[![GitHub](https://img.shields.io/badge/GitHub-worldloom-blue?logo=github)](https://github.com/worldloom/WorldLoom)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ---
@@ -123,19 +123,19 @@ graph LR
 ## Installation
 
 ```bash
-git clone https://github.com/yoshihyoda/worldloom.git
+git clone https://github.com/worldloom/WorldLoom.git
 cd worldloom
 pip install -e ".[training]"
 ```
 
 ## Try It Now
 
-The fastest way to get started is our [interactive Colab notebook](https://colab.research.google.com/github/yoshihyoda/worldloom/blob/main/examples/worldloom_quickstart.ipynb).
+The fastest way to get started is our [interactive Colab notebook](https://colab.research.google.com/github/worldloom/WorldLoom/blob/main/examples/worldloom_quickstart.ipynb).
 
 ## Contributing
 
-Contributions are welcome! See our [Contributing Guide](https://github.com/yoshihyoda/worldloom/blob/main/CONTRIBUTING.md).
+Contributions are welcome! See our [Contributing Guide](https://github.com/worldloom/WorldLoom/blob/main/CONTRIBUTING.md).
 
 ## License
 
-MIT License - see [LICENSE](https://github.com/yoshihyoda/worldloom/blob/main/LICENSE) for details.
+MIT License - see [LICENSE](https://github.com/worldloom/WorldLoom/blob/main/LICENSE) for details.

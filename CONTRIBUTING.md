@@ -6,7 +6,7 @@ Thank you for your interest in contributing to WorldLoom! This document provides
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/yoshihyoda/worldloom.git
+   git clone https://github.com/worldloom/WorldLoom.git
    cd worldloom
    ```
 

@@ -12,7 +12,7 @@
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![Type Checked: mypy](https://img.shields.io/badge/type%20checked-mypy-blue.svg)](https://mypy-lang.org/)
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/yoshihyoda/worldloom/blob/main/examples/worldloom_quickstart.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/worldloom/WorldLoom/blob/main/examples/worldloom_quickstart.ipynb)
 
 </div>
 
@@ -79,7 +79,7 @@ graph LR
 ### From Source (recommended)
 
 ```bash
-git clone https://github.com/yoshihyoda/worldloom.git
+git clone https://github.com/worldloom/WorldLoom.git
 cd worldloom
 pip install -e "."
 
@@ -303,7 +303,7 @@ If you use this library in your research, please cite:
 @software{worldloom,
   title = {WorldLoom: Unified Interface for Latent World Models},
   year = {2026},
-  url = {https://github.com/yoshihyoda/worldloom}
+  url = {https://github.com/worldloom/WorldLoom}
 }
 ```
 

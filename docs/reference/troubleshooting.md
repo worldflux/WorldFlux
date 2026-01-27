@@ -318,7 +318,7 @@ trajectory = model.imagine(states, actions)  # Batched
 
 If your issue isn't listed here:
 
-1. Check [GitHub Issues](https://github.com/yoshihyoda/worldloom/issues)
+1. Check [GitHub Issues](https://github.com/worldloom/WorldLoom/issues)
 2. Search existing issues for similar problems
 3. Open a new issue with:
    - WorldLoom version (`worldloom.__version__`)

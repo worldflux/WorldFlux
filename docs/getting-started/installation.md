@@ -8,7 +8,7 @@
 ## From Source (Recommended)
 
 ```bash
-git clone https://github.com/yoshihyoda/worldloom.git
+git clone https://github.com/worldloom/WorldLoom.git
 cd worldloom
 pip install -e "."
 ```
