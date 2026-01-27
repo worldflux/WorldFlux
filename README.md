@@ -95,7 +95,7 @@ pip install -e ".[all]"
 pip install -e ".[dev]"
 ```
 
-### From PyPI (coming soon)
+### From PyPI
 
 ```bash
 pip install worldloom
@@ -271,7 +271,7 @@ python examples/train_atari_dreamer.py --data atari_data.npz --steps 100000
 
 ## Benchmarks
 
-Results on standard benchmarks (coming soon):
+Results on standard benchmarks:
 
 | Environment | Model | Score | Training Steps |
 |-------------|-------|-------|----------------|
