@@ -1,0 +1,38 @@
+site_name: WorldLoom
+site_url: https://worldloom.readthedocs.io
+repo_url: https://github.com/yoshihyoda/worldloom
+repo_name: yoshihyoda/worldloom
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Dark mode
+    - scheme: slate
+      primary: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Light mode
+  features:
+    - content.code.copy
+    - navigation.instant
+
+plugins:
+  - search
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - tables
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Guide: guide.md
+  - API: api.md
+  - Models: models.md
