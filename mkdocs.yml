@@ -19,6 +19,9 @@ theme:
   features:
     - content.code.copy
     - navigation.instant
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
 
 plugins:
   - search
@@ -26,13 +29,33 @@ plugins:
 markdown_extensions:
   - pymdownx.highlight:
       anchor_linenums: true
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - admonition
+  - pymdownx.details
   - tables
   - toc:
       permalink: true
 
 nav:
   - Home: index.md
-  - Guide: guide.md
-  - API: api.md
-  - Models: models.md
+  - Getting Started:
+    - Installation: getting-started/installation.md
+    - Quick Start: getting-started/quickstart.md
+    - Core Concepts: getting-started/concepts.md
+  - Tutorials:
+    - Train Your First Model: tutorials/train-first-model.md
+    - DreamerV3 vs TD-MPC2: tutorials/dreamer-vs-tdmpc2.md
+  - API Reference:
+    - Factory: api/factory.md
+    - WorldModel Protocol: api/protocol.md
+    - LatentState: api/state.md
+    - Training: api/training.md
+  - Reference:
+    - Configuration: reference/config.md
+    - Troubleshooting: reference/troubleshooting.md
