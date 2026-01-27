@@ -2,7 +2,7 @@
 
 <div align="center">
 
-<img src="assets/logo.png" alt="WorldLoom Logo" width="200">
+<img src="assets/logo.svg" alt="WorldLoom Logo" width="200">
 
 **Unified Interface for World Models in Reinforcement Learning**
 

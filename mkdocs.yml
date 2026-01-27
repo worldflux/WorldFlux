@@ -5,8 +5,8 @@ repo_name: worldloom/WorldLoom
 
 theme:
   name: material
-  logo: assets/logo.png
-  favicon: assets/logo.png
+  logo: assets/logo_transparent.svg
+  favicon: assets/logo.svg
   palette:
     - scheme: default
       primary: indigo
@@ -24,6 +24,9 @@ theme:
     - navigation.tabs
     - navigation.sections
     - navigation.expand
+
+extra_css:
+  - stylesheets/extra.css
 
 plugins:
   - search
