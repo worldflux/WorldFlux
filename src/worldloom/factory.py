@@ -282,7 +282,7 @@ def get_config(
         raise ValueError(f"Unknown model type: {model_type}")
 
     # Get config class
-    config_class: type[WorldModelConfig]
+    config_class: type[DreamerV3Config] | type[TDMPC2Config]
     if normalized_type == "dreamer":
         config_class = DreamerV3Config
     else:
