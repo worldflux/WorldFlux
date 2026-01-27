@@ -44,11 +44,30 @@ training = [
 env = [
     "gymnasium>=0.29.0",
 ]
+atari = [
+    "gymnasium[atari]>=0.29.0",
+    "ale-py>=0.8.0",
+    "opencv-python>=4.0.0",
+]
+mujoco = [
+    "gymnasium[mujoco]>=0.29.0",
+    "mujoco>=3.0.0",
+]
+viz = [
+    "matplotlib>=3.5.0",
+    "scikit-learn>=1.0.0",
+]
 logging = [
     "wandb>=0.15.0",
 ]
+docs = [
+    "mkdocs>=1.5.0",
+    "mkdocs-material>=9.0.0",
+    "mkdocstrings[python]>=0.24.0",
+    "pymdown-extensions>=10.0.0",
+]
 all = [
-    "worldloom[dev,training,env,logging]",
+    "worldloom[dev,training,env,atari,viz,logging,docs]",
 ]
 
 [project.urls]
