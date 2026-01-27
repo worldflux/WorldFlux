@@ -379,6 +379,13 @@ class DreamerV3Config(WorldModelConfig):
             ValueError: If the size preset is not recognized.
         """
         presets: dict[str, dict[str, Any]] = {
+            "ci": {
+                "deter_dim": 64,
+                "stoch_discrete": 4,
+                "stoch_classes": 4,
+                "hidden_dim": 32,
+                "cnn_depth": 8,
+            },
             "size12m": {
                 "deter_dim": 2048,
                 "stoch_discrete": 16,
@@ -587,6 +594,7 @@ class TDMPC2Config(WorldModelConfig):
             ValueError: If the size preset is not recognized.
         """
         presets: dict[str, dict[str, Any]] = {
+            "ci": {"latent_dim": 32, "hidden_dim": 32, "num_q_networks": 2},
             "5m": {"latent_dim": 256, "hidden_dim": 256},
             "19m": {"latent_dim": 512, "hidden_dim": 512},
             "48m": {"latent_dim": 512, "hidden_dim": 1024},

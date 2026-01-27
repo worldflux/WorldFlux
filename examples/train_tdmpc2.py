@@ -55,7 +55,7 @@ def main():
         "--size",
         type=str,
         default="5m",
-        choices=["5m", "19m", "48m", "317m"],
+        choices=["ci", "5m", "19m", "48m", "317m"],
         help="Model size preset",
     )
     parser.add_argument(
@@ -126,7 +126,8 @@ def main():
     # Load or create data
     if args.test:
         logger.info("Running quick test with random data...")
-        args.steps = 100  # Quick test
+        args.steps = 10  # Quick test
+        args.size = "ci"  # Use tiny model for CI
         buffer = create_random_buffer(
             capacity=10000,
             obs_shape=obs_shape,
