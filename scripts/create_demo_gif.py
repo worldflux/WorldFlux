@@ -197,8 +197,8 @@ def create_latent_space_gif(
             # Plot trajectory up to current time
             if t > 0:
                 ax.plot(
-                    traj[:t+1, 0],
-                    traj[:t+1, 1],
+                    traj[: t + 1, 0],
+                    traj[: t + 1, 1],
                     c=color,
                     alpha=0.5,
                     linewidth=2,
@@ -236,7 +236,8 @@ def create_latent_space_gif(
         # Add variance explained
         var_explained = sum(pca.explained_variance_ratio_) * 100
         ax.text(
-            0.02, 0.98,
+            0.02,
+            0.98,
             f"Variance explained: {var_explained:.1f}%",
             transform=ax.transAxes,
             fontsize=10,
@@ -269,8 +270,8 @@ def create_architecture_diagram(output_path: str = "architecture.png"):
     Shows the data flow through the world model components.
     """
     try:
-        import matplotlib.pyplot as plt
         import matplotlib.patches as patches
+        import matplotlib.pyplot as plt
     except ImportError:
         raise ImportError("Please install: pip install matplotlib")
 
@@ -293,7 +294,9 @@ def create_architecture_diagram(output_path: str = "architecture.png"):
 
     def add_box(x, y, w, h, text, color, fontsize=10):
         rect = patches.FancyBboxPatch(
-            (x, y), w, h,
+            (x, y),
+            w,
+            h,
             boxstyle="round,pad=0.05",
             facecolor=color,
             edgecolor="black",
@@ -301,9 +304,13 @@ def create_architecture_diagram(output_path: str = "architecture.png"):
         )
         ax.add_patch(rect)
         ax.text(
-            x + w/2, y + h/2, text,
-            ha="center", va="center",
-            fontsize=fontsize, fontweight="bold",
+            x + w / 2,
+            y + h / 2,
+            text,
+            ha="center",
+            va="center",
+            fontsize=fontsize,
+            fontweight="bold",
         )
 
     def add_arrow(x1, y1, x2, y2):
@@ -339,10 +346,13 @@ def create_architecture_diagram(output_path: str = "architecture.png"):
 
     # Title
     ax.text(
-        6, 5.5,
+        6,
+        5.5,
         "WorldLoom Architecture",
-        ha="center", va="center",
-        fontsize=16, fontweight="bold",
+        ha="center",
+        va="center",
+        fontsize=16,
+        fontweight="bold",
     )
 
     plt.tight_layout()
