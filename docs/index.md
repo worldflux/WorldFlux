@@ -1,6 +1,6 @@
 # WorldLoom
 
-**Unified Interface for Latent World Models**
+**Unified Interface for World Models in Reinforcement Learning**
 
 *One API. Multiple Architectures. Infinite Imagination.*
 
@@ -10,7 +10,7 @@
 
 ---
 
-WorldLoom provides a unified Python interface for latent world models used in reinforcement learning. Train and deploy DreamerV3, TD-MPC2, and more through a single, consistent API.
+WorldLoom provides a unified Python interface for world models used in reinforcement learning. Starting with efficient latent-space models (DreamerV3, TD-MPC2), with plans to support diverse architectures including autoregressive and diffusion-based world models.
 
 ## Features
 

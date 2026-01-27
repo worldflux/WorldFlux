@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-WorldLoom is a unified Python interface for latent world models used in reinforcement learning (DreamerV3, TD-MPC2, with V-JEPA planned). It provides a common API across different architectures for encoding observations, predicting dynamics, and imagination rollouts.
+WorldLoom is a unified Python interface for world models used in reinforcement learning. Starting with efficient latent-space models (DreamerV3, TD-MPC2), it provides a common API across different architectures for encoding observations, predicting dynamics, and imagination rollouts. Future plans include support for autoregressive models, diffusion-based world models, and V-JEPA.
 
 ## Commands
 

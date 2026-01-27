@@ -35,6 +35,8 @@ Core functionality is implemented and working. Ready for early adopters and feed
 
 - [ ] **V-JEPA Integration**: Video Joint Embedding Predictive Architecture
 - [ ] **IRIS**: Transformer-based world model
+- [ ] **Diffusion World Models**: Diffusion-based dynamics prediction
+- [ ] **Autoregressive Models**: GPT-style world models
 - [ ] **Custom Architecture API**: Easy way to add new model types
 
 ### v0.5.0 - Planning & Control
