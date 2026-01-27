@@ -2,6 +2,8 @@
 
 <div align="center">
 
+<img src="assets/logo.png" alt="WorldLoom Logo" width="200">
+
 **Unified Interface for World Models in Reinforcement Learning**
 
 *One API. Multiple Architectures. Infinite Imagination.*
