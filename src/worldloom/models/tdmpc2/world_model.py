@@ -10,6 +10,9 @@ from ...core.latent_space import SimNormLatentSpace
 from ...core.registry import WorldModelRegistry
 from ...core.state import LatentState
 from ...core.trajectory import Trajectory
+from .dynamics import Dynamics
+from .encoder import MLPEncoder
+from .heads import PolicyHead, QEnsemble, RewardHead
 
 
 @WorldModelRegistry.register("tdmpc2", TDMPC2Config)
@@ -34,72 +37,60 @@ class TDMPC2WorldModel(nn.Module):
             simnorm_dim=config.simnorm_dim,
         )
 
-        # Encoder
+        # Compute observation dimension
         obs_dim = (
             config.obs_shape[0]
             if len(config.obs_shape) == 1
             else int(torch.prod(torch.tensor(config.obs_shape)).item())
         )
 
-        self.encoder = nn.Sequential(
-            nn.Linear(obs_dim, config.hidden_dim),
-            nn.LayerNorm(config.hidden_dim),
-            nn.Mish(),
-            nn.Linear(config.hidden_dim, config.hidden_dim),
-            nn.LayerNorm(config.hidden_dim),
-            nn.Mish(),
-            nn.Linear(config.hidden_dim, config.latent_dim),
+        # Encoder
+        self._encoder = MLPEncoder(
+            obs_dim=obs_dim,
+            hidden_dim=config.hidden_dim,
+            latent_dim=config.latent_dim,
         )
 
-        # Dynamics MLP
-        dynamics_input_dim = config.latent_dim + config.action_dim
-        self.task_embedding: nn.Embedding | None = None
-        if config.num_tasks > 1:
-            dynamics_input_dim += config.task_dim
-            self.task_embedding = nn.Embedding(config.num_tasks, config.task_dim)
-
-        self.dynamics = nn.Sequential(
-            nn.Linear(dynamics_input_dim, config.hidden_dim),
-            nn.LayerNorm(config.hidden_dim),
-            nn.Mish(),
-            nn.Linear(config.hidden_dim, config.hidden_dim),
-            nn.LayerNorm(config.hidden_dim),
-            nn.Mish(),
-            nn.Linear(config.hidden_dim, config.latent_dim),
+        # Dynamics
+        self._dynamics = Dynamics(
+            latent_dim=config.latent_dim,
+            action_dim=config.action_dim,
+            hidden_dim=config.hidden_dim,
+            num_tasks=config.num_tasks,
+            task_dim=config.task_dim,
         )
 
         # Reward prediction
-        self.reward_head = nn.Sequential(
-            nn.Linear(config.latent_dim + config.action_dim, config.hidden_dim),
-            nn.LayerNorm(config.hidden_dim),
-            nn.Mish(),
-            nn.Linear(config.hidden_dim, 1),
+        self._reward_head = RewardHead(
+            latent_dim=config.latent_dim,
+            action_dim=config.action_dim,
+            hidden_dim=config.hidden_dim,
         )
 
         # Q-function ensemble
-        self.q_networks = nn.ModuleList(
-            [
-                nn.Sequential(
-                    nn.Linear(config.latent_dim + config.action_dim, config.hidden_dim),
-                    nn.LayerNorm(config.hidden_dim),
-                    nn.Mish(),
-                    nn.Linear(config.hidden_dim, config.hidden_dim),
-                    nn.LayerNorm(config.hidden_dim),
-                    nn.Mish(),
-                    nn.Linear(config.hidden_dim, 1),
-                )
-                for _ in range(config.num_q_networks)
-            ]
+        self._q_ensemble = QEnsemble(
+            latent_dim=config.latent_dim,
+            action_dim=config.action_dim,
+            hidden_dim=config.hidden_dim,
+            num_q_networks=config.num_q_networks,
         )
 
         # Policy (for MPC warm-start)
-        self.policy = nn.Sequential(
-            nn.Linear(config.latent_dim, config.hidden_dim),
-            nn.LayerNorm(config.hidden_dim),
-            nn.Mish(),
-            nn.Linear(config.hidden_dim, config.action_dim),
-            nn.Tanh(),
+        self._policy = PolicyHead(
+            latent_dim=config.latent_dim,
+            action_dim=config.action_dim,
+            hidden_dim=config.hidden_dim,
         )
+
+        # Legacy attribute aliases for state_dict compatibility
+        # These expose the internal nn.Sequential/ModuleList for loading old checkpoints
+        self.encoder = self._encoder.mlp
+        self.dynamics = self._dynamics.mlp
+        self.task_embedding = self._dynamics.task_embedding
+        self.reward_head = self._reward_head.mlp
+        q_mlps: list[nn.Module] = [q.mlp for q in self._q_ensemble.q_networks]  # type: ignore[misc]
+        self.q_networks = nn.ModuleList(q_mlps)
+        self.policy = self._policy.mlp
 
         self.register_buffer("_device_tracker", torch.empty(0))
 
@@ -111,10 +102,7 @@ class TDMPC2WorldModel(nn.Module):
 
     def encode(self, obs: Tensor, deterministic: bool = False) -> LatentState:
         """Encode observation to SimNorm latent space."""
-        if obs.dim() > 2:
-            obs = obs.flatten(start_dim=1)
-
-        z = self.encoder(obs)
+        z = self._encoder(obs)
         z = self.latent_space.sample(z)
 
         return LatentState(
@@ -133,14 +121,8 @@ class TDMPC2WorldModel(nn.Module):
         assert state.deterministic is not None, "TD-MPC2 requires deterministic state"
         z = state.deterministic
 
-        if self.task_embedding is not None and task_id is not None:
-            task_emb = self.task_embedding(task_id)
-            dynamics_input = torch.cat([z, action, task_emb], dim=-1)
-        else:
-            dynamics_input = torch.cat([z, action], dim=-1)
-
         # Residual prediction
-        z_delta = self.dynamics(dynamics_input)
+        z_delta = self._dynamics(z, action, task_id)
         z_next = z + z_delta
         z_next = self.latent_space.sample(z_next)
 
@@ -158,13 +140,12 @@ class TDMPC2WorldModel(nn.Module):
         assert state.deterministic is not None, "TD-MPC2 requires deterministic state"
         z = state.deterministic
 
-        action = self.policy(z)
-        za = torch.cat([z, action], dim=-1)
-
-        q_values = torch.stack([q(za) for q in self.q_networks], dim=0)
+        action = self._policy(z)
+        reward = self._reward_head(z, action)
+        q_values = self._q_ensemble(z, action)
 
         return {
-            "reward": self.reward_head(za),
+            "reward": reward,
             "q_values": q_values,
             "action": action,
         }
@@ -184,8 +165,7 @@ class TDMPC2WorldModel(nn.Module):
 
             assert state.deterministic is not None
             z = state.deterministic
-            za = torch.cat([z, actions[t]], dim=-1)
-            reward = self.reward_head(za)
+            reward = self._reward_head(z, actions[t])
             rewards.append(reward)
 
         return Trajectory(
@@ -211,16 +191,14 @@ class TDMPC2WorldModel(nn.Module):
         """Predict Q-value ensemble."""
         assert state.deterministic is not None, "TD-MPC2 requires deterministic state"
         z = state.deterministic
-        za = torch.cat([z, action], dim=-1)
-        q_values = torch.stack([q(za) for q in self.q_networks], dim=0)
+        q_values = self._q_ensemble(z, action)
         return q_values.squeeze(-1)
 
     def predict_reward(self, state: LatentState, action: Tensor) -> Tensor:
         """Predict reward."""
         assert state.deterministic is not None, "TD-MPC2 requires deterministic state"
         z = state.deterministic
-        za = torch.cat([z, action], dim=-1)
-        return self.reward_head(za).squeeze(-1)
+        return self._reward_head(z, action).squeeze(-1)
 
     def compute_loss(self, batch: dict[str, Tensor]) -> dict[str, Tensor]:
         """
@@ -289,7 +267,7 @@ class TDMPC2WorldModel(nn.Module):
                 assert next_state.deterministic is not None
                 z_next = next_state.deterministic
                 state_next = LatentState(deterministic=z_next, latent_type="simnorm")
-                next_action = self.policy(z_next)
+                next_action = self._policy(z_next)
                 q_next = self.predict_q(state_next, next_action).min(dim=0)[0]
                 target = rewards[:, t + 1] + gamma * q_next
 
