@@ -1,3 +1,14 @@
+---
+title: WorldLoom Demo
+emoji: 🌐
+colorFrom: blue
+colorTo: purple
+sdk: gradio
+sdk_version: "5.0.0"
+app_file: app.py
+pinned: false
+---
+
 # WorldLoom Demo
 
 Experience world models in action!
