@@ -8,7 +8,7 @@ def run_imagination(model_type, horizon, batch_size):
     """Run imagination rollout visualization"""
     # Placeholder - will be replaced with actual model
     rewards = np.random.randn(horizon).cumsum()
-    continues = np.sigmoid(np.random.randn(horizon).cumsum())
+    continues = 1 / (1 + np.exp(-np.random.randn(horizon).cumsum()))
 
     fig_rewards = plot_rewards(rewards)
     fig_continues = plot_continues(continues)
