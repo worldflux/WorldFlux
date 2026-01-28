@@ -6,9 +6,17 @@ from typing import Any
 
 import torch
 
-from .config import DreamerV3Config, TDMPC2Config, WorldModelConfig
+from .config import WorldModelConfig
 from .exceptions import ConfigurationError
 from .protocol import WorldModel
+
+# Model type aliases for user convenience
+TYPE_ALIASES: dict[str, str] = {
+    "dreamerv3": "dreamer",
+    "dreamer": "dreamer",
+    "tdmpc2": "tdmpc2",
+    "tdmpc": "tdmpc2",
+}
 
 
 def _validate_config_json(config_path: str) -> dict[str, Any]:
@@ -130,13 +138,7 @@ class WorldModelRegistry:
         if ":" in name_or_path:
             model_type, size = name_or_path.split(":", 1)
 
-            type_map = {
-                "dreamerv3": "dreamer",
-                "dreamer": "dreamer",
-                "tdmpc2": "tdmpc2",
-                "tdmpc": "tdmpc2",
-            }
-            normalized_type = type_map.get(model_type.lower(), model_type.lower())
+            normalized_type = TYPE_ALIASES.get(model_type.lower(), model_type.lower())
 
             if normalized_type not in cls._model_registry:
                 raise ValueError(
@@ -181,14 +183,8 @@ class AutoConfig:
 
         if ":" in name_or_path:
             model_type, size = name_or_path.split(":", 1)
-            type_map = {"dreamerv3": "dreamer", "tdmpc2": "tdmpc2"}
-            normalized = type_map.get(model_type.lower(), model_type.lower())
-
-            config_map = {
-                "dreamer": DreamerV3Config,
-                "tdmpc2": TDMPC2Config,
-            }
-            config_class = config_map.get(normalized, WorldModelConfig)
+            normalized = TYPE_ALIASES.get(model_type.lower(), model_type.lower())
+            config_class = WorldModelRegistry._config_registry.get(normalized, WorldModelConfig)
 
             if hasattr(config_class, "from_size"):
                 return config_class.from_size(size)

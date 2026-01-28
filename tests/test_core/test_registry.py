@@ -1,0 +1,142 @@
+"""Tests for registry and type alias resolution."""
+
+import pytest
+
+from worldloom.core.config import DreamerV3Config, TDMPC2Config, WorldModelConfig
+from worldloom.core.registry import (
+    TYPE_ALIASES,
+    AutoConfig,
+    AutoWorldModel,
+    WorldModelRegistry,
+)
+
+
+class TestTypeAliases:
+    """TYPE_ALIASES constant tests."""
+
+    def test_all_aliases_defined(self):
+        """All expected aliases are defined."""
+        expected = {"dreamerv3", "dreamer", "tdmpc2", "tdmpc"}
+        assert set(TYPE_ALIASES.keys()) == expected
+
+    def test_dreamer_aliases_resolve_correctly(self):
+        """Dreamer aliases resolve to 'dreamer'."""
+        assert TYPE_ALIASES["dreamerv3"] == "dreamer"
+        assert TYPE_ALIASES["dreamer"] == "dreamer"
+
+    def test_tdmpc_aliases_resolve_correctly(self):
+        """TD-MPC aliases resolve to 'tdmpc2'."""
+        assert TYPE_ALIASES["tdmpc2"] == "tdmpc2"
+        assert TYPE_ALIASES["tdmpc"] == "tdmpc2"
+
+
+class TestWorldModelRegistryAliases:
+    """WorldModelRegistry.from_pretrained alias resolution tests."""
+
+    def test_dreamerv3_alias(self):
+        """'dreamerv3:size12m' resolves correctly."""
+        model = WorldModelRegistry.from_pretrained("dreamerv3:size12m")
+        assert model.config.model_type == "dreamer"
+
+    def test_dreamer_alias(self):
+        """'dreamer:size12m' resolves correctly."""
+        model = WorldModelRegistry.from_pretrained("dreamer:size12m")
+        assert model.config.model_type == "dreamer"
+
+    def test_tdmpc2_alias(self):
+        """'tdmpc2:5m' resolves correctly."""
+        model = WorldModelRegistry.from_pretrained("tdmpc2:5m")
+        assert model.config.model_type == "tdmpc2"
+
+    def test_tdmpc_alias(self):
+        """'tdmpc:5m' resolves correctly."""
+        model = WorldModelRegistry.from_pretrained("tdmpc:5m")
+        assert model.config.model_type == "tdmpc2"
+
+    def test_case_insensitive(self):
+        """Aliases are case insensitive."""
+        model1 = WorldModelRegistry.from_pretrained("DreamerV3:size12m")
+        model2 = WorldModelRegistry.from_pretrained("TDMPC2:5m")
+        assert model1.config.model_type == "dreamer"
+        assert model2.config.model_type == "tdmpc2"
+
+    def test_unknown_type_raises(self):
+        """Unknown model type raises ValueError."""
+        with pytest.raises(ValueError, match="Unknown model type"):
+            WorldModelRegistry.from_pretrained("unknown:size")
+
+    def test_invalid_format_raises(self):
+        """Invalid format without colon raises ValueError."""
+        with pytest.raises(ValueError, match="Invalid model identifier"):
+            WorldModelRegistry.from_pretrained("invalid_format")
+
+
+class TestAutoConfigAliases:
+    """AutoConfig.from_pretrained alias resolution tests."""
+
+    def test_dreamerv3_alias(self):
+        """'dreamerv3:size12m' returns DreamerV3Config."""
+        config = AutoConfig.from_pretrained("dreamerv3:size12m")
+        assert isinstance(config, DreamerV3Config)
+        assert config.model_type == "dreamer"
+
+    def test_dreamer_alias(self):
+        """'dreamer:size12m' returns DreamerV3Config."""
+        config = AutoConfig.from_pretrained("dreamer:size12m")
+        assert isinstance(config, DreamerV3Config)
+        assert config.model_type == "dreamer"
+
+    def test_tdmpc2_alias(self):
+        """'tdmpc2:5m' returns TDMPC2Config."""
+        config = AutoConfig.from_pretrained("tdmpc2:5m")
+        assert isinstance(config, TDMPC2Config)
+        assert config.model_type == "tdmpc2"
+
+    def test_tdmpc_alias(self):
+        """'tdmpc:5m' returns TDMPC2Config (bug fix verification)."""
+        config = AutoConfig.from_pretrained("tdmpc:5m")
+        assert isinstance(config, TDMPC2Config)
+        assert config.model_type == "tdmpc2"
+
+    def test_case_insensitive(self):
+        """Aliases are case insensitive."""
+        config1 = AutoConfig.from_pretrained("DreamerV3:size12m")
+        config2 = AutoConfig.from_pretrained("TDMPC:5m")
+        assert isinstance(config1, DreamerV3Config)
+        assert isinstance(config2, TDMPC2Config)
+
+    def test_unknown_type_fallback(self):
+        """Unknown type falls back to base WorldModelConfig."""
+        config = AutoConfig.from_pretrained("unknown:size")
+        assert isinstance(config, WorldModelConfig)
+        assert config.model_name == "size"
+
+    def test_invalid_format_raises(self):
+        """Invalid format without colon raises ValueError."""
+        with pytest.raises(ValueError, match="Invalid config identifier"):
+            AutoConfig.from_pretrained("invalid_format")
+
+
+class TestAutoWorldModel:
+    """AutoWorldModel.from_pretrained tests."""
+
+    def test_delegates_to_registry(self):
+        """AutoWorldModel delegates to WorldModelRegistry."""
+        model = AutoWorldModel.from_pretrained("dreamer:size12m")
+        assert model.config.model_type == "dreamer"
+
+
+class TestRegistryConsistency:
+    """Verify registry and TYPE_ALIASES are consistent."""
+
+    def test_all_canonical_types_registered(self):
+        """All canonical types from TYPE_ALIASES are in model registry."""
+        canonical_types = set(TYPE_ALIASES.values())
+        registered_types = set(WorldModelRegistry.list_models().keys())
+        assert canonical_types.issubset(registered_types)
+
+    def test_all_canonical_types_have_configs(self):
+        """All canonical types have config classes registered."""
+        canonical_types = set(TYPE_ALIASES.values())
+        for model_type in canonical_types:
+            assert model_type in WorldModelRegistry._config_registry
