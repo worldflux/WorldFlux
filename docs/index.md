@@ -8,8 +8,8 @@
 
 *One API. Multiple Architectures. Infinite Imagination.*
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/worldflux/WorldFlux/blob/main/examples/worldflux_quickstart.ipynb)
-[![GitHub](https://img.shields.io/badge/GitHub-worldflux-blue?logo=github)](https://github.com/worldflux/WorldFlux)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/worldflux/Worldflux/blob/main/examples/worldflux_quickstart.ipynb)
+[![GitHub](https://img.shields.io/badge/GitHub-worldflux-blue?logo=github)](https://github.com/worldflux/Worldflux)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ---
@@ -127,19 +127,19 @@ graph LR
 ## Installation
 
 ```bash
-git clone https://github.com/worldflux/WorldFlux.git
+git clone https://github.com/worldflux/Worldflux.git
 cd worldflux
 pip install -e ".[training]"
 ```
 
 ## Try It Now
 
-The fastest way to get started is our [interactive Colab notebook](https://colab.research.google.com/github/worldflux/WorldFlux/blob/main/examples/worldflux_quickstart.ipynb).
+The fastest way to get started is our [interactive Colab notebook](https://colab.research.google.com/github/worldflux/Worldflux/blob/main/examples/worldflux_quickstart.ipynb).
 
 ## Contributing
 
-Contributions are welcome! See our [Contributing Guide](https://github.com/worldflux/WorldFlux/blob/main/CONTRIBUTING.md).
+Contributions are welcome! See our [Contributing Guide](https://github.com/worldflux/Worldflux/blob/main/CONTRIBUTING.md).
 
 ## License
 
-MIT License - see [LICENSE](https://github.com/worldflux/WorldFlux/blob/main/LICENSE) for details.
+MIT License - see [LICENSE](https://github.com/worldflux/Worldflux/blob/main/LICENSE) for details.

@@ -318,7 +318,7 @@ trajectory = model.imagine(states, actions)  # Batched
 
 If your issue isn't listed here:
 
-1. Check [GitHub Issues](https://github.com/worldflux/WorldFlux/issues)
+1. Check [GitHub Issues](https://github.com/worldflux/Worldflux/issues)
 2. Search existing issues for similar problems
 3. Open a new issue with:
    - WorldFlux version (`worldflux.__version__`)

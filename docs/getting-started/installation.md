@@ -8,7 +8,7 @@
 ## From Source (Recommended)
 
 ```bash
-git clone https://github.com/worldflux/WorldFlux.git
+git clone https://github.com/worldflux/Worldflux.git
 cd worldflux
 pip install -e "."
 ```

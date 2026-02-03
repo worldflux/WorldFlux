@@ -41,5 +41,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - MuJoCo data collection and training
   - Imagination visualization
 
-[Unreleased]: https://github.com/worldflux/WorldFlux/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/worldflux/WorldFlux/releases/tag/v0.1.0
+[Unreleased]: https://github.com/worldflux/Worldflux/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/worldflux/Worldflux/releases/tag/v0.1.0

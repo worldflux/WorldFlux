@@ -27,6 +27,6 @@ Select a model type, set the imagination horizon, and click "Run Imagination"!
 
 ## Links
 
-- [GitHub](https://github.com/worldflux/WorldFlux)
+- [GitHub](https://github.com/worldflux/Worldflux)
 - [PyPI](https://pypi.org/project/worldflux/)
 - [Documentation](https://worldflux.readthedocs.io)

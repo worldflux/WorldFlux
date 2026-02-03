@@ -6,7 +6,7 @@ Thank you for your interest in contributing to WorldFlux! This document provides
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/worldflux/WorldFlux.git
+   git clone https://github.com/worldflux/Worldflux.git
    cd worldflux
    ```
 
