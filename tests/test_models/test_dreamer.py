@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from worldflux import AutoWorldModel, DreamerV3Config
+from worldflux import AutoWorldModel, Batch, DreamerV3Config
 from worldflux.models.dreamer import DreamerV3WorldModel
 
 
@@ -49,8 +49,8 @@ class TestDreamerV3WorldModel:
         obs = torch.randn(4, 3, 64, 64)
         state = small_model.encode(obs)
 
-        assert state.deterministic is not None
-        assert state.stochastic is not None
+        assert state.tensors.get("deter") is not None
+        assert state.tensors.get("stoch") is not None
         assert state.batch_size == 4
 
     def test_predict(self, small_model):
@@ -58,10 +58,10 @@ class TestDreamerV3WorldModel:
         action = torch.randn(4, 6)
 
         state = small_model.encode(obs)
-        next_state = small_model.predict(state, action)
+        next_state = small_model.transition(state, action)
 
-        assert next_state.deterministic.shape == state.deterministic.shape
-        assert next_state.stochastic.shape == state.stochastic.shape
+        assert next_state.tensors["deter"].shape == state.tensors["deter"].shape
+        assert next_state.tensors["stoch"].shape == state.tensors["stoch"].shape
 
     def test_observe(self, small_model):
         obs1 = torch.randn(4, 3, 64, 64)
@@ -69,28 +69,28 @@ class TestDreamerV3WorldModel:
         action = torch.randn(4, 6)
 
         state = small_model.encode(obs1)
-        next_state = small_model.observe(state, action, obs2)
+        next_state = small_model.update(state, action, obs2)
 
         # Posterior should have both prior and posterior logits
-        assert next_state.prior_logits is not None
-        assert next_state.posterior_logits is not None
+        assert next_state.tensors.get("prior_logits") is not None
+        assert next_state.tensors.get("posterior_logits") is not None
 
     def test_decode(self, small_model):
         obs = torch.randn(4, 3, 64, 64)
         state = small_model.encode(obs)
         decoded = small_model.decode(state)
 
-        assert "obs" in decoded
-        assert "reward" in decoded
-        assert "continue" in decoded
-        assert decoded["obs"].shape == obs.shape
+        assert "obs" in decoded.preds
+        assert "reward" in decoded.preds
+        assert "continue" in decoded.preds
+        assert decoded.preds["obs"].shape == obs.shape
 
     def test_imagine(self, small_model):
         obs = torch.randn(4, 3, 64, 64)
         actions = torch.randn(10, 4, 6)
 
         initial = small_model.encode(obs)
-        trajectory = small_model.imagine(initial, actions)
+        trajectory = small_model.rollout(initial, actions)
 
         assert len(trajectory) == 11  # initial + 10 steps
         assert trajectory.rewards.shape == (10, 4)
@@ -99,28 +99,28 @@ class TestDreamerV3WorldModel:
     def test_initial_state(self, small_model):
         state = small_model.initial_state(batch_size=4)
 
-        assert state.deterministic is not None
-        assert state.stochastic is not None
+        assert state.tensors.get("deter") is not None
+        assert state.tensors.get("stoch") is not None
         assert state.batch_size == 4
 
-    def test_compute_loss(self, small_model):
-        batch = {
-            "obs": torch.randn(4, 8, 3, 64, 64),
-            "actions": torch.randn(4, 8, 6),
-            "rewards": torch.randn(4, 8),
-            "continues": torch.ones(4, 8),
-        }
+    def test_loss(self, small_model):
+        batch = Batch(
+            obs=torch.randn(4, 8, 3, 64, 64),
+            actions=torch.randn(4, 8, 6),
+            rewards=torch.randn(4, 8),
+            terminations=torch.zeros(4, 8),
+        )
 
-        losses = small_model.compute_loss(batch)
+        loss_out = small_model.loss(batch)
 
-        assert "loss" in losses
-        assert "kl" in losses
-        assert "reconstruction" in losses
-        assert "reward" in losses
-        assert "continue" in losses
+        assert "kl" in loss_out.components
+        assert "reconstruction" in loss_out.components
+        assert "reward" in loss_out.components
+        assert "continue" in loss_out.components
 
         # All losses should be scalars
-        for name, loss in losses.items():
+        assert loss_out.loss.dim() == 0
+        for name, loss in loss_out.components.items():
             assert loss.dim() == 0, f"{name} should be scalar"
 
     def test_training_loss_decreases(self, small_model):
@@ -128,20 +128,20 @@ class TestDreamerV3WorldModel:
         small_model.train()
         optimizer = torch.optim.Adam(small_model.parameters(), lr=1e-4)
 
-        batch = {
-            "obs": torch.randn(4, 8, 3, 64, 64),
-            "actions": torch.randn(4, 8, 6),
-            "rewards": torch.randn(4, 8),
-            "continues": torch.ones(4, 8),
-        }
+        batch = Batch(
+            obs=torch.randn(4, 8, 3, 64, 64),
+            actions=torch.randn(4, 8, 6),
+            rewards=torch.randn(4, 8),
+            terminations=torch.zeros(4, 8),
+        )
 
         losses = []
         for _ in range(3):
             optimizer.zero_grad()
-            loss_dict = small_model.compute_loss(batch)
-            loss_dict["loss"].backward()
+            loss_out = small_model.loss(batch)
+            loss_out.loss.backward()
             optimizer.step()
-            losses.append(loss_dict["loss"].item())
+            losses.append(loss_out.loss.item())
 
         # Loss should generally decrease (not strictly required due to noise)
         assert losses[-1] < losses[0] * 2  # At least not exploding
@@ -157,7 +157,7 @@ class TestDreamerV3WorldModel:
         actions = torch.randn(5, 2, 6, requires_grad=True)
 
         initial = small_model.encode(obs)
-        trajectory = small_model.imagine(initial, actions)
+        trajectory = small_model.rollout(initial, actions)
 
         # Compute loss and backpropagate
         loss = trajectory.rewards.sum()
@@ -176,12 +176,16 @@ class TestDreamerV3WorldModel:
 
         with torch.no_grad():
             initial = small_model.encode(obs)
-            trajectory = small_model.imagine(initial, actions)
+            trajectory = small_model.rollout(initial, actions)
 
         # Check all states for NaN/Inf
         for state in trajectory.states:
-            assert not torch.isnan(state.features).any(), "NaN in state features"
-            assert not torch.isinf(state.features).any(), "Inf in state features"
+            features = torch.cat(
+                [state.tensors["deter"], state.tensors["stoch"].flatten(1)],
+                dim=-1,
+            )
+            assert not torch.isnan(features).any(), "NaN in state features"
+            assert not torch.isinf(features).any(), "Inf in state features"
 
         # Check rewards and continues
         assert not torch.isnan(trajectory.rewards).any(), "NaN in rewards"

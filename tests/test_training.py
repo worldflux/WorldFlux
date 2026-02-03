@@ -7,8 +7,16 @@ import numpy as np
 import pytest
 import torch
 
-from worldflux import create_world_model
-from worldflux.core.exceptions import ConfigurationError
+from worldflux import Batch, create_world_model
+from worldflux.core.exceptions import (
+    BufferError,
+    ConfigurationError,
+    ShapeMismatchError,
+    TrainingError,
+)
+from worldflux.core.model import WorldModel
+from worldflux.core.output import LossOutput
+from worldflux.core.state import State
 from worldflux.training import (
     CheckpointCallback,
     LoggingCallback,
@@ -20,6 +28,60 @@ from worldflux.training import (
 )
 from worldflux.training.callbacks import EarlyStoppingCallback, ProgressCallback
 from worldflux.training.data import create_random_buffer
+
+
+class DummyModel(WorldModel):
+    """Minimal WorldModel for trainer tests."""
+
+    def __init__(self):
+        super().__init__()
+        self.linear = torch.nn.Linear(4, 1)
+
+    def encode(self, obs, deterministic: bool = False) -> State:
+        if isinstance(obs, dict):
+            obs = obs["obs"]
+        return State(tensors={"latent": obs})
+
+    def transition(self, state: State, action: torch.Tensor, deterministic: bool = False) -> State:
+        return state
+
+    def update(self, state: State, action: torch.Tensor, obs) -> State:
+        return self.encode(obs)
+
+    def decode(self, state: State):
+        return None
+
+    def loss(self, batch) -> LossOutput:
+        obs = batch.obs
+        if isinstance(obs, dict):
+            obs = obs["obs"]
+        pred = self.linear(obs)
+        loss = pred.mean()
+        return LossOutput(loss=loss, components={"dummy": loss})
+
+
+class NaNModel(WorldModel):
+    """WorldModel that produces NaN loss."""
+
+    def __init__(self):
+        super().__init__()
+        self.param = torch.nn.Parameter(torch.tensor(1.0))
+
+    def encode(self, obs, deterministic: bool = False) -> State:
+        return State(tensors={"latent": obs})
+
+    def transition(self, state: State, action: torch.Tensor, deterministic: bool = False) -> State:
+        return state
+
+    def update(self, state: State, action: torch.Tensor, obs) -> State:
+        return state
+
+    def decode(self, state: State):
+        return None
+
+    def loss(self, batch) -> LossOutput:
+        loss = self.param * torch.tensor(float("nan"))
+        return LossOutput(loss=loss, components={"loss": loss})
 
 
 class TestTrainingConfig:
@@ -129,15 +191,10 @@ class TestReplayBuffer:
 
         batch = buffer.sample(batch_size=16, seq_len=10)
 
-        assert "obs" in batch
-        assert "actions" in batch
-        assert "rewards" in batch
-        assert "continues" in batch
-
-        assert batch["obs"].shape == (16, 10, 4)
-        assert batch["actions"].shape == (16, 10, 2)
-        assert batch["rewards"].shape == (16, 10)
-        assert batch["continues"].shape == (16, 10)
+        assert batch.obs.shape == (16, 10, 4)
+        assert batch.actions.shape == (16, 10, 2)
+        assert batch.rewards.shape == (16, 10)
+        assert batch.terminations.shape == (16, 10)
 
     def test_sample_with_device(self):
         buffer = create_random_buffer(
@@ -148,7 +205,7 @@ class TestReplayBuffer:
         )
 
         batch = buffer.sample(batch_size=8, seq_len=5, device="cpu")
-        assert batch["obs"].device == torch.device("cpu")
+        assert batch.obs.device == torch.device("cpu")
 
     def test_save_load(self):
         buffer = create_random_buffer(
@@ -195,6 +252,40 @@ class TestReplayBuffer:
 
         assert len(buffer) == 100  # Capped at capacity
 
+    def test_add_episode_action_length_mismatch(self):
+        buffer = ReplayBuffer(capacity=100, obs_shape=(4,), action_dim=2)
+        obs = np.random.randn(10, 4).astype(np.float32)
+        actions = np.random.randn(9, 2).astype(np.float32)
+        rewards = np.random.randn(10).astype(np.float32)
+        with pytest.raises(ShapeMismatchError):
+            buffer.add_episode(obs, actions, rewards)
+
+    def test_add_episode_reward_length_mismatch(self):
+        buffer = ReplayBuffer(capacity=100, obs_shape=(4,), action_dim=2)
+        obs = np.random.randn(10, 4).astype(np.float32)
+        actions = np.random.randn(10, 2).astype(np.float32)
+        rewards = np.random.randn(9).astype(np.float32)
+        with pytest.raises(ShapeMismatchError):
+            buffer.add_episode(obs, actions, rewards)
+
+    def test_add_episode_dones_length_mismatch(self):
+        buffer = ReplayBuffer(capacity=100, obs_shape=(4,), action_dim=2)
+        obs = np.random.randn(10, 4).astype(np.float32)
+        actions = np.random.randn(10, 2).astype(np.float32)
+        rewards = np.random.randn(10).astype(np.float32)
+        dones = np.random.randn(9).astype(np.float32)
+        with pytest.raises(ShapeMismatchError):
+            buffer.add_episode(obs, actions, rewards, dones=dones)
+
+    def test_sample_insufficient_data(self):
+        buffer = ReplayBuffer(capacity=100, obs_shape=(4,), action_dim=2)
+        obs = np.random.randn(5, 4).astype(np.float32)
+        actions = np.random.randn(5, 2).astype(np.float32)
+        rewards = np.random.randn(5).astype(np.float32)
+        buffer.add_episode(obs, actions, rewards)
+        with pytest.raises(BufferError):
+            buffer.sample(batch_size=2, seq_len=10)
+
 
 class TestTrajectoryDataset:
     """Tests for TrajectoryDataset."""
@@ -221,9 +312,9 @@ class TestTrajectoryDataset:
         dataset = TrajectoryDataset(buffer, seq_len=10, samples_per_epoch=100)
         sample = dataset[0]
 
-        assert sample["obs"].shape == (10, 4)
-        assert sample["actions"].shape == (10, 2)
-        assert sample["rewards"].shape == (10,)
+        assert sample.obs.shape == (10, 4)
+        assert sample.actions.shape == (10, 2)
+        assert sample.rewards.shape == (10,)
 
 
 class TestCallbacks:
@@ -369,6 +460,128 @@ class TestTrainer:
 
             assert "loss" in metrics
             assert isinstance(metrics["loss"], float)
+
+    def test_batch_provider_sample_args(self):
+        class Provider:
+            def __init__(self):
+                self.args = None
+
+            def sample(self, batch_size, seq_len=None, device="cpu"):
+                self.args = (batch_size, seq_len, device)
+                return Batch(obs=torch.randn(batch_size, 4))
+
+        provider = Provider()
+        model = DummyModel()
+        config = TrainingConfig(
+            total_steps=1,
+            batch_size=3,
+            sequence_length=7,
+            device="cpu",
+        )
+        trainer = Trainer(model, config, callbacks=[])
+        _ = trainer._next_batch(provider)
+        assert provider.args[0] == 3
+        assert provider.args[1] == 7
+        assert str(provider.args[2]) == str(trainer.device)
+
+    def test_iterable_dict_batch(self):
+        model = DummyModel()
+        config = TrainingConfig(total_steps=1, batch_size=2, sequence_length=1, device="cpu")
+        trainer = Trainer(model, config, callbacks=[])
+        data = [
+            {"obs": torch.randn(2, 4)},
+            {"obs": torch.randn(2, 4)},
+        ]
+        batch = trainer._next_batch(data)
+        assert isinstance(batch, Batch)
+        assert batch.obs.shape == (2, 4)
+
+    def test_gradient_accumulation_steps(self):
+        class CountingOptimizer(torch.optim.SGD):
+            def __init__(self, params):
+                super().__init__(params, lr=1e-3)
+                self.step_calls = 0
+
+            def step(self, *args, **kwargs):
+                self.step_calls += 1
+                return super().step(*args, **kwargs)
+
+        model = DummyModel()
+        optimizer = CountingOptimizer(model.parameters())
+        config = TrainingConfig(
+            total_steps=2,
+            batch_size=2,
+            sequence_length=1,
+            device="cpu",
+            grad_clip=0.0,
+            gradient_accumulation_steps=2,
+        )
+        trainer = Trainer(model, config, callbacks=[], optimizer=optimizer)
+
+        class Provider:
+            def sample(self, batch_size, seq_len=None, device="cpu"):
+                return Batch(obs=torch.randn(batch_size, 4))
+
+        data = Provider()
+        trainer._train_step(data)
+        trainer._train_step(data)
+        assert optimizer.step_calls == 1
+
+    def test_nan_loss_raises(self):
+        model = NaNModel()
+        config = TrainingConfig(total_steps=1, batch_size=2, sequence_length=1, device="cpu")
+        trainer = Trainer(model, config, callbacks=[])
+
+        class Provider:
+            def sample(self, batch_size, seq_len=None, device="cpu"):
+                return Batch(obs=torch.randn(batch_size, 4))
+
+        with pytest.raises(TrainingError):
+            trainer._train_step(Provider())
+
+    def test_early_stopping_triggers(self):
+        class ConstantLossModel(WorldModel):
+            def __init__(self):
+                super().__init__()
+                self.param = torch.nn.Parameter(torch.tensor(0.0))
+
+            def encode(self, obs, deterministic: bool = False) -> State:
+                return State(tensors={"latent": obs})
+
+            def transition(
+                self, state: State, action: torch.Tensor, deterministic: bool = False
+            ) -> State:
+                return state
+
+            def update(self, state: State, action: torch.Tensor, obs) -> State:
+                return state
+
+            def decode(self, state: State):
+                return None
+
+            def loss(self, batch) -> LossOutput:
+                loss = self.param * 0 + 1.0
+                return LossOutput(loss=loss, components={"loss": loss})
+
+        model = ConstantLossModel()
+        config = TrainingConfig(
+            total_steps=5,
+            batch_size=2,
+            sequence_length=1,
+            device="cpu",
+            save_interval=100,
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = config.with_updates(output_dir=tmpdir)
+            callbacks = [EarlyStoppingCallback(patience=1, min_delta=0.0)]
+            trainer = Trainer(model, config, callbacks=callbacks)
+
+            class Provider:
+                def sample(self, batch_size, seq_len=None, device="cpu"):
+                    return Batch(obs=torch.randn(batch_size, 4))
+
+            trainer.train(Provider())
+            assert trainer.state.should_stop is True
 
 
 class TestTrainFunction:

@@ -134,7 +134,7 @@ class TestGradientFlow:
         decoded = model.decode(state)
 
         # Backprop through reconstruction
-        loss = decoded["obs"].mean()
+        loss = decoded.preds["obs"].mean()
         loss.backward()
 
         assert obs.grad is not None
@@ -157,7 +157,7 @@ class TestGradientFlow:
         action = torch.randn(2, 6)
 
         state = model.encode(obs)
-        next_state = model.predict(state, action)
+        next_state = model.transition(state, action)
         reward = model.predict_reward(next_state, action)
 
         loss = reward.mean()

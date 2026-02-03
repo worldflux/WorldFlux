@@ -1,33 +1,12 @@
-"""Tests for registry and type alias resolution."""
+"""Tests for registry and alias resolution."""
+
+import json
 
 import pytest
 
 from worldflux.core.config import DreamerV3Config, TDMPC2Config, WorldModelConfig
-from worldflux.core.registry import (
-    TYPE_ALIASES,
-    AutoConfig,
-    AutoWorldModel,
-    WorldModelRegistry,
-)
-
-
-class TestTypeAliases:
-    """TYPE_ALIASES constant tests."""
-
-    def test_all_aliases_defined(self):
-        """All expected aliases are defined."""
-        expected = {"dreamerv3", "dreamer", "tdmpc2", "tdmpc"}
-        assert set(TYPE_ALIASES.keys()) == expected
-
-    def test_dreamer_aliases_resolve_correctly(self):
-        """Dreamer aliases resolve to 'dreamer'."""
-        assert TYPE_ALIASES["dreamerv3"] == "dreamer"
-        assert TYPE_ALIASES["dreamer"] == "dreamer"
-
-    def test_tdmpc_aliases_resolve_correctly(self):
-        """TD-MPC aliases resolve to 'tdmpc2'."""
-        assert TYPE_ALIASES["tdmpc2"] == "tdmpc2"
-        assert TYPE_ALIASES["tdmpc"] == "tdmpc2"
+from worldflux.core.exceptions import ConfigurationError
+from worldflux.core.registry import AutoConfig, AutoWorldModel, ConfigRegistry, WorldModelRegistry
 
 
 class TestWorldModelRegistryAliases:
@@ -127,16 +106,32 @@ class TestAutoWorldModel:
 
 
 class TestRegistryConsistency:
-    """Verify registry and TYPE_ALIASES are consistent."""
+    """Verify registry consistency."""
 
-    def test_all_canonical_types_registered(self):
-        """All canonical types from TYPE_ALIASES are in model registry."""
-        canonical_types = set(TYPE_ALIASES.values())
-        registered_types = set(WorldModelRegistry.list_models().keys())
-        assert canonical_types.issubset(registered_types)
+    def test_all_registered_types_have_configs(self):
+        """All registered model types have configs registered."""
+        for model_type in WorldModelRegistry.list_models().keys():
+            config = AutoConfig.from_pretrained(f"{model_type}:ci")
+            assert isinstance(config, WorldModelConfig)
 
-    def test_all_canonical_types_have_configs(self):
-        """All canonical types have config classes registered."""
-        canonical_types = set(TYPE_ALIASES.values())
-        for model_type in canonical_types:
-            assert model_type in WorldModelRegistry._config_registry
+
+class TestConfigRegistryErrors:
+    """ConfigRegistry error handling tests."""
+
+    def test_missing_model_type_raises(self, tmp_path):
+        config_path = tmp_path / "config.json"
+        config_path.write_text(json.dumps({"model_name": "test"}))
+        with pytest.raises(ConfigurationError):
+            ConfigRegistry.from_pretrained(str(tmp_path))
+
+    def test_invalid_json_raises(self, tmp_path):
+        config_path = tmp_path / "config.json"
+        config_path.write_text("{invalid-json")
+        with pytest.raises(ConfigurationError):
+            ConfigRegistry.from_pretrained(str(tmp_path))
+
+    def test_unregistered_model_type_raises(self, tmp_path):
+        config_path = tmp_path / "config.json"
+        config_path.write_text(json.dumps({"model_type": "unknown"}))
+        with pytest.raises(ConfigurationError):
+            WorldModelRegistry.from_pretrained(str(tmp_path))

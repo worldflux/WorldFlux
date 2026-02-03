@@ -24,6 +24,7 @@ class TestListModels:
         assert isinstance(models, list)
         assert "dreamerv3:size12m" in models
         assert "tdmpc2:5m" in models
+        assert "jepa:base" in models
 
     def test_list_models_verbose(self):
         """list_models with verbose returns detailed info."""
@@ -54,6 +55,10 @@ class TestGetModelInfo:
         """Unknown model raises ValueError."""
         with pytest.raises(ValueError, match="Unknown model"):
             get_model_info("unknown-model")
+
+    def test_get_model_info_jepa_alias(self):
+        info = get_model_info("jepa")
+        assert info["model_id"] == "jepa:base"
 
 
 class TestGetConfig:
@@ -117,14 +122,14 @@ class TestCreateWorldModel:
         model = create_world_model("dreamer-small")
         obs = torch.randn(2, 3, 64, 64)
         state = model.encode(obs)
-        assert state.features.shape[0] == 2
+        assert state.tensors["deter"].shape[0] == 2
 
     def test_create_and_encode_tdmpc(self):
         """Create TD-MPC2 and run encode."""
         model = create_world_model("tdmpc-small", obs_shape=(39,))
         obs = torch.randn(2, 39)
         state = model.encode(obs)
-        assert state.features.shape[0] == 2
+        assert state.tensors["latent"].shape[0] == 2
 
     def test_create_with_device(self):
         """Create model on specific device."""
@@ -154,6 +159,10 @@ class TestModelAliases:
         assert MODEL_ALIASES["tdmpc-medium"] == "tdmpc2:48m"
         assert MODEL_ALIASES["tdmpc-large"] == "tdmpc2:317m"
 
+    def test_jepa_alias(self):
+        """JEPA alias is correct."""
+        assert MODEL_ALIASES["jepa"] == "jepa:base"
+
 
 class TestModelCatalog:
     """Tests for model catalog."""
@@ -169,6 +178,9 @@ class TestModelCatalog:
         expected = ["5m", "19m", "48m", "317m"]
         for size in expected:
             assert f"tdmpc2:{size}" in MODEL_CATALOG
+
+    def test_catalog_has_jepa(self):
+        assert "jepa:base" in MODEL_CATALOG
 
     def test_catalog_entries_have_required_fields(self):
         """All catalog entries have required fields."""

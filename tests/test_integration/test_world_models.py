@@ -23,12 +23,12 @@ class TestModelSwitching:
 
         for model in [dreamer, tdmpc]:
             assert hasattr(model, "encode")
-            assert hasattr(model, "predict")
-            assert hasattr(model, "observe")
+            assert hasattr(model, "transition")
+            assert hasattr(model, "update")
             assert hasattr(model, "decode")
-            assert hasattr(model, "imagine")
+            assert hasattr(model, "rollout")
             assert hasattr(model, "initial_state")
-            assert hasattr(model, "compute_loss")
+            assert hasattr(model, "loss")
 
     def test_dreamer_encode_predict_cycle(self):
         """DreamerV3 encode/predict cycle."""
@@ -47,7 +47,7 @@ class TestModelSwitching:
         actions = torch.randn(5, 2, 6)
 
         state = model.encode(obs)
-        trajectory = model.imagine(state, actions)
+        trajectory = model.rollout(state, actions)
 
         assert len(trajectory.states) == 6
         assert trajectory.rewards is not None
@@ -64,7 +64,7 @@ class TestModelSwitching:
         actions = torch.randn(5, 2, 6)
 
         state = model.encode(obs)
-        trajectory = model.imagine(state, actions)
+        trajectory = model.rollout(state, actions)
 
         assert len(trajectory.states) == 6
         assert trajectory.rewards is not None

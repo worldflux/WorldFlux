@@ -3,8 +3,9 @@
 import pytest
 import torch
 
+from worldflux import Batch
 from worldflux.core.config import DreamerV3Config, TDMPC2Config
-from worldflux.core.state import LatentState
+from worldflux.core.state import State
 from worldflux.models.dreamer.heads import symexp, symlog
 
 
@@ -96,8 +97,8 @@ class TestEmptyBatchHandling:
 
         obs = torch.randn(1, 3, 64, 64)
         state = model.encode(obs)
-        assert state.deterministic is not None
-        assert state.deterministic.shape[0] == 1
+        assert state.tensors.get("deter") is not None
+        assert state.tensors["deter"].shape[0] == 1
 
     def test_tdmpc2_batch_size_one(self):
         """TD-MPC2 should handle batch_size=1."""
@@ -113,11 +114,11 @@ class TestEmptyBatchHandling:
 
         obs = torch.randn(1, 39)
         state = model.encode(obs)
-        assert state.deterministic is not None
-        assert state.deterministic.shape[0] == 1
+        assert state.tensors.get("latent") is not None
+        assert state.tensors["latent"].shape[0] == 1
 
     def test_sequence_length_one(self):
-        """Models should handle sequence_length=1 in compute_loss."""
+        """Models should handle sequence_length=1 in loss."""
         from worldflux.models.tdmpc2.world_model import TDMPC2WorldModel
 
         config = TDMPC2Config(
@@ -128,16 +129,15 @@ class TestEmptyBatchHandling:
         )
         model = TDMPC2WorldModel(config)
 
-        batch = {
-            "obs": torch.randn(4, 1, 39),
-            "actions": torch.randn(4, 1, 6),
-            "rewards": torch.randn(4, 1),
-            "continues": torch.ones(4, 1),
-        }
+        batch = Batch(
+            obs=torch.randn(4, 1, 39),
+            actions=torch.randn(4, 1, 6),
+            rewards=torch.randn(4, 1),
+        )
 
         # Should not crash, though losses may be zero
-        losses = model.compute_loss(batch)
-        assert "loss" in losses
+        loss_out = model.loss(batch)
+        assert loss_out.loss is not None
 
 
 class TestLongHorizonStability:
@@ -162,17 +162,15 @@ class TestLongHorizonStability:
         # Long horizon imagination
         horizon = 50
         actions = torch.randn(horizon, 2, 4)
-        trajectory = model.imagine(initial_state, actions)
+        trajectory = model.rollout(initial_state, actions)
 
         # Check no NaN/Inf in trajectory
         assert not torch.isnan(trajectory.rewards).any(), "Rewards contain NaN"
         assert not torch.isinf(trajectory.rewards).any(), "Rewards contain Inf"
 
         for state in trajectory.states:
-            if state.deterministic is not None:
-                assert not torch.isnan(state.deterministic).any()
-            if state.stochastic is not None:
-                assert not torch.isnan(state.stochastic).any()
+            for tensor in state.tensors.values():
+                assert not torch.isnan(tensor).any()
 
     def test_tdmpc2_long_imagination(self):
         """TD-MPC2 imagination should remain stable over long horizons."""
@@ -192,7 +190,7 @@ class TestLongHorizonStability:
         # Long horizon imagination
         horizon = 50
         actions = torch.randn(horizon, 2, 6)
-        trajectory = model.imagine(initial_state, actions)
+        trajectory = model.rollout(initial_state, actions)
 
         # Check no NaN/Inf
         assert not torch.isnan(trajectory.rewards).any()
@@ -247,28 +245,18 @@ class TestConfigValidation:
             )
 
 
-class TestLatentStateEdgeCases:
-    """Test LatentState edge cases."""
+class TestStateEdgeCases:
+    """Test State edge cases."""
 
     def test_latent_state_none_components(self):
-        """LatentState should handle None components correctly."""
-        # TD-MPC2 style: only deterministic
-        state = LatentState(
-            deterministic=torch.randn(4, 256),
-            latent_type="simnorm",
-        )
-        features = state.features
-        assert features.shape == (4, 256)
+        """State should handle missing keys correctly."""
+        state = State(tensors={"latent": torch.randn(4, 256)})
+        assert state.batch_size == 4
 
     def test_latent_state_features_concatenation(self):
-        """LatentState features should correctly concatenate components."""
-        # DreamerV3 style: deterministic + stochastic
+        """State supports multiple tensors."""
         deter = torch.randn(4, 512)
         stoch = torch.randn(4, 256)
-        state = LatentState(
-            deterministic=deter,
-            stochastic=stoch,
-            latent_type="categorical",
-        )
-        features = state.features
-        assert features.shape == (4, 512 + 256)
+        state = State(tensors={"deter": deter, "stoch": stoch})
+        assert state.tensors["deter"].shape == (4, 512)
+        assert state.tensors["stoch"].shape == (4, 256)

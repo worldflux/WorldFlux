@@ -1,0 +1,62 @@
+"""Tests for Batch container."""
+
+import pytest
+import torch
+
+from worldflux.core.batch import Batch
+
+
+class TestBatch:
+    """Batch unit tests."""
+
+    def test_batch_size_tensor(self):
+        batch = Batch(obs=torch.randn(3, 4))
+        assert batch.batch_size == 3
+
+    def test_batch_size_dict(self):
+        batch = Batch(obs={"image": torch.randn(5, 3, 8, 8)})
+        assert batch.batch_size == 5
+
+    def test_batch_size_empty_dict_raises(self):
+        batch = Batch(obs={})
+        with pytest.raises(ValueError, match="Cannot determine batch size"):
+            _ = batch.batch_size
+
+    def test_to_device(self):
+        obs = torch.randn(2, 4)
+        batch = Batch(obs=obs, actions=torch.randn(2, 3))
+        moved = batch.to("cpu")
+        assert moved.obs.device.type == "cpu"
+        assert moved.actions.device.type == "cpu"
+
+    def test_detach_removes_grad(self):
+        obs = torch.randn(2, 4, requires_grad=True)
+        batch = Batch(obs=obs)
+        detached = batch.detach()
+        assert not detached.obs.requires_grad
+
+    def test_clone_independent(self):
+        obs = torch.randn(2, 4)
+        batch = Batch(obs=obs, actions=torch.randn(2, 3))
+        cloned = batch.clone()
+        batch.obs.fill_(0)
+        assert not torch.allclose(cloned.obs, batch.obs)
+
+    def test_to_dict_roundtrip(self):
+        batch = Batch(
+            obs=torch.randn(2, 4),
+            actions=torch.randn(2, 3),
+            rewards=torch.randn(2),
+            extras={"id": "test"},
+        )
+        d = batch.to_dict()
+        reconstructed = Batch.from_dict(d)
+        assert torch.allclose(reconstructed.obs, batch.obs)
+        assert torch.allclose(reconstructed.actions, batch.actions)
+        assert torch.allclose(reconstructed.rewards, batch.rewards)
+        assert reconstructed.extras["id"] == "test"
+
+    def test_nested_dict_mapping(self):
+        batch = Batch(obs={"a": {"b": torch.randn(2, 4)}})
+        moved = batch.to("cpu")
+        assert moved.obs["a"]["b"].device.type == "cpu"
