@@ -147,13 +147,13 @@ def visualize_single_rollout(
 
         # Run imagination
         action_seq = actions[:, :horizon].permute(1, 0, 2)  # [T, 1, A]
-        trajectory = model.imagine(state, action_seq)
+        trajectory = model.rollout(state, action_seq)
 
         # Decode imagined observations
         imagined_obs = []
         for s in trajectory.states:
             decoded = model.decode(s)
-            imagined_obs.append(decoded["obs"].cpu())
+            imagined_obs.append(decoded.preds["obs"].cpu())
 
     # Get real observations
     real_obs = obs[:, 1 : horizon + 1].cpu()  # [1, T, C, H, W]
@@ -229,7 +229,7 @@ def visualize_reward_prediction(
             initial_obs = obs[:, 0]
             state = model.encode(initial_obs)
             action_seq = actions[:, :horizon].permute(1, 0, 2)
-            trajectory = model.imagine(state, action_seq)
+            trajectory = model.rollout(state, action_seq)
 
         real_rewards = rewards[:, 1 : horizon + 1].cpu().numpy().flatten()
         pred_rewards = trajectory.rewards.cpu().numpy().flatten()
@@ -309,15 +309,23 @@ def visualize_latent_dynamics(
     device = next(model.parameters()).device
 
     batch = buffer.sample(batch_size=1, seq_len=horizon, device=device)
-    obs = batch["obs"]
-    actions = batch["actions"]
+    obs = batch.obs
+    actions = batch.actions
+    if actions is None:
+        raise ValueError("Actions required for imagination visualization")
+
+    def _latent_tensor(state):
+        for key in ("deter", "latent"):
+            if key in state.tensors:
+                return state.tensors[key]
+        return next(iter(state.tensors.values()))
 
     # Collect real latent states
     real_latents = []
     with torch.no_grad():
         for t in range(horizon):
             state = model.encode(obs[:, t])
-            real_latents.append(state.features.cpu().numpy())
+            real_latents.append(_latent_tensor(state).cpu().numpy())
 
     real_latents = np.concatenate(real_latents, axis=0)  # [horizon, latent_dim]
 
@@ -325,11 +333,11 @@ def visualize_latent_dynamics(
     with torch.no_grad():
         initial_state = model.encode(obs[:, 0])
         action_seq = actions[:, : horizon - 1].permute(1, 0, 2)
-        trajectory = model.imagine(initial_state, action_seq)
+        trajectory = model.rollout(initial_state, action_seq)
 
     imagined_latents = []
     for s in trajectory.states:
-        imagined_latents.append(s.features.cpu().numpy())
+        imagined_latents.append(_latent_tensor(s).cpu().numpy())
     imagined_latents = np.concatenate(imagined_latents, axis=0)
 
     # PCA

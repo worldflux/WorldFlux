@@ -1,147 +1,72 @@
-# LatentState
+# State
 
 The core representation used by all world models.
 
 ## Overview
 
-`LatentState` is a dataclass that holds the latent representation of an observation. It provides a unified interface across different model architectures.
+`State` is a lightweight container with two fields:
+
+- `tensors`: `dict[str, Tensor]` holding model-specific latent tensors
+- `meta`: `dict[str, Any]` for optional metadata
 
 ```python
-from worldflux.core.state import LatentState
+from worldflux.core.state import State
 ```
 
-## Creating a LatentState
+## Creating a State
 
-Typically created by calling `model.encode()`:
+Most users get a `State` via `model.encode()` or `model.update()`:
 
 ```python
 state = model.encode(obs)
 ```
 
-## Attributes
+## Accessing Tensors
 
-### deterministic
-
-The deterministic component of the latent state.
-
-```python
-state.deterministic  # Tensor[B, deter_dim]
-```
-
-- **DreamerV3**: GRU hidden state (history/context)
-- **TD-MPC2**: SimNorm embedding (full representation)
-
-### stochastic
-
-The stochastic component (uncertainty representation).
-
-```python
-state.stochastic  # Tensor[B, stoch_dim] or None
-```
-
-- **DreamerV3**: Categorical samples (captures uncertainty)
-- **TD-MPC2**: `None` (implicit model, no stochastic component)
-
-### features
-
-Combined representation for downstream heads.
-
-```python
-state.features  # Tensor[B, total_dim]
-```
-
-Concatenates `deterministic` and `stochastic` (if present) for use in decoders and prediction heads.
-
-### posterior_logits / prior_logits
-
-Logits for the stochastic distribution (DreamerV3 only).
-
-```python
-state.posterior_logits  # Tensor or None
-state.prior_logits      # Tensor or None
-```
-
-## Model-Specific Shapes
+`State` does not fix a schema. Each model defines its own tensor keys.
 
 ### DreamerV3
 
-| Preset | deterministic | stochastic | features |
-|--------|--------------|------------|----------|
-| size12m | [B, 2048] | [B, 1024] | [B, 3072] |
-| size25m | [B, 2048] | [B, 1024] | [B, 3072] |
-| size50m | [B, 4096] | [B, 1024] | [B, 5120] |
-| size100m | [B, 4096] | [B, 2048] | [B, 6144] |
-| size200m | [B, 8192] | [B, 2048] | [B, 10240] |
+- `deter`: deterministic GRU state
+- `stoch`: stochastic categorical samples
+- `prior_logits` / `posterior_logits`: logits for KL
+
+```python
+features = torch.cat(
+    [state.tensors["deter"], state.tensors["stoch"].flatten(1)],
+    dim=-1,
+)
+```
 
 ### TD-MPC2
 
-| Preset | deterministic | stochastic | features |
-|--------|--------------|------------|----------|
-| 5m | [B, 512] | None | [B, 512] |
-| 19m | [B, 512] | None | [B, 512] |
-| 48m | [B, 1024] | None | [B, 1024] |
-| 317m | [B, 2048] | None | [B, 2048] |
-
-## Usage Examples
-
-### Basic Usage
+- `latent`: SimNorm embedding
 
 ```python
-# Encode observation
-state = model.encode(obs)
-
-# Access components
-print(f"Deterministic: {state.deterministic.shape}")
-print(f"Stochastic: {state.stochastic}")  # May be None
-print(f"Features: {state.features.shape}")
+latent = state.tensors["latent"]
 ```
 
-### Checking Model Type
+### JEPA
+
+- `rep`: encoder representation
 
 ```python
-if state.stochastic is not None:
-    print("This is a DreamerV3-style model with uncertainty")
-else:
-    print("This is a TD-MPC2-style implicit model")
+rep = state.tensors["rep"]
 ```
 
-### Using Features
+## Metadata
+
+Use `meta` for non-tensor bookkeeping:
 
 ```python
-# Features are used for downstream predictions
-features = state.features
-
-# Custom head (example)
-my_output = my_head(features)
+state.meta["latent_type"] = "simnorm"
 ```
 
-### Batch Operations
-
-```python
-# States support batching
-batch_obs = torch.randn(32, 3, 64, 64)
-batch_state = model.encode(batch_obs)
-
-print(batch_state.deterministic.shape)  # [32, deter_dim]
-```
-
-## Implementation Details
+## Implementation
 
 ```python
 @dataclass
-class LatentState:
-    """Universal latent state representation."""
-
-    deterministic: torch.Tensor
-    stochastic: torch.Tensor | None = None
-    posterior_logits: torch.Tensor | None = None
-    prior_logits: torch.Tensor | None = None
-    codebook_indices: torch.Tensor | None = None
-
-    @property
-    def features(self) -> torch.Tensor:
-        """Combined features for downstream heads."""
-        if self.stochastic is not None:
-            return torch.cat([self.deterministic, self.stochastic], dim=-1)
-        return self.deterministic
+class State:
+    tensors: dict[str, Tensor] = field(default_factory=dict)
+    meta: dict[str, Any] = field(default_factory=dict)
 ```

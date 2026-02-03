@@ -317,13 +317,13 @@ def validate_imagination(
 
         # Run imagination with same actions
         action_seq = actions[:, :horizon].permute(1, 0, 2)  # [T, 1, A]
-        trajectory = model.imagine(state, action_seq)
+        trajectory = model.rollout(state, action_seq)
 
         # Decode imagined observations
         imagined_obs = []
         for s in trajectory.states:
             decoded = model.decode(s)
-            imagined_obs.append(decoded["obs"].cpu())
+            imagined_obs.append(decoded.preds["obs"].cpu())
 
     # Compute metrics
     real_obs = obs[:, 1 : horizon + 1].cpu()  # [1, T, C, H, W]

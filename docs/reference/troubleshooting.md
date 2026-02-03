@@ -169,10 +169,10 @@ This is expected. TD-MPC2 is an implicit model without stochastic state:
 
 ```python
 state = tdmpc.encode(obs)
-print(state.stochastic)  # None - this is normal!
+print(state.tensors["latent"])  # SimNorm embedding
 
-# Use deterministic for features
-features = state.deterministic  # or state.features
+# Use latent for features
+features = state.tensors["latent"]
 ```
 
 ### TD-MPC2: trajectory.continues is None
@@ -180,7 +180,7 @@ features = state.deterministic  # or state.features
 This is expected. TD-MPC2 doesn't predict episode continuation:
 
 ```python
-trajectory = tdmpc.imagine(state, actions)
+trajectory = tdmpc.rollout(state, actions)
 print(trajectory.continues)  # None - this is normal!
 ```
 
@@ -301,7 +301,7 @@ dataloader = DataLoader(dataset, num_workers=4)
 1. Use torch.no_grad():
 ```python
 with torch.no_grad():
-    trajectory = model.imagine(state, actions)
+    trajectory = model.rollout(state, actions)
 ```
 
 2. Batch multiple rollouts:
@@ -309,7 +309,7 @@ with torch.no_grad():
 # Instead of: multiple single rollouts
 # Do: one batched rollout
 states = model.encode(obs_batch)  # [B, ...]
-trajectory = model.imagine(states, actions)  # Batched
+trajectory = model.rollout(states, actions)  # Batched
 ```
 
 ---

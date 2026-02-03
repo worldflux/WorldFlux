@@ -154,10 +154,11 @@ batch = buffer.sample(batch_size=4, seq_len=20, device="cuda")
 
 # Compute losses
 with torch.no_grad():
-    losses = model.compute_loss(batch)
+    loss_out = model.loss(batch)
 
 print("Final losses:")
-for name, value in losses.items():
+print(f"  total: {loss_out.loss.item():.4f}")
+for name, value in loss_out.components.items():
     print(f"  {name}: {value.item():.4f}")
 ```
 
@@ -167,14 +168,14 @@ for name, value in losses.items():
 
 ```python
 # Encode initial observation
-obs = batch["obs"][:, 0]  # First observation
+obs = batch.obs[:, 0]  # First observation
 state = model.encode(obs)
 
 # Generate action sequence
 actions = torch.randn(15, 4, 2, device="cuda")
 
 # Imagine future
-trajectory = model.imagine(state, actions)
+trajectory = model.rollout(state, actions)
 
 print(f"Predicted rewards: {trajectory.rewards.mean():.4f}")
 ```

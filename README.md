@@ -29,7 +29,7 @@ WorldFlux provides a unified Python interface for world models used in reinforce
 
 ### Imagination Rollout
 
-World model imagines future frames from a single observation:
+World model rolls out future frames from a single observation:
 
 ![Imagination Rollout](docs/assets/imagination_rollout.gif)
 
@@ -58,7 +58,7 @@ graph LR
 
     subgraph WorldModel["World Model"]
         B[Encoder]
-        C[LatentState]
+        C[State]
         D[Dynamics<br/>RSSM/MLP]
         E[Decoder]
     end
@@ -80,7 +80,7 @@ graph LR
 
 **Key Concepts:**
 - **Encoder**: Maps observations to latent states
-- **LatentState**: Compact representation (deterministic + stochastic components)
+- **State**: Compact representation (deterministic + stochastic components)
 - **Dynamics**: Predicts next latent state from current state + action
 - **Decoder**: Reconstructs observations/rewards from latent states
 
@@ -145,7 +145,7 @@ state = model.encode(obs)
 
 # Imagine 15 steps into the future
 actions = torch.randn(15, 1, 4)  # [horizon, batch, action_dim]
-trajectory = model.imagine(state, actions)
+trajectory = model.rollout(state, actions)
 
 # Access predictions
 print(f"Predicted rewards: {trajectory.rewards.shape}")
@@ -215,26 +215,26 @@ trainer.train(buffer)
 
 ### Core Methods
 
-All world models implement the `WorldModel` protocol:
+All world models implement the `WorldModel` base class:
 
 ```python
 # Encode observation to latent state
 state = model.encode(obs)
 
 # Predict next state (imagination, no observation)
-next_state = model.predict(state, action)
+next_state = model.transition(state, action)
 
 # Update state with observation (posterior)
-next_state = model.observe(state, action, obs)
+next_state = model.update(state, action, obs)
 
 # Decode latent state to predictions
 predictions = model.decode(state)  # {"obs", "reward", "continue"}
 
 # Multi-step imagination rollout
-trajectory = model.imagine(initial_state, actions)
+trajectory = model.rollout(initial_state, actions)
 
 # Compute training losses
-losses = model.compute_loss(batch)  # {"loss", "kl", "reconstruction", ...}
+loss_out = model.loss(batch)  # LossOutput (loss_out.loss, loss_out.components)
 ```
 
 ### Training API

@@ -20,7 +20,7 @@ graph LR
 
     subgraph WorldModel["World Model"]
         B[Encoder]
-        C[LatentState]
+        C[State]
         D[Dynamics]
         E[Decoder]
     end
@@ -47,17 +47,20 @@ graph LR
 Compresses high-dimensional observations into compact latent representations.
 
 ```python
-state = model.encode(obs)  # [B, *obs_shape] -> LatentState
+state = model.encode(obs)  # [B, *obs_shape] -> State
 ```
 
-### LatentState
+### State
 
 The core representation that captures environment state:
 
 ```python
-state.deterministic  # History/context information
-state.stochastic     # Uncertainty (DreamerV3 only)
-state.features       # Combined representation for downstream use
+# DreamerV3
+state.tensors["deter"]   # History/context information
+state.tensors["stoch"]   # Uncertainty (DreamerV3 only)
+
+# TD-MPC2
+state.tensors["latent"]  # SimNorm embedding
 ```
 
 ### Dynamics Model
@@ -66,10 +69,10 @@ Predicts next latent state given current state and action:
 
 ```python
 # Prior (imagination, no observation)
-next_state = model.predict(state, action)
+next_state = model.transition(state, action)
 
 # Posterior (with observation)
-next_state = model.observe(state, action, obs)
+next_state = model.update(state, action, obs)
 ```
 
 ### Decoder
@@ -77,8 +80,9 @@ next_state = model.observe(state, action, obs)
 Reconstructs observations and predicts rewards from latent states:
 
 ```python
-predictions = model.decode(state)
-# {"obs": reconstructed_obs, "reward": reward, "continue": continue_prob}
+output = model.decode(state)
+preds = output.preds
+# preds["obs"], preds["reward"], preds.get("continue")
 ```
 
 ## Imagination Rollouts
@@ -86,10 +90,10 @@ predictions = model.decode(state)
 The key feature: multi-step prediction without environment:
 
 ```python
-trajectory = model.imagine(initial_state, actions)
-# trajectory.states    - List of predicted LatentStates
-# trajectory.rewards   - [T, B, 1] predicted rewards
-# trajectory.continues - [T, B, 1] episode continuation probs
+trajectory = model.rollout(initial_state, actions)
+# trajectory.states    - List of predicted States
+# trajectory.rewards   - [T, B] predicted rewards (optional)
+# trajectory.continues - [T, B] episode continuation probs (optional)
 ```
 
 ## Model Types

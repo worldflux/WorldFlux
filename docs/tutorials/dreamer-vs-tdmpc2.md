@@ -34,7 +34,7 @@ DreamerV3 can decode latent states back to observations:
 ```python
 state = model.encode(obs)
 decoded = model.decode(state)
-reconstructed_obs = decoded["obs"]  # Same shape as input
+reconstructed_obs = decoded.preds["obs"]  # Same shape as input
 ```
 
 ### Discrete/Mixed Action Spaces
@@ -95,7 +95,7 @@ state = model.encode(obs)
 action = torch.randn(1, 6)
 
 # Get Q-values for planning
-q_values = model.q(state, action)
+q_values = model.predict_q(state, action)
 ```
 
 ## Latent State Differences
@@ -104,8 +104,8 @@ q_values = model.q(state, action)
 
 ```python
 state = dreamer.encode(obs)
-print(state.deterministic.shape)  # [B, 2048] - GRU hidden
-print(state.stochastic.shape)     # [B, 1024] - Categorical samples
+print(state.tensors["deter"].shape)  # [B, 2048] - GRU hidden
+print(state.tensors["stoch"].shape)  # [B, 1024] - Categorical samples
 ```
 
 The stochastic component captures uncertainty and enables exploration.
@@ -114,8 +114,7 @@ The stochastic component captures uncertainty and enables exploration.
 
 ```python
 state = tdmpc.encode(obs)
-print(state.deterministic.shape)  # [B, 512] - SimNorm embedding
-print(state.stochastic)           # None - No stochastic component
+print(state.tensors["latent"].shape)  # [B, 512] - SimNorm embedding
 ```
 
 SimNorm provides stable, continuous embeddings without explicit uncertainty.
@@ -165,7 +164,7 @@ trained = train(model, buffer, total_steps=200_000)
 
 # Imagine
 state = model.encode(obs)
-trajectory = model.imagine(state, actions)
+trajectory = model.rollout(state, actions)
 reconstructed = model.decode(trajectory.states[-1])
 ```
 
@@ -202,7 +201,7 @@ Both models share the same API:
 # Works with both DreamerV3 and TD-MPC2
 def run_imagination(model, obs, actions):
     state = model.encode(obs)
-    trajectory = model.imagine(state, actions)
+    trajectory = model.rollout(state, actions)
     return trajectory.rewards
 
 # Use with either model

@@ -285,7 +285,7 @@ def validate_tdmpc2(
 
         # Run imagination with same actions
         action_seq = actions[:, :horizon].permute(1, 0, 2)  # [T, 1, action_dim]
-        trajectory = model.imagine(state, action_seq)
+        trajectory = model.rollout(state, action_seq)
 
         # Get Q-values for initial state
         q_values = model.predict_q(state, actions[:, 0])
@@ -311,8 +311,13 @@ def validate_tdmpc2(
     logger.info("\nLatent state analysis:")
     latent_norms = []
     for i, s in enumerate(trajectory.states[:5]):  # First 5 states
-        if s.deterministic is not None:
-            norm = s.deterministic.norm().item()
+        latent = (
+            s.tensors.get("latent")
+            or s.tensors.get("deter")
+            or next(iter(s.tensors.values()), None)
+        )
+        if latent is not None:
+            norm = latent.norm().item()
             latent_norms.append(norm)
             logger.info(f"  State {i} latent norm: {norm:.4f}")
 

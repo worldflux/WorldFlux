@@ -42,7 +42,7 @@ state = model.encode(obs)
 
 # Imagine 15 steps into the future
 actions = torch.randn(15, 1, 4)
-trajectory = model.imagine(state, actions)
+trajectory = model.rollout(state, actions)
 
 print(f"Predicted rewards: {trajectory.rewards.shape}")  # [15, 1, 1]
 ```
@@ -88,7 +88,7 @@ print(f"Predicted rewards: {trajectory.rewards.shape}")  # [15, 1, 1]
 
     [:octicons-arrow-right-24: Factory Functions](api/factory.md)
 
-    [:octicons-arrow-right-24: WorldModel Protocol](api/protocol.md)
+    [:octicons-arrow-right-24: WorldModel Base Class](api/protocol.md)
 
     [:octicons-arrow-right-24: Training](api/training.md)
 
@@ -104,7 +104,7 @@ graph LR
 
     subgraph WorldModel["World Model"]
         B[Encoder]
-        C[LatentState]
+        C[State]
         D[Dynamics]
         E[Decoder]
     end

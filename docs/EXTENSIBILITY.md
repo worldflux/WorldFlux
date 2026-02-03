@@ -17,30 +17,29 @@ This document provides a comprehensive analysis of WorldFlux's architecture, ext
 
 ### Unified API Verification
 
-WorldFlux implements a **unified API** through Python's `Protocol` class, ensuring all world models share a consistent interface:
+WorldFlux implements a **unified API** through the `WorldModel` base class, ensuring all world models share a consistent interface:
 
 ```python
-@runtime_checkable
-class WorldModel(Protocol):
+class WorldModel(ABC):
     config: WorldModelConfig
 
-    def encode(self, obs: Tensor, deterministic: bool = False) -> LatentState: ...
-    def predict(self, state: LatentState, action: Tensor, ...) -> LatentState: ...
-    def observe(self, state: LatentState, action: Tensor, obs: Tensor) -> LatentState: ...
-    def decode(self, state: LatentState) -> dict[str, Tensor]: ...
-    def imagine(self, initial_state: LatentState, actions: Tensor, ...) -> Trajectory: ...
-    def initial_state(self, batch_size: int, device: ...) -> LatentState: ...
-    def compute_loss(self, batch: dict[str, Tensor]) -> dict[str, Tensor]: ...
+    def encode(self, obs: Tensor | dict[str, Tensor], deterministic: bool = False) -> State: ...
+    def transition(self, state: State, action: Tensor, deterministic: bool = False) -> State: ...
+    def update(self, state: State, action: Tensor, obs: Tensor | dict[str, Tensor]) -> State: ...
+    def decode(self, state: State) -> ModelOutput: ...
+    def rollout(self, initial_state: State, actions: Tensor, deterministic: bool = False) -> Trajectory: ...
+    def initial_state(self, batch_size: int, device: ...) -> State: ...
+    def loss(self, batch: Batch) -> LossOutput: ...
 ```
 
 | Operation | Purpose | DreamerV3 | TD-MPC2 |
 |-----------|---------|-----------|---------|
 | `encode` | obs → latent | CNN/MLP encoder | MLP encoder |
-| `predict` | prior transition | RSSM prior | Dynamics network |
-| `observe` | posterior update | RSSM posterior | N/A (implicit) |
+| `transition` | prior transition | RSSM prior | Dynamics network |
+| `update` | posterior update | RSSM posterior | N/A (implicit) |
 | `decode` | latent → prediction | CNN/MLP decoder | None (implicit) |
-| `imagine` | multi-step rollout | Prior sequence | Dynamics sequence |
-| `compute_loss` | training losses | ELBO components | TD + auxiliary |
+| `rollout` | multi-step rollout | Prior sequence | Dynamics sequence |
+| `loss` | training losses | ELBO components | TD + auxiliary |
 
 ### Design Patterns Verified
 
@@ -53,9 +52,9 @@ class DreamerV3WorldModel(nn.Module): ...
 ```
 
 **2. Universal State Representation** (`src/worldflux/core/state.py`)
-- `LatentState` dataclass supports all architectures
-- Deterministic (h), stochastic (z), VQ-VAE, and Gaussian components
-- `.features` property unifies downstream head inputs
+- `State` supports all architectures via `tensors` + `meta`
+- Deterministic (h), stochastic (z), VQ-VAE, and Gaussian components stored by key
+- Downstream heads consume model-specific tensor keys
 
 **3. Polymorphic Latent Spaces** (`src/worldflux/core/latent_space.py`)
 - `GaussianLatentSpace` - VAE-style models
@@ -64,7 +63,7 @@ class DreamerV3WorldModel(nn.Module): ...
 
 **4. Unified Trainer** (`src/worldflux/training/trainer.py`)
 - Works with any `WorldModel` via duck-typing
-- Requires only `compute_loss(batch)` method
+- Requires only `loss(batch)` method
 - Handles checkpointing, logging, scheduling
 
 ---
@@ -75,19 +74,19 @@ class DreamerV3WorldModel(nn.Module): ...
 
 | Category | Score | Description |
 |----------|-------|-------------|
-| **Model Addition** | 9/10 | Registry pattern + Protocol = easy integration |
-| **Latent Space** | 8/10 | ABC extensible; may need new `LatentState` fields |
+| **Model Addition** | 9/10 | Registry pattern + base class = easy integration |
+| **Latent Space** | 8/10 | ABC extensible; may need new `State.tensors` keys |
 | **Training** | 8/10 | Trainer abstracted; custom losses supported |
-| **State Representation** | 7/10 | Universal dataclass; VQ/flow may need extension |
+| **State Representation** | 7/10 | Universal container; VQ/flow may need new tensor keys |
 | **Decoder Patterns** | 6/10 | Implicit models supported; diffusion decoders need work |
 | **Temporal Modeling** | 6/10 | Autoregressive/video models need new patterns |
 
 ### Strengths
 
 1. **Zero Existing Code Changes**: New models register without modifying existing implementations
-2. **Type Safety**: Protocol-based interface with `@runtime_checkable`
+2. **Type Safety**: Base class + shared types (`Batch`, `State`, `ModelOutput`)
 3. **HuggingFace Compatibility**: `from_pretrained`/`save_pretrained` patterns
-4. **Flexible State**: `LatentState.metadata` for architecture-specific data
+4. **Flexible State**: `State.meta` for architecture-specific data
 5. **Consistent Training**: Single `Trainer` class works across all models
 
 ### Areas for Enhancement
@@ -116,28 +115,28 @@ class DreamerV3WorldModel(nn.Module): ...
 
 #### 1. Latent Dynamics Models (RSSM-based)
 - **Architecture**: Encoder → RSSM (deterministic + stochastic) → Decoder
-- **State**: `deterministic` + `stochastic` + `prior/posterior_logits`
+- **State**: `State.tensors["deter"]`, `State.tensors["stoch"]`, logits in `State.tensors`
 - **Examples**: DreamerV3, PlaNet, Dreamer
 - **Status**: ✅ Reference implementation complete
 
 #### 2. Implicit World Models
 - **Architecture**: Encoder → Dynamics → Q-functions (no decoder)
-- **State**: `deterministic` only (SimNorm embedding)
+- **State**: `State.tensors["latent"]` (SimNorm embedding)
 - **Examples**: TD-MPC2, TD-MPC, MBPO
 - **Status**: ✅ Reference implementation complete
 
 #### 3. Transformer Sequence Models
 - **Architecture**: VQ-VAE tokenizer → Transformer → Token prediction
-- **State**: `codebook_indices` (VQ-VAE tokens)
+-- **State**: tokens stored in `State.tensors` (e.g. `tokens`, `codebook_indices`)
 - **Examples**: IRIS, GAIA-1, Gato
 - **Required Changes**:
-  - Extend `LatentState` with `codebook_embeddings`
+  - Store codebook embeddings/tokens in `State.tensors`
   - Add `VQVAELatentSpace` implementation
   - Support variable-length sequences
 
 #### 4. Diffusion World Models
 - **Architecture**: Encoder → Latent diffusion → Iterative decoder
-- **State**: `deterministic` + diffusion timestep
+-- **State**: diffusion latents + timestep in `State.meta`
 - **Examples**: Diffusion World Models, DIAMOND
 - **Required Changes**:
   - Add `DiffusionLatentSpace` with score function
@@ -187,7 +186,8 @@ class MyModelConfig(WorldModelConfig):
 ```python
 # src/worldflux/models/mymodel/world_model.py
 from worldflux.core.registry import WorldModelRegistry
-from worldflux.core.state import LatentState
+from worldflux.core.state import State
+from worldflux.core.output import LossOutput, ModelOutput
 
 @WorldModelRegistry.register("mymodel", MyModelConfig)
 class MyWorldModel(nn.Module):
@@ -196,36 +196,37 @@ class MyWorldModel(nn.Module):
         self.config = config
         # Initialize components...
 
-    def encode(self, obs: Tensor, deterministic: bool = False) -> LatentState:
+    def encode(self, obs: Tensor, deterministic: bool = False) -> State:
         # obs → latent
         embedding = self.encoder(obs)
-        return LatentState(deterministic=embedding, latent_type="deterministic")
+        return State(tensors={"latent": embedding}, meta={"latent_type": "deterministic"})
 
-    def predict(self, state: LatentState, action: Tensor, ...) -> LatentState:
+    def transition(self, state: State, action: Tensor, ...) -> State:
         # state, action → next_state (prior)
-        next_embed = self.dynamics(state.features, action)
-        return LatentState(deterministic=next_embed, latent_type="deterministic")
+        next_embed = self.dynamics(state.tensors["latent"], action)
+        return State(tensors={"latent": next_embed}, meta={"latent_type": "deterministic"})
 
-    def observe(self, state: LatentState, action: Tensor, obs: Tensor) -> LatentState:
-        # For implicit models, often same as predict or not used
-        return self.predict(state, action)
+    def update(self, state: State, action: Tensor, obs: Tensor) -> State:
+        # For implicit models, often same as transition or not used
+        return self.transition(state, action)
 
-    def decode(self, state: LatentState) -> dict[str, Tensor]:
-        return {"reward": self.reward_head(state.features)}
+    def decode(self, state: State) -> ModelOutput:
+        reward = self.reward_head(state.tensors["latent"])
+        return ModelOutput(preds={"reward": reward})
 
-    def imagine(self, initial_state: LatentState, actions: Tensor, ...) -> Trajectory:
+    def rollout(self, initial_state: State, actions: Tensor, ...) -> Trajectory:
         states, rewards = [initial_state], []
         state = initial_state
         for t in range(actions.shape[1]):
-            state = self.predict(state, actions[:, t])
+            state = self.transition(state, actions[:, t])
             preds = self.decode(state)
             states.append(state)
             rewards.append(preds["reward"])
         return Trajectory(states=states, rewards=torch.stack(rewards, dim=1))
 
-    def compute_loss(self, batch: dict[str, Tensor]) -> dict[str, Tensor]:
+    def loss(self, batch: Batch) -> LossOutput:
         # Implement training losses
-        return {"loss": total_loss, "reward_loss": r_loss}
+        return LossOutput(loss=total_loss, components={"reward_loss": r_loss})
 ```
 
 #### Step 3: Export in Package
@@ -249,19 +250,16 @@ model = create_world_model("mymodel:small")
 model = AutoWorldModel.from_pretrained("mymodel:large")
 ```
 
-### Extending LatentState (If Needed)
+### Extending State (If Needed)
 
 For models requiring new state components:
 
 ```python
-# Option 1: Use metadata (recommended for model-specific data)
-state = LatentState(
-    deterministic=embed,
-    metadata={"diffusion_timestep": t, "noise_level": sigma}
+# Add new tensors by key
+state = State(
+    tensors={"latent": embed, "noise": noise},
+    meta={"diffusion_timestep": t, "noise_level": sigma},
 )
-
-# Option 2: Propose new field (for widely-used components)
-# Submit PR to add field to LatentState dataclass
 ```
 
 ---
@@ -275,7 +273,7 @@ state = LatentState(
 | Component | Change Type | Description |
 |-----------|-------------|-------------|
 | `VQVAELatentSpace` | Additive | New latent space class |
-| `LatentState.codebook_embeddings` | Additive | Optional field |
+| `State.tensors["codebook_embeddings"]` | Additive | Optional tensor key |
 | `TransformerDynamics` | Additive | Autoregressive dynamics |
 
 **Implementation Priority**: IRIS → Gato-style models
@@ -333,7 +331,7 @@ These changes extend functionality without breaking existing code:
 | Change | Impact | Existing Code Affected |
 |--------|--------|------------------------|
 | New model registration | None | ❌ No changes needed |
-| New `LatentState` optional field | None | ❌ Uses `field(default=None)` |
+| New `State` tensor key | None | ❌ Use new key in `State.tensors` |
 | New `LatentSpace` subclass | None | ❌ ABC inheritance |
 | New loss function | None | ❌ Opt-in via config |
 | New decoder type | None | ❌ Factory pattern |
@@ -344,15 +342,15 @@ These changes require careful migration:
 
 | Change | Risk Level | Mitigation |
 |--------|------------|------------|
-| `Protocol` method signature change | High | Version the Protocol |
-| Required `LatentState` field | Medium | Deprecation period |
+| `WorldModel` signature change | High | Version the API |
+| Required `State` tensor key | Medium | Deprecation period |
 | `Trainer` interface change | Medium | Adapter pattern |
 | Batch dimension convention | High | Feature flag |
 
 ### Backward Compatibility Guidelines
 
 1. **Optional Fields**: Always add with `default=None`
-2. **New Methods**: Add to Protocol with default implementation
+2. **New Methods**: Add to base class with default implementation
 3. **Config Changes**: New fields must have defaults
 4. **Deprecation**: Minimum 2 minor versions warning
 
@@ -372,7 +370,7 @@ These changes require careful migration:
 
 WorldFlux provides a **highly extensible** framework for world models with:
 
-- **Protocol-based API** ensuring consistent interfaces
+- **Base-class API** ensuring consistent interfaces
 - **Registry pattern** enabling zero-modification model addition
 - **Universal state representation** accommodating diverse architectures
 - **Unified training** working across all model types

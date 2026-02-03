@@ -160,10 +160,10 @@ batch = buffer.sample(
     device="cuda",
 )
 
-# batch["obs"]      - [B, T, *obs_shape]
-# batch["actions"]  - [B, T, action_dim]
-# batch["rewards"]  - [B, T]
-# batch["continues"] - [B, T]
+# batch.obs         - [B, T, *obs_shape]
+# batch.actions     - [B, T, action_dim]
+# batch.rewards     - [B, T]
+# batch.terminations - [B, T]
 ```
 
 ### Save/Load

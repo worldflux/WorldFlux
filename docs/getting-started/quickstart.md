@@ -32,7 +32,7 @@ import torch
 obs = torch.randn(1, 3, 64, 64)  # Single observation
 state = model.encode(obs)
 
-print(state.features.shape)  # Latent representation
+print(state.tensors.keys())  # Latent tensor keys
 ```
 
 ## Imagination Rollout
@@ -44,10 +44,10 @@ Predict future states without environment interaction:
 actions = torch.randn(15, 1, 4)  # [horizon, batch, action_dim]
 
 # Run imagination
-trajectory = model.imagine(state, actions)
+trajectory = model.rollout(state, actions)
 
-print(trajectory.rewards.shape)     # [15, 1, 1] - Predicted rewards
-print(trajectory.continues.shape)   # [15, 1, 1] - Continue probabilities
+print(trajectory.rewards.shape)     # [15, 1] - Predicted rewards
+print(trajectory.continues.shape)   # [15, 1] - Continue probabilities
 ```
 
 ## Decode Predictions
@@ -55,11 +55,12 @@ print(trajectory.continues.shape)   # [15, 1, 1] - Continue probabilities
 Get observation/reward predictions from latent states:
 
 ```python
-predictions = model.decode(state)
+output = model.decode(state)
+preds = output.preds
 
-print(predictions["obs"].shape)      # Reconstructed observation
-print(predictions["reward"].shape)   # Predicted reward
-print(predictions["continue"].shape) # Episode continuation probability
+print(preds["obs"].shape)      # Reconstructed observation
+print(preds["reward"].shape)   # Predicted reward
+print(preds.get("continue"))   # Episode continuation probability
 ```
 
 ## Train a Model

@@ -216,7 +216,7 @@ def validate_dreamer_mujoco(
 
         # Run imagination
         action_seq = actions[:, :horizon].permute(1, 0, 2)  # [T, 1, action_dim]
-        trajectory = model.imagine(state, action_seq)
+        trajectory = model.rollout(state, action_seq)
 
     # Compute metrics
     real_rewards = rewards[:, 1 : horizon + 1].cpu()  # [1, T]
@@ -244,14 +244,21 @@ def validate_dreamer_mujoco(
                 else trajectory.states[-1]
             )
             decoded = model.decode(state_t)
-            recon_obs = decoded["obs"]
+            recon_obs = decoded.preds["obs"]
             recon_mse = torch.mean((real_obs_t - recon_obs) ** 2).item()
             logger.info(f"  t={t}: reconstruction MSE = {recon_mse:.6f}")
 
     # Latent state analysis
     logger.info("\nLatent state analysis:")
+
+    def _features(state):
+        return torch.cat(
+            [state.tensors["deter"], state.tensors["stoch"].flatten(1)],
+            dim=-1,
+        )
+
     for i, s in enumerate(trajectory.states[:5]):
-        features = s.features
+        features = _features(s)
         norm = features.norm().item()
         logger.info(f"  State {i} feature norm: {norm:.4f}")
 
@@ -283,7 +290,7 @@ def validate_dreamer_mujoco(
         axes[0, 1].grid(True, alpha=0.3)
 
         # Plot 3: Latent feature norms
-        norms = [s.features.norm().item() for s in trajectory.states[:horizon]]
+        norms = [_features(s).norm().item() for s in trajectory.states[:horizon]]
         axes[1, 0].plot(range(len(norms)), norms, "g-o", linewidth=2, markersize=4)
         axes[1, 0].set_xlabel("Time Step")
         axes[1, 0].set_ylabel("Feature Norm")
@@ -293,7 +300,7 @@ def validate_dreamer_mujoco(
         # Plot 4: State component comparison
         with torch.no_grad():
             real_obs_0 = obs[:, 0].cpu().numpy().flatten()
-            decoded_0 = model.decode(trajectory.states[0])["obs"].cpu().numpy().flatten()
+            decoded_0 = model.decode(trajectory.states[0]).preds["obs"].cpu().numpy().flatten()
 
             x = np.arange(len(real_obs_0))
             width = 0.35
