@@ -1,5 +1,7 @@
 """Model registry and auto-loading utilities."""
 
+from __future__ import annotations
+
 import json
 import os
 from typing import Any
@@ -8,15 +10,7 @@ import torch
 
 from .config import WorldModelConfig
 from .exceptions import ConfigurationError
-from .protocol import WorldModel
-
-# Model type aliases for user convenience
-TYPE_ALIASES: dict[str, str] = {
-    "dreamerv3": "dreamer",
-    "dreamer": "dreamer",
-    "tdmpc2": "tdmpc2",
-    "tdmpc": "tdmpc2",
-}
+from .model import WorldModel
 
 
 def _validate_config_json(config_path: str) -> dict[str, Any]:
@@ -54,49 +48,56 @@ def _validate_config_json(config_path: str) -> dict[str, Any]:
                 config_name=config_path,
             )
 
-    # Validate model_type is known
-    valid_types = {"base", "dreamer", "tdmpc2"}
-    if config_dict["model_type"] not in valid_types:
-        raise ConfigurationError(
-            f"Unknown model_type: {config_dict['model_type']}. Valid types: {valid_types}",
-            config_name=config_path,
-        )
-
     return config_dict
 
 
-class WorldModelRegistry:
-    """
-    World model auto-registration and resolution system.
+class ConfigRegistry:
+    """Registry for model configuration classes."""
 
-    Usage:
-        @WorldModelRegistry.register("dreamer")
-        class DreamerWorldModel(nn.Module):
-            ...
-
-        model = WorldModelRegistry.from_pretrained("dreamerv3:size12m")
-    """
-
-    _model_registry: dict[str, type] = {}
-    _config_registry: dict[str, type[WorldModelConfig]] = {}
-    _presets: dict[str, dict] = {}
+    _registry: dict[str, type[WorldModelConfig]] = {}
 
     @classmethod
-    def register(cls, model_type: str, config_class: type[WorldModelConfig] | None = None):
-        """
-        Register a model class with decorator.
+    def register(cls, model_type: str, config_class: type[WorldModelConfig]) -> None:
+        cls._registry[model_type] = config_class
 
-        Args:
-            model_type: Unique identifier for the model type.
-            config_class: Optional config class to associate with the model.
+    @classmethod
+    def from_pretrained(cls, name_or_path: str, **kwargs) -> WorldModelConfig:
+        if os.path.exists(name_or_path):
+            config_path = os.path.join(name_or_path, "config.json")
+            _validate_config_json(config_path)
+            with open(config_path) as f:
+                config_dict = json.load(f)
+            model_type = config_dict.get("model_type", "base")
+            config_class = cls._registry.get(model_type, WorldModelConfig)
+            return config_class.from_dict(config_dict)  # type: ignore[arg-type]
 
-        Returns:
-            Decorator function that registers the model class.
+        if ":" in name_or_path:
+            model_type, size = name_or_path.split(":", 1)
+            model_type = model_type.lower()
+            if model_type not in cls._registry:
+                alias_map = {"dreamerv3": "dreamer", "tdmpc": "tdmpc2"}
+                model_type = alias_map.get(model_type, model_type)
+            config_class = cls._registry.get(model_type, WorldModelConfig)
+            if hasattr(config_class, "from_size"):
+                return config_class.from_size(size, **kwargs)
+            return config_class(model_name=size, **kwargs)
 
-        Raises:
-            ConfigurationError: If model_type is already registered.
-        """
+        raise ValueError(f"Invalid config identifier: {name_or_path}")
 
+
+class WorldModelRegistry:
+    """World model auto-registration and resolution system."""
+
+    _model_registry: dict[str, type] = {}
+    _aliases: dict[str, str] = {}
+    _catalog: dict[str, dict[str, Any]] = {}
+
+    @classmethod
+    def register(
+        cls,
+        model_type: str,
+        config_class: type[WorldModelConfig] | None = None,
+    ):
         def decorator(model_class: type):
             if model_type in cls._model_registry:
                 existing_class = cls._model_registry[model_type]
@@ -107,96 +108,81 @@ class WorldModelRegistry:
                 )
             cls._model_registry[model_type] = model_class
             if config_class is not None:
-                cls._config_registry[model_type] = config_class
+                ConfigRegistry.register(model_type, config_class)
             return model_class
 
         return decorator
 
     @classmethod
+    def register_alias(cls, name: str, target: str) -> None:
+        cls._aliases[name.lower()] = target
+
+    @classmethod
+    def register_catalog_entry(cls, model_id: str, info: dict[str, Any]) -> None:
+        cls._catalog[model_id] = dict(info)
+
+    @classmethod
     def unregister(cls, model_type: str) -> bool:
-        """
-        Unregister a model type.
-
-        Args:
-            model_type: The model type to unregister.
-
-        Returns:
-            True if the model was unregistered, False if it wasn't registered.
-        """
         was_registered = model_type in cls._model_registry
         cls._model_registry.pop(model_type, None)
-        cls._config_registry.pop(model_type, None)
         return was_registered
 
     @classmethod
-    def register_preset(cls, name: str, config: dict):
-        """Register a preset configuration."""
-        cls._presets[name] = config
+    def resolve_alias(cls, name: str) -> str:
+        return cls._aliases.get(name.lower(), name)
 
     @classmethod
     def from_pretrained(cls, name_or_path: str, **kwargs) -> WorldModel:
-        """
-        Load model from preset or path.
-
-        Args:
-            name_or_path:
-                - "dreamerv3:size12m" - registered preset
-                - "tdmpc2:5m" - size preset
-                - "./path/to/model" - local path
-        """
-        # Local path
+        if not cls._model_registry:
+            try:
+                import worldflux.models  # noqa: F401
+            except Exception:
+                pass
         if os.path.exists(name_or_path):
-            config_path = os.path.join(name_or_path, "config.json")
-
-            # Validate config before loading
-            _validate_config_json(config_path)
-
-            config = WorldModelConfig.load(config_path)
-
+            config = ConfigRegistry.from_pretrained(name_or_path, **kwargs)
             if config.model_type not in cls._model_registry:
                 raise ConfigurationError(
                     f"Model type '{config.model_type}' not registered. "
                     f"Available: {list(cls._model_registry.keys())}",
-                    config_name=config_path,
+                    config_name=str(name_or_path),
                 )
-
             model_class = cls._model_registry[config.model_type]
             model = model_class(config)
-
             weights_path = os.path.join(name_or_path, "model.pt")
             if os.path.exists(weights_path):
                 model.load_state_dict(torch.load(weights_path, weights_only=True))
-
             return model
 
-        # Preset format "model:size"
-        if ":" in name_or_path:
-            model_type, size = name_or_path.split(":", 1)
-
-            normalized_type = TYPE_ALIASES.get(model_type.lower(), model_type.lower())
-
-            if normalized_type not in cls._model_registry:
+        resolved = cls.resolve_alias(name_or_path)
+        if ":" in resolved:
+            model_type, size = resolved.split(":", 1)
+            model_type = model_type.lower()
+            if model_type not in cls._model_registry:
+                alias_map = {"dreamerv3": "dreamer", "tdmpc": "tdmpc2"}
+                model_type = alias_map.get(model_type, model_type)
+            if model_type not in cls._model_registry:
                 raise ValueError(
                     f"Unknown model type: {model_type}. "
                     f"Available: {list(cls._model_registry.keys())}"
                 )
-
-            model_class = cls._model_registry[normalized_type]
-            config_class = cls._config_registry.get(normalized_type, WorldModelConfig)
-
-            if hasattr(config_class, "from_size"):
-                config = config_class.from_size(size, **kwargs)
-            else:
-                config = config_class(model_name=size, **kwargs)
-
+            config = ConfigRegistry.from_pretrained(f"{model_type}:{size}", **kwargs)
+            model_class = cls._model_registry[model_type]
             return model_class(config)
 
         raise ValueError(f"Invalid model identifier: {name_or_path}")
 
     @classmethod
     def list_models(cls) -> dict[str, type]:
-        """List registered models."""
+        if not cls._model_registry:
+            try:
+                import worldflux.models  # noqa: F401
+            except Exception:
+                pass
         return dict(cls._model_registry)
+
+    @classmethod
+    def list_catalog(cls) -> dict[str, dict[str, Any]]:
+        return dict(cls._catalog)
 
 
 class AutoWorldModel:
@@ -212,17 +198,4 @@ class AutoConfig:
 
     @staticmethod
     def from_pretrained(name_or_path: str) -> WorldModelConfig:
-        if os.path.exists(name_or_path):
-            config_path = os.path.join(name_or_path, "config.json")
-            return WorldModelConfig.load(config_path)
-
-        if ":" in name_or_path:
-            model_type, size = name_or_path.split(":", 1)
-            normalized = TYPE_ALIASES.get(model_type.lower(), model_type.lower())
-            config_class = WorldModelRegistry._config_registry.get(normalized, WorldModelConfig)
-
-            if hasattr(config_class, "from_size"):
-                return config_class.from_size(size)
-            return config_class(model_name=size)
-
-        raise ValueError(f"Invalid config identifier: {name_or_path}")
+        return ConfigRegistry.from_pretrained(name_or_path)

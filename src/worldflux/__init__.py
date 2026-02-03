@@ -23,17 +23,29 @@ Aliases:
 """
 
 from .core import (
+    ActionSpec,
     AutoConfig,
     AutoWorldModel,
+    Batch,
+    BatchProvider,
+    Capability,
     CategoricalLatentSpace,
     DreamerV3Config,
     DynamicsType,
     GaussianLatentSpace,
+    JEPABaseConfig,
     LatentSpace,
-    LatentState,
     LatentType,
+    LossOutput,
+    ModalityKind,
+    ModalitySpec,
+    ModelOutput,
+    ObservationSpec,
     SimNormLatentSpace,
+    State,
+    StateSpec,
     TDMPC2Config,
+    TokenSpec,
     Trajectory,
     WorldModel,
     WorldModelConfig,
@@ -47,7 +59,7 @@ from .factory import (
     get_model_info,
     list_models,
 )
-from .models import DreamerV3WorldModel, TDMPC2WorldModel
+from .models import DreamerV3WorldModel, JEPABaseWorldModel, TDMPC2WorldModel
 
 
 # Lazy import for training module (optional dependency)
@@ -75,13 +87,26 @@ __all__ = [
     "MODEL_ALIASES",
     "MODEL_CATALOG",
     # Core
-    "LatentState",
+    "State",
     "Trajectory",
+    "Batch",
+    "BatchProvider",
+    "ModelOutput",
+    "LossOutput",
+    # Specs
+    "ModalityKind",
+    "ModalitySpec",
+    "ObservationSpec",
+    "ActionSpec",
+    "StateSpec",
+    "TokenSpec",
+    "Capability",
     "LatentType",
     "DynamicsType",
     "WorldModelConfig",
     "DreamerV3Config",
     "TDMPC2Config",
+    "JEPABaseConfig",
     "WorldModel",
     "WorldModelRegistry",
     "AutoWorldModel",
@@ -94,4 +119,5 @@ __all__ = [
     # Models
     "DreamerV3WorldModel",
     "TDMPC2WorldModel",
+    "JEPABaseWorldModel",
 ]

@@ -5,18 +5,21 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
 
+from ...core.batch import Batch
 from ...core.config import TDMPC2Config
 from ...core.latent_space import SimNormLatentSpace
+from ...core.model import WorldModel
+from ...core.output import LossOutput, ModelOutput
 from ...core.registry import WorldModelRegistry
-from ...core.state import LatentState
-from ...core.trajectory import Trajectory
+from ...core.spec import Capability
+from ...core.state import State
 from .dynamics import Dynamics
 from .encoder import MLPEncoder
 from .heads import PolicyHead, QEnsemble, RewardHead
 
 
 @WorldModelRegistry.register("tdmpc2", TDMPC2Config)
-class TDMPC2WorldModel(nn.Module):
+class TDMPC2WorldModel(WorldModel):
     """
     TD-MPC2 world model implementation.
 
@@ -30,6 +33,11 @@ class TDMPC2WorldModel(nn.Module):
     def __init__(self, config: TDMPC2Config):
         super().__init__()
         self.config = config
+        self.capabilities = {
+            Capability.LATENT_DYNAMICS,
+            Capability.VALUE,
+            Capability.POLICY,
+        }
 
         # Latent space
         self.latent_space = SimNormLatentSpace(
@@ -101,43 +109,48 @@ class TDMPC2WorldModel(nn.Module):
             raise TypeError(f"Expected torch.device, got {type(device)}")
         return device
 
-    def encode(self, obs: Tensor, deterministic: bool = False) -> LatentState:
+    def encode(self, obs: Tensor | dict[str, Tensor], deterministic: bool = False) -> State:
         """Encode observation to SimNorm latent space."""
+        if isinstance(obs, dict):
+            if "obs" in obs:
+                obs = obs["obs"]
+            else:
+                raise ValueError("TD-MPC2 expects observation tensor or dict with 'obs' key")
         z = self._encoder(obs)
         z = self.latent_space.sample(z)
 
-        return LatentState(
-            deterministic=z,
-            latent_type="simnorm",
+        return State(
+            tensors={"latent": z},
+            meta={"latent_type": "simnorm"},
         )
 
-    def predict(
+    def transition(
         self,
-        state: LatentState,
+        state: State,
         action: Tensor,
         deterministic: bool = False,
         task_id: Tensor | None = None,
-    ) -> LatentState:
+    ) -> State:
         """Predict next state."""
-        if state.deterministic is None:
-            raise ValueError("TD-MPC2 requires deterministic state component")
-        z = state.deterministic
+        z = state.tensors.get("latent")
+        if z is None:
+            raise ValueError("TD-MPC2 requires 'latent' in State")
 
         # Residual prediction
         z_delta = self._dynamics(z, action, task_id)
         z_next = z + z_delta
         z_next = self.latent_space.sample(z_next)
 
-        return LatentState(
-            deterministic=z_next,
-            latent_type="simnorm",
+        return State(
+            tensors={"latent": z_next},
+            meta={"latent_type": "simnorm"},
         )
 
-    def observe(self, state: LatentState, action: Tensor, obs: Tensor) -> LatentState:
+    def update(self, state: State, action: Tensor, obs: Tensor | dict[str, Tensor]) -> State:
         """TD-MPC2 directly encodes observations (no posterior like RSSM)."""
         return self.encode(obs)
 
-    def decode(self, state: LatentState) -> dict[str, Tensor]:
+    def decode(self, state: State) -> ModelOutput:
         """
         Decode latent state to predictions.
 
@@ -157,50 +170,24 @@ class TDMPC2WorldModel(nn.Module):
             is intentionally omitted. Use isinstance checks or model_type to
             determine if observation decoding is available.
         """
-        if state.deterministic is None:
-            raise ValueError("TD-MPC2 requires deterministic state component")
-
-        z = state.deterministic
+        z = state.tensors.get("latent")
+        if z is None:
+            raise ValueError("TD-MPC2 requires 'latent' in State")
 
         action = self._policy(z)
         reward = self._reward_head(z, action)
         q_values = self._q_ensemble(z, action)
 
-        return {
-            # Standard protocol keys
-            "reward": reward,
-            "continue": torch.ones_like(reward),  # TD-MPC2 doesn't predict termination
-            # Model-specific keys
-            "q_values": q_values,
-            "action": action,
-        }
-
-    def imagine(
-        self, initial_state: LatentState, actions: Tensor, deterministic: bool = False
-    ) -> Trajectory:
-        """Multi-step imagination."""
-        horizon = actions.shape[0]
-        states = [initial_state]
-        rewards = []
-
-        state = initial_state
-        for t in range(horizon):
-            state = self.predict(state, actions[t], deterministic=deterministic)
-            states.append(state)
-
-            if state.deterministic is None:
-                raise ValueError(f"Predicted state at step {t} has no deterministic component")
-            z = state.deterministic
-            reward = self._reward_head(z, actions[t])
-            rewards.append(reward)
-
-        return Trajectory(
-            states=states,
-            actions=actions,
-            rewards=torch.stack(rewards, dim=0).squeeze(-1),
+        return ModelOutput(
+            preds={
+                "reward": reward,
+                "continue": torch.ones_like(reward),
+                "q_values": q_values,
+                "action": action,
+            }
         )
 
-    def initial_state(self, batch_size: int, device: torch.device | None = None) -> LatentState:
+    def initial_state(self, batch_size: int, device: torch.device | None = None) -> State:
         """Initial state (uniform SimNorm)."""
         if device is None:
             device = self.device
@@ -208,27 +195,27 @@ class TDMPC2WorldModel(nn.Module):
         z = torch.zeros(batch_size, self.config.latent_dim, device=device)
         z = self.latent_space.sample(z)
 
-        return LatentState(
-            deterministic=z,
-            latent_type="simnorm",
+        return State(
+            tensors={"latent": z},
+            meta={"latent_type": "simnorm"},
         )
 
-    def predict_q(self, state: LatentState, action: Tensor) -> Tensor:
+    def predict_q(self, state: State, action: Tensor) -> Tensor:
         """Predict Q-value ensemble."""
-        if state.deterministic is None:
-            raise ValueError("TD-MPC2 requires deterministic state component")
-        z = state.deterministic
+        z = state.tensors.get("latent")
+        if z is None:
+            raise ValueError("TD-MPC2 requires 'latent' in State")
         q_values = self._q_ensemble(z, action)
         return q_values.squeeze(-1)
 
-    def predict_reward(self, state: LatentState, action: Tensor) -> Tensor:
+    def predict_reward(self, state: State, action: Tensor) -> Tensor:
         """Predict reward."""
-        if state.deterministic is None:
-            raise ValueError("TD-MPC2 requires deterministic state component")
-        z = state.deterministic
+        z = state.tensors.get("latent")
+        if z is None:
+            raise ValueError("TD-MPC2 requires 'latent' in State")
         return self._reward_head(z, action).squeeze(-1)
 
-    def compute_loss(self, batch: dict[str, Tensor]) -> dict[str, Tensor]:
+    def loss(self, batch: Batch) -> LossOutput:
         """
         TD-MPC2 loss computation.
 
@@ -241,9 +228,19 @@ class TDMPC2WorldModel(nn.Module):
 
         Targets are computed with no_grad (BYOL-style self-supervised learning).
         """
-        obs = batch["obs"]
-        actions = batch["actions"]
-        rewards = batch["rewards"]
+        obs = batch.obs
+        obs_tensor: Tensor | None
+        if isinstance(obs, dict):
+            obs_tensor = obs.get("obs")
+        else:
+            obs_tensor = obs
+        if obs_tensor is None:
+            raise ValueError("TD-MPC2 requires obs tensor in batch")
+        obs = obs_tensor
+        actions = batch.actions
+        rewards = batch.rewards
+        if actions is None or rewards is None:
+            raise ValueError("TD-MPC2 requires actions and rewards in batch")
 
         batch_size, seq_len = obs.shape[:2]
         device = obs.device
@@ -259,70 +256,58 @@ class TDMPC2WorldModel(nn.Module):
         with torch.no_grad():
             z_targets = z_all[:, 1:].detach()  # [batch, seq_len-1, latent_dim]
 
-        losses: dict[str, Tensor] = {}
+        components: dict[str, Tensor] = {}
 
         # Latent consistency loss
         consistency_loss = torch.tensor(0.0, device=device)
         for t in range(seq_len - 1):
             z_t = z_all[:, t]  # Current encoding (with gradient)
-            state_t = LatentState(deterministic=z_t, latent_type="simnorm")
+            state_t = State(tensors={"latent": z_t}, meta={"latent_type": "simnorm"})
 
-            pred_state = self.predict(state_t, actions[:, t])
-            if pred_state.deterministic is None:
-                raise ValueError(f"Predicted state at step {t} has no deterministic component")
-            z_pred = pred_state.deterministic
+            pred_state = self.transition(state_t, actions[:, t])
+            z_pred = pred_state.tensors.get("latent")
+            if z_pred is None:
+                raise ValueError(f"Predicted state at step {t} has no latent")
 
             z_target = z_targets[:, t]  # Target (no gradient)
             consistency_loss = consistency_loss + F.mse_loss(z_pred, z_target)
 
-        losses["consistency"] = consistency_loss / max(seq_len - 1, 1)
+        components["consistency"] = consistency_loss / max(seq_len - 1, 1)
 
         # Reward loss
         reward_loss = torch.tensor(0.0, device=device)
         for t in range(seq_len - 1):
             z_t = z_all[:, t]  # With gradient
-            state_t = LatentState(deterministic=z_t, latent_type="simnorm")
+            state_t = State(tensors={"latent": z_t}, meta={"latent_type": "simnorm"})
 
             pred_reward = self.predict_reward(state_t, actions[:, t])
             reward_loss = reward_loss + F.mse_loss(pred_reward, rewards[:, t + 1])
 
-        losses["reward"] = reward_loss / max(seq_len - 1, 1)
+        components["reward"] = reward_loss / max(seq_len - 1, 1)
 
         # TD loss
         td_loss = torch.tensor(0.0, device=device)
         gamma = self.config.gamma
         for t in range(seq_len - 1):
             z_t = z_all[:, t]  # With gradient for Q-network
-            state_t = LatentState(deterministic=z_t, latent_type="simnorm")
+            state_t = State(tensors={"latent": z_t}, meta={"latent_type": "simnorm"})
 
             q_values = self.predict_q(state_t, actions[:, t])
 
             with torch.no_grad():
                 z_next = z_targets[:, t]  # No gradient for target
-                state_next = LatentState(deterministic=z_next, latent_type="simnorm")
+                state_next = State(tensors={"latent": z_next}, meta={"latent_type": "simnorm"})
                 next_action = self._policy(z_next)
                 q_next = self.predict_q(state_next, next_action).min(dim=0)[0]
                 target = rewards[:, t + 1] + gamma * q_next
 
             td_loss = td_loss + F.mse_loss(q_values.mean(dim=0), target)
 
-        losses["td"] = td_loss / max(seq_len - 1, 1)
+        components["td"] = td_loss / max(seq_len - 1, 1)
 
-        losses["loss"] = losses["consistency"] + losses["reward"] + losses["td"]
-
-        return losses
-
-    @classmethod
-    def from_pretrained(cls, name_or_path: str, **kwargs) -> "TDMPC2WorldModel":
-        from ...core.registry import WorldModelRegistry
-
-        model = WorldModelRegistry.from_pretrained(name_or_path, **kwargs)
-        if not isinstance(model, cls):
-            raise TypeError(
-                f"Expected {cls.__name__}, got {type(model).__name__}. "
-                f"Check that the model type in the config matches."
-            )
-        return model
+        total = components["consistency"] + components["reward"] + components["td"]
+        metrics = {k: v.item() for k, v in components.items()}
+        return LossOutput(loss=total, components=components, metrics=metrics)
 
     def save_pretrained(self, path: str) -> None:
         import os

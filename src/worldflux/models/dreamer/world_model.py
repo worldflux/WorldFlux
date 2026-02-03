@@ -1,14 +1,16 @@
 """DreamerV3 World Model implementation."""
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
 
+from ...core.batch import Batch
 from ...core.config import DreamerV3Config
+from ...core.model import WorldModel
+from ...core.output import LossOutput, ModelOutput
 from ...core.registry import WorldModelRegistry
-from ...core.state import LatentState
-from ...core.trajectory import Trajectory
+from ...core.spec import Capability
+from ...core.state import State
 from .decoder import CNNDecoder, MLPDecoder
 from .encoder import CNNEncoder, MLPEncoder
 from .heads import ContinueHead, RewardHead, symlog
@@ -16,7 +18,7 @@ from .rssm import RSSM
 
 
 @WorldModelRegistry.register("dreamer", DreamerV3Config)
-class DreamerV3WorldModel(nn.Module):
+class DreamerV3WorldModel(WorldModel):
     """
     DreamerV3 world model implementation.
 
@@ -31,6 +33,11 @@ class DreamerV3WorldModel(nn.Module):
     def __init__(self, config: DreamerV3Config):
         super().__init__()
         self.config = config
+        self.capabilities = {
+            Capability.LATENT_DYNAMICS,
+            Capability.OBS_DECODER,
+            Capability.REPRESENTATION,
+        }
 
         # Encoder
         self.encoder: CNNEncoder | MLPEncoder
@@ -99,8 +106,13 @@ class DreamerV3WorldModel(nn.Module):
             raise TypeError(f"Expected torch.device, got {type(device)}")
         return device
 
-    def encode(self, obs: Tensor, deterministic: bool = False) -> LatentState:
+    def encode(self, obs: Tensor | dict[str, Tensor], deterministic: bool = False) -> State:
         """Encode observation to latent state."""
+        if isinstance(obs, dict):
+            if "obs" in obs:
+                obs = obs["obs"]
+            else:
+                raise ValueError("DreamerV3 expects observation tensor or dict with 'obs' key")
         embed = self.encoder(obs)
 
         batch_size = obs.shape[0]
@@ -110,73 +122,64 @@ class DreamerV3WorldModel(nn.Module):
         state = self.rssm.posterior_step(initial, zero_action, embed)
         return state
 
-    def predict(
-        self, state: LatentState, action: Tensor, deterministic: bool = False
-    ) -> LatentState:
+    def transition(self, state: State, action: Tensor, deterministic: bool = False) -> State:
         """Predict next state (prior, for imagination)."""
         return self.rssm.prior_step(state, action, deterministic=deterministic)
 
-    def observe(self, state: LatentState, action: Tensor, obs: Tensor) -> LatentState:
+    def update(self, state: State, action: Tensor, obs: Tensor | dict[str, Tensor]) -> State:
         """Update state with observation (posterior)."""
+        if isinstance(obs, dict):
+            if "obs" in obs:
+                obs = obs["obs"]
+            else:
+                raise ValueError("DreamerV3 expects observation tensor or dict with 'obs' key")
         embed = self.encoder(obs)
         return self.rssm.posterior_step(state, action, embed)
 
-    def decode(self, state: LatentState) -> dict[str, Tensor]:
+    def _features(self, state: State) -> Tensor:
+        deter = state.tensors.get("deter")
+        stoch = state.tensors.get("stoch")
+        if deter is None or stoch is None:
+            raise ValueError("DreamerV3 state must contain 'deter' and 'stoch'")
+        if stoch.dim() == 3:
+            stoch = stoch.flatten(start_dim=1)
+        return torch.cat([deter, stoch], dim=-1)
+
+    def decode(self, state: State) -> ModelOutput:
         """Decode latent state to predictions."""
-        features = state.features
+        features = self._features(state)
 
-        return {
-            "obs": self.decoder(features),
-            "reward": self.reward_head(features),
-            "continue": self.continue_head(features),
-        }
-
-    def imagine(
-        self, initial_state: LatentState, actions: Tensor, deterministic: bool = False
-    ) -> Trajectory:
-        """Multi-step imagination rollout."""
-        horizon = actions.shape[0]
-        states = [initial_state]
-        rewards = []
-        continues = []
-
-        state = initial_state
-        for t in range(horizon):
-            state = self.predict(state, actions[t], deterministic=deterministic)
-            states.append(state)
-
-            decoded = self.decode(state)
-            rewards.append(decoded["reward"])
-            continues.append(decoded["continue"])
-
-        return Trajectory(
-            states=states,
-            actions=actions,
-            rewards=torch.stack(rewards, dim=0).squeeze(-1),
-            continues=torch.stack(continues, dim=0).squeeze(-1),
+        return ModelOutput(
+            preds={
+                "obs": self.decoder(features),
+                "reward": self.reward_head(features),
+                "continue": self.continue_head(features),
+            }
         )
 
-    def initial_state(self, batch_size: int, device: torch.device | None = None) -> LatentState:
+    def initial_state(self, batch_size: int, device: torch.device | None = None) -> State:
         """Create initial state."""
         if device is None:
             device = self.device
         return self.rssm.initial_state(batch_size, device)
 
-    def compute_loss(self, batch: dict[str, Tensor]) -> dict[str, Tensor]:
-        """
-        Compute training losses.
-
-        Args:
-            batch:
-                - obs: [batch, seq_len, *obs_shape]
-                - actions: [batch, seq_len, action_dim]
-                - rewards: [batch, seq_len]
-                - continues: [batch, seq_len]
-        """
-        obs = batch["obs"]
-        actions = batch["actions"]
-        rewards = batch["rewards"]
-        continues = batch["continues"]
+    def loss(self, batch: Batch) -> LossOutput:
+        """Compute training losses."""
+        obs = batch.obs
+        obs_tensor: Tensor | None
+        if isinstance(obs, dict):
+            obs_tensor = obs.get("obs")
+        else:
+            obs_tensor = obs
+        if obs_tensor is None:
+            raise ValueError("DreamerV3 requires obs tensor in batch")
+        obs = obs_tensor
+        actions = batch.actions
+        rewards = batch.rewards
+        terminations = batch.terminations
+        if actions is None or rewards is None or terminations is None:
+            raise ValueError("DreamerV3 requires actions, rewards, terminations in batch")
+        continues = 1.0 - terminations
 
         batch_size, seq_len = obs.shape[:2]
         device = obs.device
@@ -191,10 +194,10 @@ class DreamerV3WorldModel(nn.Module):
             else:
                 action = actions[:, t - 1]
 
-            state = self.observe(state, action, obs[:, t])
+            state = self.update(state, action, obs[:, t])
             states.append(state)
 
-        losses: dict[str, Tensor] = {}
+        components: dict[str, Tensor] = {}
 
         # KL loss with KL balancing (DreamerV3 paper section 3.4)
         # kl_balance controls the trade-off between representation learning and dynamics learning
@@ -203,23 +206,25 @@ class DreamerV3WorldModel(nn.Module):
         alpha = self.config.kl_balance
 
         for state in states:
-            if state.posterior_logits is not None and state.prior_logits is not None:
+            posterior_logits = state.tensors.get("posterior_logits")
+            prior_logits = state.tensors.get("prior_logits")
+            if posterior_logits is not None and prior_logits is not None:
                 # Dynamics loss: stop gradient on posterior, dynamics learns to predict it
                 kl_dynamics = self.rssm.latent_space.kl_divergence(
-                    state.posterior_logits.detach(),  # Stop gradient on representation
-                    state.prior_logits,
+                    posterior_logits.detach(),  # Stop gradient on representation
+                    prior_logits,
                     free_nats=self.config.kl_free,
                 )
                 # Representation loss: stop gradient on prior, encoder learns to match it
                 kl_representation = self.rssm.latent_space.kl_divergence(
-                    state.posterior_logits,
-                    state.prior_logits.detach(),  # Stop gradient on dynamics
+                    posterior_logits,
+                    prior_logits.detach(),  # Stop gradient on dynamics
                     free_nats=self.config.kl_free,
                 )
                 # Balanced KL loss
                 kl = alpha * kl_dynamics + (1 - alpha) * kl_representation
                 kl_loss = kl_loss + kl.mean()
-        losses["kl"] = kl_loss / seq_len
+        components["kl"] = kl_loss / seq_len
 
         # Reconstruction loss
         recon_loss = torch.tensor(0.0, device=device)
@@ -230,8 +235,8 @@ class DreamerV3WorldModel(nn.Module):
                 target = symlog(obs[:, t])
             else:
                 target = obs[:, t]
-            recon_loss = recon_loss + F.mse_loss(decoded["obs"], target)
-        losses["reconstruction"] = recon_loss / seq_len
+            recon_loss = recon_loss + F.mse_loss(decoded.preds["obs"], target)
+        components["reconstruction"] = recon_loss / seq_len
 
         # Reward loss
         reward_loss = torch.tensor(0.0, device=device)
@@ -240,8 +245,8 @@ class DreamerV3WorldModel(nn.Module):
             target = rewards[:, t]
             if self.config.use_symlog:
                 target = symlog(target)
-            reward_loss = reward_loss + F.mse_loss(decoded["reward"].squeeze(-1), target)
-        losses["reward"] = reward_loss / max(seq_len - 1, 1)
+            reward_loss = reward_loss + F.mse_loss(decoded.preds["reward"].squeeze(-1), target)
+        components["reward"] = reward_loss / max(seq_len - 1, 1)
 
         # Continue loss
         continue_loss = torch.tensor(0.0, device=device)
@@ -249,31 +254,20 @@ class DreamerV3WorldModel(nn.Module):
             decoded = self.decode(states[t])
             target = continues[:, t]
             continue_loss = continue_loss + F.binary_cross_entropy_with_logits(
-                decoded["continue"].squeeze(-1), target
+                decoded.preds["continue"].squeeze(-1), target
             )
-        losses["continue"] = continue_loss / max(seq_len - 1, 1)
+        components["continue"] = continue_loss / max(seq_len - 1, 1)
 
         # Total loss
-        losses["loss"] = (
-            self.config.loss_scales["reconstruction"] * losses["reconstruction"]
-            + self.config.loss_scales["kl"] * losses["kl"]
-            + self.config.loss_scales["reward"] * losses["reward"]
-            + self.config.loss_scales["continue"] * losses["continue"]
+        total = (
+            self.config.loss_scales["reconstruction"] * components["reconstruction"]
+            + self.config.loss_scales["kl"] * components["kl"]
+            + self.config.loss_scales["reward"] * components["reward"]
+            + self.config.loss_scales["continue"] * components["continue"]
         )
 
-        return losses
-
-    @classmethod
-    def from_pretrained(cls, name_or_path: str, **kwargs) -> "DreamerV3WorldModel":
-        from ...core.registry import WorldModelRegistry
-
-        model = WorldModelRegistry.from_pretrained(name_or_path, **kwargs)
-        if not isinstance(model, cls):
-            raise TypeError(
-                f"Expected {cls.__name__}, got {type(model).__name__}. "
-                f"Check that the model type in the config matches."
-            )
-        return model
+        metrics = {k: v.item() for k, v in components.items()}
+        return LossOutput(loss=total, components=components, metrics=metrics)
 
     def save_pretrained(self, path: str) -> None:
         import os

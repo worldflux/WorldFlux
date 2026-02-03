@@ -1,0 +1,117 @@
+"""Minimal JEPA-style world model skeleton."""
+
+from __future__ import annotations
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch import Tensor
+
+from ...core.batch import Batch
+from ...core.config import JEPABaseConfig
+from ...core.model import WorldModel
+from ...core.output import LossOutput, ModelOutput
+from ...core.registry import WorldModelRegistry
+from ...core.spec import Capability
+from ...core.state import State
+
+
+@WorldModelRegistry.register("jepa", JEPABaseConfig)
+class JEPABaseWorldModel(WorldModel):
+    """JEPA-style representation predictor (minimal skeleton)."""
+
+    def __init__(self, config: JEPABaseConfig):
+        super().__init__()
+        self.config = config
+        self.capabilities = {Capability.REPRESENTATION}
+
+        input_dim = (
+            config.obs_shape[0]
+            if len(config.obs_shape) == 1
+            else int(torch.prod(torch.tensor(config.obs_shape)).item())
+        )
+
+        self.encoder = nn.Sequential(
+            nn.Linear(input_dim, config.encoder_dim),
+            nn.LayerNorm(config.encoder_dim),
+            nn.GELU(),
+        )
+        self.predictor = nn.Sequential(
+            nn.Linear(config.encoder_dim, config.predictor_dim),
+            nn.GELU(),
+            nn.Linear(config.predictor_dim, config.projection_dim),
+        )
+        self.projector = nn.Sequential(
+            nn.Linear(config.encoder_dim, config.projection_dim),
+            nn.GELU(),
+        )
+
+    def _flatten_obs(self, obs: Tensor) -> Tensor:
+        if obs.dim() > 2:
+            return obs.view(obs.shape[0], -1)
+        return obs
+
+    def encode(self, obs: Tensor | dict[str, Tensor], deterministic: bool = False) -> State:
+        obs_tensor: Tensor | None
+        if isinstance(obs, dict):
+            obs_tensor = obs.get("obs")
+            if obs_tensor is None:
+                obs_tensor = obs.get("context")
+        else:
+            obs_tensor = obs
+        if obs_tensor is None:
+            raise ValueError("JEPA requires obs tensor or dict with 'obs'/'context'")
+        obs_flat = self._flatten_obs(obs_tensor)
+        rep = self.encoder(obs_flat)
+        return State(tensors={"rep": rep})
+
+    def transition(self, state: State, action: Tensor, deterministic: bool = False) -> State:
+        return state
+
+    def update(self, state: State, action: Tensor, obs: Tensor | dict[str, Tensor]) -> State:
+        return self.encode(obs)
+
+    def decode(self, state: State) -> ModelOutput:
+        rep = state.tensors.get("rep")
+        if rep is None:
+            raise ValueError("JEPA state requires 'rep'")
+        proj = self.projector(rep)
+        return ModelOutput(preds={"representation": proj})
+
+    def loss(self, batch: Batch) -> LossOutput:
+        context_raw = batch.context if batch.context is not None else batch.obs
+        target_raw = batch.target if batch.target is not None else batch.next_obs or batch.obs
+
+        context: Tensor | None
+        target: Tensor | None
+
+        if isinstance(context_raw, dict):
+            context = context_raw.get("context")
+            if context is None:
+                context = context_raw.get("obs")
+        else:
+            context = context_raw
+
+        if isinstance(target_raw, dict):
+            target = target_raw.get("target")
+            if target is None:
+                target = target_raw.get("obs")
+        else:
+            target = target_raw
+
+        if context is None or target is None:
+            raise ValueError("JEPA requires context and target tensors in batch")
+
+        context_rep = self.encoder(self._flatten_obs(context))
+        pred = self.predictor(context_rep)
+
+        with torch.no_grad():
+            target_rep = self.projector(self.encoder(self._flatten_obs(target)))
+
+        if batch.mask is not None:
+            pred = pred * batch.mask
+            target_rep = target_rep * batch.mask
+
+        loss = F.mse_loss(pred, target_rep)
+        components = {"jepa": loss}
+        return LossOutput(loss=loss, components=components, metrics={"jepa": loss.item()})

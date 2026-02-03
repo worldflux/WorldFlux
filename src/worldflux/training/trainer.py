@@ -4,14 +4,16 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Iterable, Iterator
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import torch
 import torch.nn as nn
 from torch.optim import AdamW, Optimizer
 from torch.optim.lr_scheduler import LRScheduler
 
+from worldflux.core.batch import Batch, BatchProvider
 from worldflux.core.exceptions import CheckpointError, ConfigurationError, TrainingError
 
 from .callbacks import Callback, CallbackList, CheckpointCallback, LoggingCallback
@@ -55,7 +57,7 @@ class Trainer:
     - Learning rate scheduling
 
     Args:
-        model: World model to train (must implement compute_loss).
+        model: World model to train (must implement loss(batch)).
         config: Training configuration.
         callbacks: List of callbacks for logging/checkpointing.
         optimizer: Optional custom optimizer.
@@ -119,6 +121,39 @@ class Trainer:
 
         # Create output directory
         os.makedirs(self.config.output_dir, exist_ok=True)
+
+        # Data iterator cache (for iterable datasets)
+        self._data_iter: Iterator[Any] | None = None
+
+    def _next_batch(self, data: BatchProvider | Any) -> Batch:
+        """Fetch the next batch from a provider or iterator."""
+        if hasattr(data, "sample"):
+            batch = data.sample(
+                batch_size=self.config.batch_size,
+                seq_len=self.config.sequence_length,
+                device=self.device,
+            )
+            return batch
+
+        if self._data_iter is None:
+            iterable = cast(Iterable[Any], data)
+            self._data_iter = iter(iterable)
+
+        try:
+            assert self._data_iter is not None
+            batch = next(self._data_iter)
+        except StopIteration:
+            iterable = cast(Iterable[Any], data)
+            self._data_iter = iter(iterable)
+            batch = next(self._data_iter)
+
+        if isinstance(batch, dict):
+            batch = Batch.from_dict(batch)
+        if not isinstance(batch, Batch):
+            raise TrainingError(
+                f"BatchProvider must yield Batch or dict, got {type(batch).__name__}"
+            )
+        return batch.to(self.device)
 
     def _create_optimizer(self) -> Optimizer:
         """Create optimizer based on config."""
@@ -278,11 +313,7 @@ class Trainer:
         is_accumulating = self._accumulation_step < accum_steps - 1
 
         # Sample batch
-        batch = data.sample(
-            batch_size=self.config.batch_size,
-            seq_len=self.config.sequence_length,
-            device=self.device,
-        )
+        batch = self._next_batch(data)
 
         # Only zero gradients at the start of accumulation cycle
         if self._accumulation_step == 0:
@@ -290,12 +321,14 @@ class Trainer:
 
         if self.config.mixed_precision and self.scaler is not None:
             with torch.amp.autocast(device_type=self.device.type):
-                losses = self.model.compute_loss(batch)  # type: ignore[attr-defined, operator]
+                loss_out = self.model.loss(batch)  # type: ignore[attr-defined, operator]
                 # Scale loss by accumulation steps for proper averaging
-                loss = losses["loss"] / accum_steps
+                loss = loss_out.loss / accum_steps
 
             # Check for NaN/Inf in losses before backward
-            self._check_for_nan_inf(losses, self.state.global_step)
+            self._check_for_nan_inf(
+                {"loss": loss_out.loss, **loss_out.components}, self.state.global_step
+            )
 
             self.scaler.scale(loss).backward()  # type: ignore[union-attr]
 
@@ -313,12 +346,14 @@ class Trainer:
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
         else:
-            losses = self.model.compute_loss(batch)  # type: ignore[attr-defined, operator]
+            loss_out = self.model.loss(batch)  # type: ignore[attr-defined, operator]
             # Scale loss by accumulation steps for proper averaging
-            loss = losses["loss"] / accum_steps
+            loss = loss_out.loss / accum_steps
 
             # Check for NaN/Inf in losses before backward
-            self._check_for_nan_inf(losses, self.state.global_step)
+            self._check_for_nan_inf(
+                {"loss": loss_out.loss, **loss_out.components}, self.state.global_step
+            )
 
             loss.backward()
 
@@ -343,10 +378,13 @@ class Trainer:
             self.scheduler.step()
 
         # Update state (use unscaled loss for logging)
-        loss_value = losses["loss"].item()  # Use original loss, not scaled
+        loss_value = loss_out.loss.item()  # Use original loss, not scaled
         self.state.total_loss += loss_value
         self.state.num_batches += 1
-        self.state.metrics = {k: v.item() for k, v in losses.items()}
+        self.state.metrics = dict(loss_out.metrics)
+        if not self.state.metrics:
+            self.state.metrics = {k: v.item() for k, v in loss_out.components.items()}
+        self.state.metrics["loss"] = loss_value
 
         return self.state.metrics
 
@@ -371,14 +409,11 @@ class Trainer:
 
         with torch.no_grad():
             for _ in range(num_batches):
-                batch = data.sample(
-                    batch_size=self.config.batch_size,
-                    seq_len=self.config.sequence_length,
-                    device=self.device,
-                )
-                losses = self.model.compute_loss(batch)  # type: ignore[attr-defined, operator]
+                batch = self._next_batch(data)
+                loss_out = self.model.loss(batch)  # type: ignore[attr-defined, operator]
 
-                for k, v in losses.items():
+                total_metrics["loss"] = total_metrics.get("loss", 0.0) + loss_out.loss.item()
+                for k, v in loss_out.components.items():
                     total_metrics[k] = total_metrics.get(k, 0.0) + v.item()
 
         # Average

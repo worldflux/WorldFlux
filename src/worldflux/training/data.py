@@ -6,9 +6,9 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from torch import Tensor
 from torch.utils.data import Dataset
 
+from worldflux.core.batch import Batch
 from worldflux.core.exceptions import BufferError, ConfigurationError, ShapeMismatchError
 
 
@@ -116,10 +116,41 @@ class ReplayBuffer:
             raise ShapeMismatchError(
                 f"Action dimension mismatch: expected {self.action_dim}, got {actions.shape[1]}"
             )
+        if actions.shape[0] != episode_len:
+            raise ShapeMismatchError(
+                "Action length mismatch",
+                expected=(episode_len, self.action_dim),
+                got=actions.shape,
+            )
+        if rewards.shape[0] != episode_len:
+            raise ShapeMismatchError(
+                "Rewards length mismatch",
+                expected=(episode_len,),
+                got=rewards.shape,
+            )
+        if rewards.ndim != 1:
+            raise ShapeMismatchError(
+                "Rewards must be a 1D array",
+                expected=(episode_len,),
+                got=rewards.shape,
+            )
 
         if dones is None:
             dones = np.zeros(episode_len, dtype=np.float32)
             dones[-1] = 1.0
+        else:
+            if dones.shape[0] != episode_len:
+                raise ShapeMismatchError(
+                    "Dones length mismatch",
+                    expected=(episode_len,),
+                    got=dones.shape,
+                )
+            if dones.ndim != 1:
+                raise ShapeMismatchError(
+                    "Dones must be a 1D array",
+                    expected=(episode_len,),
+                    got=dones.shape,
+                )
 
         # Handle wrap-around
         start_pos = self._position
@@ -209,7 +240,7 @@ class ReplayBuffer:
         batch_size: int,
         seq_len: int,
         device: str | torch.device = "cpu",
-    ) -> dict[str, Tensor]:
+    ) -> Batch:
         """
         Sample random trajectory segments.
 
@@ -256,12 +287,12 @@ class ReplayBuffer:
                     # Mark with special metadata if needed for masking
                     pass  # The continues mask handles this at loss computation
 
-        return {
-            "obs": torch.from_numpy(obs).to(device),
-            "actions": torch.from_numpy(actions).to(device),
-            "rewards": torch.from_numpy(rewards).to(device),
-            "continues": 1.0 - torch.from_numpy(dones).to(device),
-        }
+        return Batch(
+            obs=torch.from_numpy(obs).to(device),
+            actions=torch.from_numpy(actions).to(device),
+            rewards=torch.from_numpy(rewards).to(device),
+            terminations=torch.from_numpy(dones).to(device),
+        )
 
     def _sample_valid_indices(self, batch_size: int, seq_len: int) -> list[int]:
         """Sample valid starting indices that don't cross episode boundaries."""
@@ -422,10 +453,22 @@ class TrajectoryDataset(Dataset):
     def __len__(self) -> int:
         return self.samples_per_epoch
 
-    def __getitem__(self, idx: int) -> dict[str, Tensor]:
+    def __getitem__(self, idx: int) -> Batch:
         """Sample a single trajectory segment."""
         batch = self.buffer.sample(batch_size=1, seq_len=self.seq_len, device="cpu")
-        return {k: v.squeeze(0) for k, v in batch.items()}
+        if not isinstance(batch.obs, torch.Tensor):
+            raise ShapeMismatchError("TrajectoryDataset expects tensor observations")
+        return Batch(
+            obs=batch.obs.squeeze(0),
+            actions=batch.actions.squeeze(0) if batch.actions is not None else None,
+            rewards=batch.rewards.squeeze(0) if batch.rewards is not None else None,
+            terminations=batch.terminations.squeeze(0) if batch.terminations is not None else None,
+            next_obs=None,
+            mask=None,
+            context=None,
+            target=None,
+            extras=batch.extras,
+        )
 
 
 def create_random_buffer(

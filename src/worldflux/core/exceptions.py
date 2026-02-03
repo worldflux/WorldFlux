@@ -34,7 +34,7 @@ class ShapeMismatchError(WorldFluxError):
 
 
 class StateError(WorldFluxError):
-    """Raised when LatentState is in an invalid state."""
+    """Raised when State is in an invalid state."""
 
     pass
 

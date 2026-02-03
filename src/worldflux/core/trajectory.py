@@ -6,7 +6,7 @@ import torch
 from torch import Tensor
 
 from .exceptions import StateError
-from .state import LatentState
+from .state import State
 
 
 @dataclass
@@ -25,7 +25,7 @@ class Trajectory:
     representing the initial state plus one state per action taken.
     """
 
-    states: list[LatentState]
+    states: list[State]
     actions: Tensor
     rewards: Tensor | None = None
     values: Tensor | None = None
@@ -107,9 +107,9 @@ class Trajectory:
     def batch_size(self) -> int:
         return self.states[0].batch_size
 
-    def to_features_tensor(self) -> Tensor:
-        """Stack all state features [T+1, batch, feature_dim]."""
-        return torch.stack([s.features for s in self.states], dim=0)
+    def to_tensor(self, key: str) -> Tensor:
+        """Stack a specific state tensor key across time [T+1, batch, ...]."""
+        return torch.stack([s.tensors[key] for s in self.states], dim=0)
 
     def to(self, device: torch.device) -> "Trajectory":
         return Trajectory(

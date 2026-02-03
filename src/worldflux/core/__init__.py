@@ -1,8 +1,10 @@
 """Core components for world models."""
 
+from .batch import Batch, BatchProvider
 from .config import (
     DreamerV3Config,
     DynamicsType,
+    JEPABaseConfig,
     LatentType,
     TDMPC2Config,
     WorldModelConfig,
@@ -23,21 +25,44 @@ from .latent_space import (
     LatentSpace,
     SimNormLatentSpace,
 )
-from .protocol import WorldModel
+from .model import WorldModel
+from .output import LossOutput, ModelOutput
 from .registry import AutoConfig, AutoWorldModel, WorldModelRegistry
-from .state import LatentState
+from .spec import (
+    ActionSpec,
+    Capability,
+    ModalityKind,
+    ModalitySpec,
+    ObservationSpec,
+    StateSpec,
+    TokenSpec,
+)
+from .state import State
 from .trajectory import Trajectory
 
 __all__ = [
     # State and Trajectory
-    "LatentState",
+    "State",
     "Trajectory",
+    "Batch",
+    "BatchProvider",
+    "ModelOutput",
+    "LossOutput",
+    # Specs
+    "ModalityKind",
+    "ModalitySpec",
+    "ObservationSpec",
+    "ActionSpec",
+    "StateSpec",
+    "TokenSpec",
+    "Capability",
     # Config
     "LatentType",
     "DynamicsType",
     "WorldModelConfig",
     "DreamerV3Config",
     "TDMPC2Config",
+    "JEPABaseConfig",
     # Protocol and Registry
     "WorldModel",
     "WorldModelRegistry",

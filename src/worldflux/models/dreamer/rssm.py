@@ -5,7 +5,7 @@ import torch.nn as nn
 from torch import Tensor
 
 from ...core.latent_space import CategoricalLatentSpace
-from ...core.state import LatentState
+from ...core.state import State
 
 
 class RSSM(nn.Module):
@@ -62,47 +62,55 @@ class RSSM(nn.Module):
             nn.Linear(hidden_dim, self.stoch_dim),
         )
 
-    def initial_state(self, batch_size: int, device: torch.device) -> LatentState:
+    def initial_state(self, batch_size: int, device: torch.device) -> State:
         """Create initial state."""
         h = torch.zeros(batch_size, self.deter_dim, device=device)
         z = torch.zeros(batch_size, self.stoch_discrete, self.stoch_classes, device=device)
         z[..., 0] = 1.0  # One-hot first class
 
-        return LatentState(
-            deterministic=h,
-            stochastic=z,
-            latent_type="categorical",
+        return State(
+            tensors={
+                "deter": h,
+                "stoch": z,
+            },
+            meta={"latent_type": "categorical"},
         )
 
-    def prior_step(
-        self, state: LatentState, action: Tensor, deterministic: bool = False
-    ) -> LatentState:
+    def prior_step(self, state: State, action: Tensor, deterministic: bool = False) -> State:
         """Prior transition (no observation, for imagination)."""
-        assert state.stochastic is not None, "RSSM requires stochastic state"
-        z_flat = state.stochastic.flatten(start_dim=1)
+        z = state.tensors.get("stoch")
+        h = state.tensors.get("deter")
+        if z is None or h is None:
+            raise ValueError("RSSM requires 'deter' and 'stoch' tensors in State")
+        z_flat = z.flatten(start_dim=1)
 
         gru_input = torch.cat([z_flat, action], dim=-1)
-        h_next = self.gru(gru_input, state.deterministic)
+        h_next = self.gru(gru_input, h)
 
         prior_logits = self.prior_net(h_next)
         prior_logits = prior_logits.view(-1, self.stoch_discrete, self.stoch_classes)
 
         z_next = self.latent_space.sample(prior_logits, deterministic=deterministic)
 
-        return LatentState(
-            deterministic=h_next,
-            stochastic=z_next,
-            logits=prior_logits,
-            prior_logits=prior_logits,  # Set prior_logits for KL computation
-            latent_type="categorical",
+        return State(
+            tensors={
+                "deter": h_next,
+                "stoch": z_next,
+                "logits": prior_logits,
+                "prior_logits": prior_logits,
+            },
+            meta={"latent_type": "categorical"},
         )
 
-    def posterior_step(self, state: LatentState, action: Tensor, obs_embed: Tensor) -> LatentState:
+    def posterior_step(self, state: State, action: Tensor, obs_embed: Tensor) -> State:
         """Posterior transition (with observation, for learning)."""
-        assert state.stochastic is not None, "RSSM requires stochastic state"
-        z_flat = state.stochastic.flatten(start_dim=1)
+        z = state.tensors.get("stoch")
+        h = state.tensors.get("deter")
+        if z is None or h is None:
+            raise ValueError("RSSM requires 'deter' and 'stoch' tensors in State")
+        z_flat = z.flatten(start_dim=1)
         gru_input = torch.cat([z_flat, action], dim=-1)
-        h_next = self.gru(gru_input, state.deterministic)
+        h_next = self.gru(gru_input, h)
 
         prior_logits = self.prior_net(h_next)
         prior_logits = prior_logits.view(-1, self.stoch_discrete, self.stoch_classes)
@@ -113,13 +121,15 @@ class RSSM(nn.Module):
 
         z_next = self.latent_space.sample(posterior_logits, deterministic=False)
 
-        return LatentState(
-            deterministic=h_next,
-            stochastic=z_next,
-            logits=posterior_logits,
-            prior_logits=prior_logits,
-            posterior_logits=posterior_logits,
-            latent_type="categorical",
+        return State(
+            tensors={
+                "deter": h_next,
+                "stoch": z_next,
+                "logits": posterior_logits,
+                "prior_logits": prior_logits,
+                "posterior_logits": posterior_logits,
+            },
+            meta={"latent_type": "categorical"},
         )
 
     @property

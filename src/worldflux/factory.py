@@ -24,9 +24,9 @@ Example:
 
 from typing import Any
 
-from .core.config import DreamerV3Config, TDMPC2Config, WorldModelConfig
-from .core.protocol import WorldModel
-from .core.registry import WorldModelRegistry
+from .core.config import WorldModelConfig
+from .core.model import WorldModel
+from .core.registry import ConfigRegistry, WorldModelRegistry
 
 # Model aliases for user convenience
 MODEL_ALIASES: dict[str, str] = {
@@ -42,6 +42,8 @@ MODEL_ALIASES: dict[str, str] = {
     "tdmpc-small": "tdmpc2:5m",
     "tdmpc-medium": "tdmpc2:48m",
     "tdmpc-large": "tdmpc2:317m",
+    # JEPA aliases
+    "jepa": "jepa:base",
 }
 
 # Available model presets with descriptions
@@ -100,7 +102,19 @@ MODEL_CATALOG: dict[str, dict[str, Any]] = {
         "type": "tdmpc2",
         "default_obs": "vector",
     },
+    "jepa:base": {
+        "description": "JEPA base model - Representation prediction",
+        "params": "~1M+",
+        "type": "jepa",
+        "default_obs": "image",
+    },
 }
+
+# Register aliases and catalog entries on import
+for alias, target in MODEL_ALIASES.items():
+    WorldModelRegistry.register_alias(alias, target)
+for model_id, info in MODEL_CATALOG.items():
+    WorldModelRegistry.register_catalog_entry(model_id, info)
 
 
 def create_world_model(
@@ -152,7 +166,7 @@ def create_world_model(
     import torch
 
     # Resolve aliases
-    resolved_model = MODEL_ALIASES.get(model, model)
+    resolved_model = WorldModelRegistry.resolve_alias(model)
 
     # Build kwargs
     config_kwargs: dict[str, Any] = dict(kwargs)
@@ -217,7 +231,7 @@ def get_model_info(model: str) -> dict[str, Any]:
     Raises:
         ValueError: If model is not found
     """
-    resolved = MODEL_ALIASES.get(model, model)
+    resolved = WorldModelRegistry.resolve_alias(model)
 
     if resolved in MODEL_CATALOG:
         info = dict(MODEL_CATALOG[resolved])
@@ -260,7 +274,7 @@ def get_config(
         config.num_q_networks = 10  # Custom Q ensemble size
         model = DreamerV3WorldModel(config)  # or use registry
     """
-    resolved = MODEL_ALIASES.get(model, model)
+    resolved = WorldModelRegistry.resolve_alias(model)
 
     if ":" not in resolved:
         raise ValueError(
@@ -268,25 +282,6 @@ def get_config(
         )
 
     model_type, size = resolved.split(":", 1)
-
-    # Normalize type
-    type_map = {
-        "dreamerv3": "dreamer",
-        "dreamer": "dreamer",
-        "tdmpc2": "tdmpc2",
-        "tdmpc": "tdmpc2",
-    }
-    normalized_type = type_map.get(model_type.lower())
-
-    if normalized_type is None:
-        raise ValueError(f"Unknown model type: {model_type}")
-
-    # Get config class
-    config_class: type[DreamerV3Config] | type[TDMPC2Config]
-    if normalized_type == "dreamer":
-        config_class = DreamerV3Config
-    else:
-        config_class = TDMPC2Config
 
     # Build config kwargs
     config_kwargs = dict(kwargs)
@@ -296,4 +291,4 @@ def get_config(
         config_kwargs["action_dim"] = action_dim
 
     # Create config from size preset
-    return config_class.from_size(size, **config_kwargs)
+    return ConfigRegistry.from_pretrained(resolved, **config_kwargs)
