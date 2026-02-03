@@ -15,7 +15,7 @@ from .exceptions import (
     ShapeMismatchError,
     StateError,
     TrainingError,
-    WorldLoomError,
+    WorldFluxError,
 )
 from .latent_space import (
     CategoricalLatentSpace,
@@ -49,7 +49,7 @@ __all__ = [
     "CategoricalLatentSpace",
     "SimNormLatentSpace",
     # Exceptions
-    "WorldLoomError",
+    "WorldFluxError",
     "ConfigurationError",
     "ShapeMismatchError",
     "StateError",

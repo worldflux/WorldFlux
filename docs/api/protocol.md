@@ -1,6 +1,6 @@
 # WorldModel Protocol
 
-All world models in WorldLoom implement this unified interface.
+All world models in WorldFlux implement this unified interface.
 
 ## Protocol Definition
 
@@ -199,7 +199,7 @@ Save and load models.
 model.save_pretrained("./my_model")
 
 # Load
-from worldloom import create_world_model
+from worldflux import create_world_model
 model = create_world_model("./my_model")
 ```
 

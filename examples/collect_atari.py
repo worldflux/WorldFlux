@@ -206,7 +206,7 @@ def load_atari_to_buffer(
     Returns:
         ReplayBuffer ready for training.
     """
-    from worldloom.training import ReplayBuffer
+    from worldflux.training import ReplayBuffer
 
     logger.info(f"Loading data from: {path}")
     data = np.load(path, allow_pickle=False)

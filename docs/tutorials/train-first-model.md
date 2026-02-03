@@ -17,7 +17,7 @@ World models learn from trajectories: sequences of observations, actions, and re
 ```python
 import gymnasium as gym
 import numpy as np
-from worldloom.training import ReplayBuffer
+from worldflux.training import ReplayBuffer
 
 # Create buffer
 buffer = ReplayBuffer(
@@ -60,7 +60,7 @@ buffer.save("cartpole_data.npz")
 ### Option B: Use Random Data (Testing)
 
 ```python
-from worldloom.training.data import create_random_buffer
+from worldflux.training.data import create_random_buffer
 
 buffer = create_random_buffer(
     capacity=10_000,
@@ -74,7 +74,7 @@ buffer = create_random_buffer(
 ## Step 2: Create a Model
 
 ```python
-from worldloom import create_world_model
+from worldflux import create_world_model
 
 model = create_world_model(
     "dreamerv3:size12m",
@@ -89,7 +89,7 @@ print(f"Parameters: {sum(p.numel() for p in model.parameters()):,}")
 ## Step 3: Configure Training
 
 ```python
-from worldloom.training import TrainingConfig
+from worldflux.training import TrainingConfig
 
 config = TrainingConfig(
     # Duration
@@ -113,7 +113,7 @@ config = TrainingConfig(
 ### Simple (One-Liner)
 
 ```python
-from worldloom.training import train
+from worldflux.training import train
 
 trained_model = train(model, buffer, total_steps=50_000)
 ```
@@ -121,8 +121,8 @@ trained_model = train(model, buffer, total_steps=50_000)
 ### With Full Control
 
 ```python
-from worldloom.training import Trainer
-from worldloom.training.callbacks import (
+from worldflux.training import Trainer
+from worldflux.training.callbacks import (
     LoggingCallback,
     CheckpointCallback,
     ProgressCallback,

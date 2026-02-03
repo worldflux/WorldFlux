@@ -95,7 +95,8 @@ class DreamerV3WorldModel(nn.Module):
     @property
     def device(self) -> torch.device:
         device = self._device_tracker.device
-        assert isinstance(device, torch.device)
+        if not isinstance(device, torch.device):
+            raise TypeError(f"Expected torch.device, got {type(device)}")
         return device
 
     def encode(self, obs: Tensor, deterministic: bool = False) -> LatentState:
@@ -195,15 +196,28 @@ class DreamerV3WorldModel(nn.Module):
 
         losses: dict[str, Tensor] = {}
 
-        # KL loss
+        # KL loss with KL balancing (DreamerV3 paper section 3.4)
+        # kl_balance controls the trade-off between representation learning and dynamics learning
+        # kl_balance=1.0: only dynamics learns, kl_balance=0.0: only representation learns
         kl_loss = torch.tensor(0.0, device=device)
+        alpha = self.config.kl_balance
+
         for state in states:
             if state.posterior_logits is not None and state.prior_logits is not None:
-                kl = self.rssm.latent_space.kl_divergence(
-                    state.posterior_logits,
+                # Dynamics loss: stop gradient on posterior, dynamics learns to predict it
+                kl_dynamics = self.rssm.latent_space.kl_divergence(
+                    state.posterior_logits.detach(),  # Stop gradient on representation
                     state.prior_logits,
                     free_nats=self.config.kl_free,
                 )
+                # Representation loss: stop gradient on prior, encoder learns to match it
+                kl_representation = self.rssm.latent_space.kl_divergence(
+                    state.posterior_logits,
+                    state.prior_logits.detach(),  # Stop gradient on dynamics
+                    free_nats=self.config.kl_free,
+                )
+                # Balanced KL loss
+                kl = alpha * kl_dynamics + (1 - alpha) * kl_representation
                 kl_loss = kl_loss + kl.mean()
         losses["kl"] = kl_loss / seq_len
 
@@ -254,7 +268,11 @@ class DreamerV3WorldModel(nn.Module):
         from ...core.registry import WorldModelRegistry
 
         model = WorldModelRegistry.from_pretrained(name_or_path, **kwargs)
-        assert isinstance(model, cls)
+        if not isinstance(model, cls):
+            raise TypeError(
+                f"Expected {cls.__name__}, got {type(model).__name__}. "
+                f"Check that the model type in the config matches."
+            )
         return model
 
     def save_pretrained(self, path: str) -> None:

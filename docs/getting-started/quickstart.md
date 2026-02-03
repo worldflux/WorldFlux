@@ -1,11 +1,11 @@
 # Quick Start
 
-Get started with WorldLoom in 5 minutes.
+Get started with WorldFlux in 5 minutes.
 
 ## Create a World Model
 
 ```python
-from worldloom import create_world_model
+from worldflux import create_world_model
 
 # DreamerV3 for image observations (Atari, visual tasks)
 model = create_world_model(
@@ -65,7 +65,7 @@ print(predictions["continue"].shape) # Episode continuation probability
 ## Train a Model
 
 ```python
-from worldloom.training import train, ReplayBuffer
+from worldflux.training import train, ReplayBuffer
 
 # Load your data
 buffer = ReplayBuffer.load("trajectories.npz")

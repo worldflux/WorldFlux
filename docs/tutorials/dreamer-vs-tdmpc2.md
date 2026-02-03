@@ -146,8 +146,8 @@ SimNorm provides stable, continuous embeddings without explicit uncertainty.
 ### DreamerV3 for Atari
 
 ```python
-from worldloom import create_world_model
-from worldloom.training import train, ReplayBuffer
+from worldflux import create_world_model
+from worldflux.training import train, ReplayBuffer
 
 # Create model
 model = create_world_model(
@@ -172,8 +172,8 @@ reconstructed = model.decode(trajectory.states[-1])
 ### TD-MPC2 for MuJoCo
 
 ```python
-from worldloom import create_world_model
-from worldloom.training import train, ReplayBuffer
+from worldflux import create_world_model
+from worldflux.training import train, ReplayBuffer
 
 # Create model
 model = create_world_model(

@@ -92,6 +92,11 @@ def main():
         help="Enable wandb logging",
     )
     parser.add_argument(
+        "--multi-gpu",
+        action="store_true",
+        help="Use all available GPUs with DataParallel",
+    )
+    parser.add_argument(
         "--deter-dim",
         type=int,
         default=512,
@@ -119,9 +124,9 @@ def main():
         sys.exit(1)
 
     # Import here to give better error messages for missing deps
-    from worldloom import create_world_model
-    from worldloom.training import ReplayBuffer, Trainer, TrainingConfig
-    from worldloom.training.callbacks import (
+    from worldflux import create_world_model
+    from worldflux.training import ReplayBuffer, Trainer, TrainingConfig
+    from worldflux.training.callbacks import (
         EarlyStoppingCallback,
         LoggingCallback,
         ProgressCallback,
@@ -211,6 +216,16 @@ def main():
     num_params = sum(p.numel() for p in model.parameters())
     logger.info(f"Model parameters: {num_params:,}")
 
+    # Multi-GPU support
+    if args.multi_gpu:
+        import torch
+
+        if torch.cuda.device_count() > 1:
+            logger.info(f"Using {torch.cuda.device_count()} GPUs with DataParallel")
+            model = torch.nn.DataParallel(model)
+        else:
+            logger.warning("--multi-gpu specified but only 1 GPU available")
+
     # Training config
     config = TrainingConfig(
         total_steps=args.steps,
@@ -242,10 +257,15 @@ def main():
 
     trained_model = trainer.train(buffer)
 
-    # Save final model
+    # Save final model (unwrap DataParallel if needed)
     output_path = f"{args.output_dir}/atari_dreamer_final"
     logger.info(f"Saving model to {output_path}...")
-    trained_model.save_pretrained(output_path)
+    import torch
+
+    if isinstance(trained_model, torch.nn.DataParallel):
+        trained_model.module.save_pretrained(output_path)
+    else:
+        trained_model.save_pretrained(output_path)
 
     # Print final training metrics
     if hasattr(trainer, "history") and trainer.history:
@@ -256,9 +276,12 @@ def main():
 
     logger.info("Training complete!")
 
-    # Run validation imagination
+    # Run validation imagination (unwrap DataParallel if needed)
     logger.info("\nRunning validation imagination rollout...")
-    validate_imagination(trained_model, buffer, output_dir=args.output_dir)
+    model_for_validation = (
+        trained_model.module if isinstance(trained_model, torch.nn.DataParallel) else trained_model
+    )
+    validate_imagination(model_for_validation, buffer, output_dir=args.output_dir)
 
 
 def validate_imagination(

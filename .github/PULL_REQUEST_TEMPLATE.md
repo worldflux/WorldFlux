@@ -26,7 +26,7 @@ Fixes #(issue number)
 Describe the tests you ran to verify your changes:
 
 - [ ] `pytest tests/` passes
-- [ ] `mypy src/worldloom/` passes
+- [ ] `mypy src/worldflux/` passes
 - [ ] `ruff check src/` passes
 - [ ] New tests added for new functionality
 

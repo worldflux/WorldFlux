@@ -1,4 +1,4 @@
-"""Trainer for WorldLoom."""
+"""Trainer for WorldFlux."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ import torch.nn as nn
 from torch.optim import AdamW, Optimizer
 from torch.optim.lr_scheduler import LRScheduler
 
-from worldloom.core.exceptions import CheckpointError, ConfigurationError, TrainingError
+from worldflux.core.exceptions import CheckpointError, ConfigurationError, TrainingError
 
 from .callbacks import Callback, CallbackList, CheckpointCallback, LoggingCallback
 from .config import TrainingConfig
@@ -45,7 +45,7 @@ class TrainingState:
 
 class Trainer:
     """
-    HuggingFace-style trainer for WorldLoom.
+    HuggingFace-style trainer for WorldFlux.
 
     Provides a simple interface for training world models with:
     - Automatic device placement
@@ -62,8 +62,8 @@ class Trainer:
         scheduler: Optional learning rate scheduler.
 
     Example:
-        >>> from worldloom import create_world_model
-        >>> from worldloom.training import Trainer, TrainingConfig, ReplayBuffer
+        >>> from worldflux import create_world_model
+        >>> from worldflux.training import Trainer, TrainingConfig, ReplayBuffer
         >>>
         >>> model = create_world_model("dreamerv3:size12m")
         >>> buffer = ReplayBuffer.load("data.npz")
@@ -110,6 +110,9 @@ class Trainer:
 
         # Training state
         self.state = TrainingState()
+
+        # Gradient accumulation counter
+        self._accumulation_step = 0
 
         # Mixed precision
         self.scaler = torch.amp.GradScaler() if self.config.mixed_precision else None
@@ -205,9 +208,74 @@ class Trainer:
 
         return self.model
 
+    def _check_for_nan_inf(self, losses: dict[str, torch.Tensor], step: int) -> None:
+        """
+        Check for NaN or Inf values in losses and raise an error if detected.
+
+        Args:
+            losses: Dictionary of loss tensors to check.
+            step: Current training step (for error message).
+
+        Raises:
+            TrainingError: If NaN or Inf values are detected.
+        """
+        nan_losses = []
+        inf_losses = []
+
+        for name, value in losses.items():
+            if torch.isnan(value).any():
+                nan_losses.append(name)
+            if torch.isinf(value).any():
+                inf_losses.append(name)
+
+        if nan_losses or inf_losses:
+            msg_parts = []
+            if nan_losses:
+                msg_parts.append(f"NaN in losses: {nan_losses}")
+            if inf_losses:
+                msg_parts.append(f"Inf in losses: {inf_losses}")
+            raise TrainingError(
+                f"Numerical instability at step {step}: {', '.join(msg_parts)}. "
+                "Consider reducing learning rate, enabling gradient clipping, "
+                "or checking input data for anomalies."
+            )
+
+    def _check_gradients(self, step: int) -> None:
+        """
+        Check for NaN or Inf values in gradients.
+
+        Args:
+            step: Current training step (for error message).
+
+        Raises:
+            TrainingError: If NaN or Inf gradients are detected.
+        """
+        for name, param in self.model.named_parameters():
+            if param.grad is not None:
+                if torch.isnan(param.grad).any():
+                    raise TrainingError(
+                        f"NaN gradient detected in parameter '{name}' at step {step}. "
+                        "Consider reducing learning rate or enabling gradient clipping."
+                    )
+                if torch.isinf(param.grad).any():
+                    raise TrainingError(
+                        f"Inf gradient detected in parameter '{name}' at step {step}. "
+                        "Consider reducing learning rate or enabling gradient clipping."
+                    )
+
     def _train_step(self, data: ReplayBuffer) -> dict[str, float]:
-        """Execute a single training step."""
+        """
+        Execute a single training step with gradient accumulation support.
+
+        When gradient_accumulation_steps > 1, gradients are accumulated across
+        multiple forward/backward passes before updating weights. This enables
+        training with larger effective batch sizes while staying within memory limits.
+
+        The effective batch size is: batch_size * gradient_accumulation_steps
+        """
         self.model.train()
+        accum_steps = self.config.gradient_accumulation_steps
+        is_accumulating = self._accumulation_step < accum_steps - 1
 
         # Sample batch
         batch = data.sample(
@@ -216,45 +284,66 @@ class Trainer:
             device=self.device,
         )
 
-        # Forward pass
-        self.optimizer.zero_grad()
+        # Only zero gradients at the start of accumulation cycle
+        if self._accumulation_step == 0:
+            self.optimizer.zero_grad()
 
         if self.config.mixed_precision and self.scaler is not None:
             with torch.amp.autocast(device_type=self.device.type):
                 losses = self.model.compute_loss(batch)  # type: ignore[attr-defined, operator]
-                loss = losses["loss"]
+                # Scale loss by accumulation steps for proper averaging
+                loss = losses["loss"] / accum_steps
+
+            # Check for NaN/Inf in losses before backward
+            self._check_for_nan_inf(losses, self.state.global_step)
 
             self.scaler.scale(loss).backward()  # type: ignore[union-attr]
 
-            if self.config.grad_clip > 0:
-                self.scaler.unscale_(self.optimizer)
-                torch.nn.utils.clip_grad_norm_(
-                    self.model.parameters(),
-                    self.config.grad_clip,
-                )
+            # Only step optimizer when accumulation is complete
+            if not is_accumulating:
+                if self.config.grad_clip > 0:
+                    self.scaler.unscale_(self.optimizer)
+                    # Check gradients after unscaling
+                    self._check_gradients(self.state.global_step)
+                    torch.nn.utils.clip_grad_norm_(
+                        self.model.parameters(),
+                        self.config.grad_clip,
+                    )
 
-            self.scaler.step(self.optimizer)
-            self.scaler.update()
+                self.scaler.step(self.optimizer)
+                self.scaler.update()
         else:
             losses = self.model.compute_loss(batch)  # type: ignore[attr-defined, operator]
-            loss = losses["loss"]
+            # Scale loss by accumulation steps for proper averaging
+            loss = losses["loss"] / accum_steps
+
+            # Check for NaN/Inf in losses before backward
+            self._check_for_nan_inf(losses, self.state.global_step)
 
             loss.backward()
 
-            if self.config.grad_clip > 0:
-                torch.nn.utils.clip_grad_norm_(
-                    self.model.parameters(),
-                    self.config.grad_clip,
-                )
+            # Only step optimizer when accumulation is complete
+            if not is_accumulating:
+                # Check gradients after backward
+                self._check_gradients(self.state.global_step)
 
-            self.optimizer.step()
+                if self.config.grad_clip > 0:
+                    torch.nn.utils.clip_grad_norm_(
+                        self.model.parameters(),
+                        self.config.grad_clip,
+                    )
 
-        # Update scheduler
-        if self.scheduler is not None:
+                self.optimizer.step()
+
+        # Update accumulation counter
+        self._accumulation_step = (self._accumulation_step + 1) % accum_steps
+
+        # Update scheduler only when accumulation is complete
+        if self.scheduler is not None and not is_accumulating:
             self.scheduler.step()
 
-        # Update state
-        loss_value = loss.item()
+        # Update state (use unscaled loss for logging)
+        loss_value = losses["loss"].item()  # Use original loss, not scaled
         self.state.total_loss += loss_value
         self.state.num_batches += 1
         self.state.metrics = {k: v.item() for k, v in losses.items()}
@@ -296,7 +385,13 @@ class Trainer:
         return {k: v / num_batches for k, v in total_metrics.items()}
 
     def save_checkpoint(self, path: str) -> None:
-        """Save training checkpoint."""
+        """Save training checkpoint atomically with validation.
+
+        Uses atomic write pattern: write to temp file, validate, then rename.
+        This prevents corrupted checkpoints if disk fills or process is killed.
+        """
+        import tempfile
+
         checkpoint = {
             "model_state_dict": self.model.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
@@ -315,9 +410,38 @@ class Trainer:
         if hasattr(self.model, "config") and hasattr(self.model.config, "to_dict"):  # type: ignore[union-attr, operator]
             checkpoint["model_config"] = self.model.config.to_dict()  # type: ignore[union-attr, operator]
 
-        Path(path).parent.mkdir(parents=True, exist_ok=True)
-        torch.save(checkpoint, path)
-        logger.info(f"Saved checkpoint to {path}")
+        path_obj = Path(path)
+        path_obj.parent.mkdir(parents=True, exist_ok=True)
+
+        # Atomic save: write to temp file, validate, then rename
+        temp_fd, temp_path = tempfile.mkstemp(
+            suffix=".pt.tmp", dir=path_obj.parent, prefix=path_obj.stem
+        )
+        try:
+            os.close(temp_fd)
+            torch.save(checkpoint, temp_path)
+
+            # Validate checkpoint by attempting to load it
+            try:
+                test_load = torch.load(temp_path, map_location="cpu", weights_only=True)
+                # Verify essential keys exist
+                required_keys = ["model_state_dict", "optimizer_state_dict", "global_step"]
+                for key in required_keys:
+                    if key not in test_load:
+                        raise CheckpointError(f"Checkpoint validation failed: missing key '{key}'")
+                del test_load
+            except Exception as e:
+                raise CheckpointError(f"Checkpoint validation failed: {e}") from e
+
+            # Atomic rename (on POSIX systems)
+            os.replace(temp_path, path)
+            logger.info(f"Saved checkpoint to {path}")
+
+        except Exception:
+            # Clean up temp file on failure
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+            raise
 
     def load_checkpoint(self, path: str) -> None:
         """Load training checkpoint.
@@ -391,8 +515,8 @@ def train(
         Trained model.
 
     Example:
-        >>> from worldloom import create_world_model
-        >>> from worldloom.training import train, ReplayBuffer
+        >>> from worldflux import create_world_model
+        >>> from worldflux.training import train, ReplayBuffer
         >>>
         >>> model = create_world_model("dreamerv3:size12m")
         >>> buffer = ReplayBuffer.load("data.npz")

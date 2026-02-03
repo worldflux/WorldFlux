@@ -37,7 +37,7 @@ def load_model(model_path: str):
     """Load a trained DreamerV3 model."""
     import os
 
-    from worldloom import create_world_model
+    from worldflux import create_world_model
 
     logger.info(f"Loading model from: {model_path}")
 
@@ -64,8 +64,8 @@ def load_model(model_path: str):
 
 def load_buffer(data_path: str | None, obs_shape: tuple, action_dim: int):
     """Load data into a ReplayBuffer or create random data for testing."""
-    from worldloom.training import ReplayBuffer
-    from worldloom.training.data import create_random_buffer
+    from worldflux.training import ReplayBuffer
+    from worldflux.training.data import create_random_buffer
 
     # Use random data if no path provided or if path doesn't exist
     if data_path is None or data_path.lower() == "random" or not Path(data_path).exists():

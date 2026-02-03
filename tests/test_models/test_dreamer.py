@@ -3,8 +3,8 @@
 import pytest
 import torch
 
-from worldloom import AutoWorldModel, DreamerV3Config
-from worldloom.models.dreamer import DreamerV3WorldModel
+from worldflux import AutoWorldModel, DreamerV3Config
+from worldflux.models.dreamer import DreamerV3WorldModel
 
 
 class TestDreamerV3Config:

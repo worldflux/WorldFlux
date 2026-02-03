@@ -97,7 +97,8 @@ class TDMPC2WorldModel(nn.Module):
     @property
     def device(self) -> torch.device:
         device = self._device_tracker.device
-        assert isinstance(device, torch.device)
+        if not isinstance(device, torch.device):
+            raise TypeError(f"Expected torch.device, got {type(device)}")
         return device
 
     def encode(self, obs: Tensor, deterministic: bool = False) -> LatentState:
@@ -118,7 +119,8 @@ class TDMPC2WorldModel(nn.Module):
         task_id: Tensor | None = None,
     ) -> LatentState:
         """Predict next state."""
-        assert state.deterministic is not None, "TD-MPC2 requires deterministic state"
+        if state.deterministic is None:
+            raise ValueError("TD-MPC2 requires deterministic state component")
         z = state.deterministic
 
         # Residual prediction
@@ -136,8 +138,28 @@ class TDMPC2WorldModel(nn.Module):
         return self.encode(obs)
 
     def decode(self, state: LatentState) -> dict[str, Tensor]:
-        """TD-MPC2 has no decoder, returns reward and Q-values."""
-        assert state.deterministic is not None, "TD-MPC2 requires deterministic state"
+        """
+        Decode latent state to predictions.
+
+        TD-MPC2 is an implicit model without explicit observation decoding.
+        Returns reward prediction and additional model-specific outputs.
+
+        Returns:
+            Dictionary with standard keys:
+                - reward: Predicted reward [batch, 1]
+                - continue: Continue probability (always 1.0 for TD-MPC2) [batch, 1]
+            And model-specific keys:
+                - q_values: Q-value ensemble predictions [num_q, batch, 1]
+                - action: Policy action [batch, action_dim]
+
+        Note:
+            TD-MPC2 doesn't decode observations (implicit model), so 'obs' key
+            is intentionally omitted. Use isinstance checks or model_type to
+            determine if observation decoding is available.
+        """
+        if state.deterministic is None:
+            raise ValueError("TD-MPC2 requires deterministic state component")
+
         z = state.deterministic
 
         action = self._policy(z)
@@ -145,7 +167,10 @@ class TDMPC2WorldModel(nn.Module):
         q_values = self._q_ensemble(z, action)
 
         return {
+            # Standard protocol keys
             "reward": reward,
+            "continue": torch.ones_like(reward),  # TD-MPC2 doesn't predict termination
+            # Model-specific keys
             "q_values": q_values,
             "action": action,
         }
@@ -163,7 +188,8 @@ class TDMPC2WorldModel(nn.Module):
             state = self.predict(state, actions[t], deterministic=deterministic)
             states.append(state)
 
-            assert state.deterministic is not None
+            if state.deterministic is None:
+                raise ValueError(f"Predicted state at step {t} has no deterministic component")
             z = state.deterministic
             reward = self._reward_head(z, actions[t])
             rewards.append(reward)
@@ -189,14 +215,16 @@ class TDMPC2WorldModel(nn.Module):
 
     def predict_q(self, state: LatentState, action: Tensor) -> Tensor:
         """Predict Q-value ensemble."""
-        assert state.deterministic is not None, "TD-MPC2 requires deterministic state"
+        if state.deterministic is None:
+            raise ValueError("TD-MPC2 requires deterministic state component")
         z = state.deterministic
         q_values = self._q_ensemble(z, action)
         return q_values.squeeze(-1)
 
     def predict_reward(self, state: LatentState, action: Tensor) -> Tensor:
         """Predict reward."""
-        assert state.deterministic is not None, "TD-MPC2 requires deterministic state"
+        if state.deterministic is None:
+            raise ValueError("TD-MPC2 requires deterministic state component")
         z = state.deterministic
         return self._reward_head(z, action).squeeze(-1)
 
@@ -205,6 +233,13 @@ class TDMPC2WorldModel(nn.Module):
         TD-MPC2 loss computation.
 
         TD learning + latent consistency loss (BYOL-style).
+
+        The encoder receives gradients from:
+        - Consistency loss: through z_t -> dynamics -> z_pred path
+        - Reward loss: through z_t -> reward_head path
+        - TD loss: through z_t -> Q-ensemble path
+
+        Targets are computed with no_grad (BYOL-style self-supervised learning).
         """
         obs = batch["obs"]
         actions = batch["actions"]
@@ -213,26 +248,31 @@ class TDMPC2WorldModel(nn.Module):
         batch_size, seq_len = obs.shape[:2]
         device = obs.device
 
+        # Encode all observations once for efficiency
+        # Shape: [batch_size, seq_len, latent_dim]
+        obs_flat = obs.view(batch_size * seq_len, *obs.shape[2:])
+        z_all = self._encoder(obs_flat)
+        z_all = self.latent_space.sample(z_all)
+        z_all = z_all.view(batch_size, seq_len, -1)
+
+        # Compute target encodings (no gradient for BYOL-style learning)
+        with torch.no_grad():
+            z_targets = z_all[:, 1:].detach()  # [batch, seq_len-1, latent_dim]
+
         losses: dict[str, Tensor] = {}
 
         # Latent consistency loss
         consistency_loss = torch.tensor(0.0, device=device)
         for t in range(seq_len - 1):
-            state_t = self.encode(obs[:, t])
-            assert state_t.deterministic is not None
-            z_t = state_t.deterministic
+            z_t = z_all[:, t]  # Current encoding (with gradient)
+            state_t = LatentState(deterministic=z_t, latent_type="simnorm")
 
-            pred_state = self.predict(
-                LatentState(deterministic=z_t, latent_type="simnorm"), actions[:, t]
-            )
-            assert pred_state.deterministic is not None
+            pred_state = self.predict(state_t, actions[:, t])
+            if pred_state.deterministic is None:
+                raise ValueError(f"Predicted state at step {t} has no deterministic component")
             z_pred = pred_state.deterministic
 
-            with torch.no_grad():
-                target_state = self.encode(obs[:, t + 1])
-                assert target_state.deterministic is not None
-                z_target = target_state.deterministic
-
+            z_target = z_targets[:, t]  # Target (no gradient)
             consistency_loss = consistency_loss + F.mse_loss(z_pred, z_target)
 
         losses["consistency"] = consistency_loss / max(seq_len - 1, 1)
@@ -240,13 +280,10 @@ class TDMPC2WorldModel(nn.Module):
         # Reward loss
         reward_loss = torch.tensor(0.0, device=device)
         for t in range(seq_len - 1):
-            state_t = self.encode(obs[:, t])
-            assert state_t.deterministic is not None
-            z_t = state_t.deterministic
+            z_t = z_all[:, t]  # With gradient
+            state_t = LatentState(deterministic=z_t, latent_type="simnorm")
 
-            pred_reward = self.predict_reward(
-                LatentState(deterministic=z_t, latent_type="simnorm"), actions[:, t]
-            )
+            pred_reward = self.predict_reward(state_t, actions[:, t])
             reward_loss = reward_loss + F.mse_loss(pred_reward, rewards[:, t + 1])
 
         losses["reward"] = reward_loss / max(seq_len - 1, 1)
@@ -255,17 +292,13 @@ class TDMPC2WorldModel(nn.Module):
         td_loss = torch.tensor(0.0, device=device)
         gamma = self.config.gamma
         for t in range(seq_len - 1):
-            state_t = self.encode(obs[:, t])
-            assert state_t.deterministic is not None
-            z_t = state_t.deterministic
-            state_t_latent = LatentState(deterministic=z_t, latent_type="simnorm")
+            z_t = z_all[:, t]  # With gradient for Q-network
+            state_t = LatentState(deterministic=z_t, latent_type="simnorm")
 
-            q_values = self.predict_q(state_t_latent, actions[:, t])
+            q_values = self.predict_q(state_t, actions[:, t])
 
             with torch.no_grad():
-                next_state = self.encode(obs[:, t + 1])
-                assert next_state.deterministic is not None
-                z_next = next_state.deterministic
+                z_next = z_targets[:, t]  # No gradient for target
                 state_next = LatentState(deterministic=z_next, latent_type="simnorm")
                 next_action = self._policy(z_next)
                 q_next = self.predict_q(state_next, next_action).min(dim=0)[0]
@@ -284,7 +317,11 @@ class TDMPC2WorldModel(nn.Module):
         from ...core.registry import WorldModelRegistry
 
         model = WorldModelRegistry.from_pretrained(name_or_path, **kwargs)
-        assert isinstance(model, cls)
+        if not isinstance(model, cls):
+            raise TypeError(
+                f"Expected {cls.__name__}, got {type(model).__name__}. "
+                f"Check that the model type in the config matches."
+            )
         return model
 
     def save_pretrained(self, path: str) -> None:

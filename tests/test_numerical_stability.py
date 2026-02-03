@@ -1,4 +1,4 @@
-"""Numerical stability tests for WorldLoom.
+"""Numerical stability tests for WorldFlux.
 
 These tests verify that mathematical operations remain stable
 across extreme input ranges to prevent NaN/Inf propagation.
@@ -6,7 +6,7 @@ across extreme input ranges to prevent NaN/Inf propagation.
 
 import torch
 
-from worldloom.models.dreamer.heads import symexp, symlog
+from worldflux.models.dreamer.heads import symexp, symlog
 
 
 class TestSymlogSymexp:
@@ -117,8 +117,8 @@ class TestGradientFlow:
 
     def test_dreamer_gradient_flow(self):
         """Verify gradients flow through DreamerV3 encode-decode."""
-        from worldloom.core.config import DreamerV3Config
-        from worldloom.models.dreamer.world_model import DreamerV3WorldModel
+        from worldflux.core.config import DreamerV3Config
+        from worldflux.models.dreamer.world_model import DreamerV3WorldModel
 
         config = DreamerV3Config(
             obs_shape=(3, 64, 64),
@@ -142,8 +142,8 @@ class TestGradientFlow:
 
     def test_tdmpc2_gradient_flow(self):
         """Verify gradients flow through TD-MPC2 encode-predict."""
-        from worldloom.core.config import TDMPC2Config
-        from worldloom.models.tdmpc2.world_model import TDMPC2WorldModel
+        from worldflux.core.config import TDMPC2Config
+        from worldflux.models.tdmpc2.world_model import TDMPC2WorldModel
 
         config = TDMPC2Config(
             obs_shape=(39,),

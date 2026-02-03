@@ -1,11 +1,11 @@
-"""Edge case tests for WorldLoom OSS robustness."""
+"""Edge case tests for WorldFlux OSS robustness."""
 
 import pytest
 import torch
 
-from worldloom.core.config import DreamerV3Config, TDMPC2Config
-from worldloom.core.state import LatentState
-from worldloom.models.dreamer.heads import symexp, symlog
+from worldflux.core.config import DreamerV3Config, TDMPC2Config
+from worldflux.core.state import LatentState
+from worldflux.models.dreamer.heads import symexp, symlog
 
 
 class TestNumericalStability:
@@ -36,7 +36,7 @@ class TestNumericalStability:
 
     def test_nan_input_handling(self):
         """Models should handle NaN input gracefully or raise clear errors."""
-        from worldloom.models.dreamer.world_model import DreamerV3WorldModel
+        from worldflux.models.dreamer.world_model import DreamerV3WorldModel
 
         config = DreamerV3Config(
             obs_shape=(3, 64, 64),
@@ -59,7 +59,7 @@ class TestNumericalStability:
 
     def test_inf_input_handling(self):
         """Models should handle Inf input gracefully or raise clear errors."""
-        from worldloom.models.tdmpc2.world_model import TDMPC2WorldModel
+        from worldflux.models.tdmpc2.world_model import TDMPC2WorldModel
 
         config = TDMPC2Config(
             obs_shape=(39,),
@@ -83,7 +83,7 @@ class TestEmptyBatchHandling:
 
     def test_dreamer_batch_size_one(self):
         """DreamerV3 should handle batch_size=1."""
-        from worldloom.models.dreamer.world_model import DreamerV3WorldModel
+        from worldflux.models.dreamer.world_model import DreamerV3WorldModel
 
         config = DreamerV3Config(
             obs_shape=(3, 64, 64),
@@ -101,7 +101,7 @@ class TestEmptyBatchHandling:
 
     def test_tdmpc2_batch_size_one(self):
         """TD-MPC2 should handle batch_size=1."""
-        from worldloom.models.tdmpc2.world_model import TDMPC2WorldModel
+        from worldflux.models.tdmpc2.world_model import TDMPC2WorldModel
 
         config = TDMPC2Config(
             obs_shape=(39,),
@@ -118,7 +118,7 @@ class TestEmptyBatchHandling:
 
     def test_sequence_length_one(self):
         """Models should handle sequence_length=1 in compute_loss."""
-        from worldloom.models.tdmpc2.world_model import TDMPC2WorldModel
+        from worldflux.models.tdmpc2.world_model import TDMPC2WorldModel
 
         config = TDMPC2Config(
             obs_shape=(39,),
@@ -145,7 +145,7 @@ class TestLongHorizonStability:
 
     def test_dreamer_long_imagination(self):
         """DreamerV3 imagination should remain stable over long horizons."""
-        from worldloom.models.dreamer.world_model import DreamerV3WorldModel
+        from worldflux.models.dreamer.world_model import DreamerV3WorldModel
 
         config = DreamerV3Config(
             obs_shape=(3, 64, 64),
@@ -176,7 +176,7 @@ class TestLongHorizonStability:
 
     def test_tdmpc2_long_imagination(self):
         """TD-MPC2 imagination should remain stable over long horizons."""
-        from worldloom.models.tdmpc2.world_model import TDMPC2WorldModel
+        from worldflux.models.tdmpc2.world_model import TDMPC2WorldModel
 
         config = TDMPC2Config(
             obs_shape=(39,),

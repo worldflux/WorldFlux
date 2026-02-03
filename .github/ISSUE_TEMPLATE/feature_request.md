@@ -26,7 +26,7 @@ Describe your use case and how this feature would help.
 
 ```python
 # Example of how you'd like to use this feature
-from worldloom import create_world_model
+from worldflux import create_world_model
 
 # Proposed API
 model = create_world_model("new-feature:preset")

@@ -3,14 +3,14 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "worldloom"
+name = "worldflux"
 version = "0.1.0"
 description = "Unified Python interface for world models in reinforcement learning"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
 authors = [
-    {name = "WorldLoom Contributors"}
+    {name = "WorldFlux Contributors"}
 ]
 keywords = [
     "world-models",
@@ -41,56 +41,56 @@ classifiers = [
 ]
 
 dependencies = [
-    "torch>=2.0.0",
-    "numpy>=1.24.0",
+    "torch>=2.0.0,<3.0.0",
+    "numpy>=1.24.0,<3.0.0",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=7.0.0",
-    "pytest-cov>=4.0.0",
-    "mypy>=1.0.0",
-    "ruff>=0.1.0",
-    "pre-commit>=3.0.0",
+    "pytest>=7.0.0,<9.0.0",
+    "pytest-cov>=4.0.0,<6.0.0",
+    "mypy>=1.0.0,<2.0.0",
+    "ruff>=0.1.0,<1.0.0",
+    "pre-commit>=3.0.0,<5.0.0",
 ]
 training = [
-    "tqdm>=4.0.0",
+    "tqdm>=4.0.0,<5.0.0",
 ]
 env = [
-    "gymnasium>=0.29.0",
+    "gymnasium>=0.29.0,<2.0.0",
 ]
 atari = [
-    "gymnasium[atari]>=0.29.0",
-    "ale-py>=0.8.0",
-    "opencv-python>=4.0.0",
+    "gymnasium[atari]>=0.29.0,<2.0.0",
+    "ale-py>=0.8.0,<1.0.0",
+    "opencv-python>=4.0.0,<5.0.0",
 ]
 mujoco = [
-    "gymnasium[mujoco]>=0.29.0",
-    "mujoco>=3.0.0",
+    "gymnasium[mujoco]>=0.29.0,<2.0.0",
+    "mujoco>=3.0.0,<4.0.0",
 ]
 viz = [
-    "matplotlib>=3.5.0",
-    "scikit-learn>=1.0.0",
+    "matplotlib>=3.5.0,<4.0.0",
+    "scikit-learn>=1.0.0,<2.0.0",
 ]
 logging = [
-    "wandb>=0.15.0",
+    "wandb>=0.15.0,<1.0.0",
 ]
 docs = [
-    "mkdocs>=1.5.0",
-    "mkdocs-material>=9.0.0",
-    "mkdocstrings[python]>=0.24.0",
-    "pymdown-extensions>=10.0.0",
+    "mkdocs>=1.5.0,<2.0.0",
+    "mkdocs-material>=9.0.0,<10.0.0",
+    "mkdocstrings[python]>=0.24.0,<1.0.0",
+    "pymdown-extensions>=10.0.0,<11.0.0",
 ]
 all = [
-    "worldloom[dev,training,env,atari,viz,logging,docs]",
+    "worldflux[dev,training,env,atari,viz,logging,docs]",
 ]
 
 [project.urls]
-Homepage = "https://github.com/worldloom/WorldLoom"
-Documentation = "https://worldloom.readthedocs.io"
-Repository = "https://github.com/worldloom/WorldLoom"
-Changelog = "https://github.com/worldloom/WorldLoom/blob/main/CHANGELOG.md"
-Issues = "https://github.com/worldloom/WorldLoom/issues"
+Homepage = "https://github.com/worldflux/WorldFlux"
+Documentation = "https://worldflux.readthedocs.io"
+Repository = "https://github.com/worldflux/WorldFlux"
+Changelog = "https://github.com/worldflux/WorldFlux/blob/main/CHANGELOG.md"
+Issues = "https://github.com/worldflux/WorldFlux/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -107,15 +107,15 @@ warn_unused_configs = true
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = "worldloom.models.dreamer.*"
+module = "worldflux.models.dreamer.*"
 disallow_untyped_defs = false
 
 [[tool.mypy.overrides]]
-module = "worldloom.models.tdmpc2.*"
+module = "worldflux.models.tdmpc2.*"
 disallow_untyped_defs = false
 
 [[tool.mypy.overrides]]
-module = "worldloom.training.*"
+module = "worldflux.training.*"
 disallow_untyped_defs = false
 
 [tool.ruff]

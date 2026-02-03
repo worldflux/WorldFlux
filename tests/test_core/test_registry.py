@@ -2,8 +2,8 @@
 
 import pytest
 
-from worldloom.core.config import DreamerV3Config, TDMPC2Config, WorldModelConfig
-from worldloom.core.registry import (
+from worldflux.core.config import DreamerV3Config, TDMPC2Config, WorldModelConfig
+from worldflux.core.registry import (
     TYPE_ALIASES,
     AutoConfig,
     AutoWorldModel,

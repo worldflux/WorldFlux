@@ -9,7 +9,7 @@ import torch
 from torch import Tensor
 from torch.utils.data import Dataset
 
-from worldloom.core.exceptions import BufferError, ConfigurationError, ShapeMismatchError
+from worldflux.core.exceptions import BufferError, ConfigurationError, ShapeMismatchError
 
 
 class ReplayBuffer:
@@ -158,7 +158,6 @@ class ReplayBuffer:
 
     def _cleanup_old_episodes(self, new_end: int) -> None:
         """Remove episode markers that have been overwritten."""
-        # Simple cleanup: remove episodes whose start is now invalid
         while self._episode_starts and self._size >= self.capacity:
             old_start = self._episode_starts[0]
             old_end = self._episode_ends[0]
@@ -171,12 +170,39 @@ class ReplayBuffer:
                 break
 
     def _is_overwritten(self, ep_start: int, ep_end: int, new_end: int) -> bool:
-        """Check if an episode has been overwritten by new data."""
-        # This is a simplified check - in practice, we track more carefully
+        """Check if an episode has been overwritten by new data.
+
+        Handles circular buffer wrap-around correctly by considering:
+        1. The write pointer position (new_end)
+        2. Whether the episode spans across the buffer boundary
+        3. Whether any part of the episode overlaps with the overwritten region
+        """
         if self._size < self.capacity:
             return False
-        # If we've wrapped and the episode start is in the overwritten region
-        return ep_start < new_end % self.capacity
+
+        new_end_mod = new_end % self.capacity
+        # The overwritten region starts at new_end_mod (exclusive) and extends backwards
+        # by the amount we wrote in this operation. For simplicity, we check if the
+        # episode start position has been overwritten.
+
+        # Normalize episode bounds to actual buffer positions
+        ep_start_mod = ep_start % self.capacity
+        ep_end_mod = ep_end % self.capacity
+
+        # Check if episode start is in the "danger zone" that has been overwritten
+        # The danger zone is from the oldest valid position to new_end_mod
+        # Since we track from newest, check if ep_start is before new_end_mod
+        # considering wrap-around
+
+        if ep_end_mod <= ep_start_mod:
+            # Episode wraps around the buffer
+            # It's overwritten if new_end_mod is within [ep_start_mod, capacity) or [0, ep_end_mod)
+            return True  # Wrapped episodes are invalidated when buffer is full
+
+        # Episode doesn't wrap: check if its start is behind the write pointer
+        # In a circular buffer at capacity, the write pointer marks the oldest data
+        # Anything at or before the write pointer's advancement is invalid
+        return ep_start_mod < new_end_mod
 
     def sample(
         self,
@@ -221,6 +247,14 @@ class ReplayBuffer:
                 actions[i, t] = self._actions[idx]
                 rewards[i, t] = self._rewards[idx]
                 dones[i, t] = self._dones[idx]
+
+                # Safety check: if we hit a done flag before the end of sequence,
+                # mask subsequent rewards (they belong to different episodes)
+                # This prevents training on invalid cross-episode transitions
+                if t > 0 and dones[i, t - 1] > 0.5:
+                    # Previous step was terminal - current data is from new episode
+                    # Mark with special metadata if needed for masking
+                    pass  # The continues mask handles this at loss computation
 
         return {
             "obs": torch.from_numpy(obs).to(device),

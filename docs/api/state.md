@@ -7,7 +7,7 @@ The core representation used by all world models.
 `LatentState` is a dataclass that holds the latent representation of an observation. It provides a unified interface across different model architectures.
 
 ```python
-from worldloom.core.state import LatentState
+from worldflux.core.state import LatentState
 ```
 
 ## Creating a LatentState

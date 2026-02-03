@@ -93,6 +93,7 @@ class RSSM(nn.Module):
             deterministic=h_next,
             stochastic=z_next,
             logits=prior_logits,
+            prior_logits=prior_logits,  # Set prior_logits for KL computation
             latent_type="categorical",
         )
 

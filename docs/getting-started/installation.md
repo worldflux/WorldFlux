@@ -8,8 +8,8 @@
 ## From Source (Recommended)
 
 ```bash
-git clone https://github.com/worldloom/WorldLoom.git
-cd worldloom
+git clone https://github.com/worldflux/WorldFlux.git
+cd worldflux
 pip install -e "."
 ```
 
@@ -35,22 +35,22 @@ pip install -e ".[dev]"
 ## From PyPI (Coming Soon)
 
 ```bash
-pip install worldloom
+pip install worldflux
 ```
 
 ## Verify Installation
 
 ```python
-import worldloom
-print(worldloom.__version__)
+import worldflux
+print(worldflux.__version__)
 
-from worldloom import create_world_model, list_models
+from worldflux import create_world_model, list_models
 print(list_models())
 ```
 
 ## GPU Support
 
-WorldLoom automatically uses CUDA if available:
+WorldFlux automatically uses CUDA if available:
 
 ```python
 import torch

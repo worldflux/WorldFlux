@@ -5,8 +5,8 @@ Complete training infrastructure for world models.
 ## Quick Start
 
 ```python
-from worldloom import create_world_model
-from worldloom.training import train, ReplayBuffer
+from worldflux import create_world_model
+from worldflux.training import train, ReplayBuffer
 
 model = create_world_model("dreamerv3:size12m", obs_shape=(4,), action_dim=2)
 buffer = ReplayBuffer.load("data.npz")
@@ -21,7 +21,7 @@ trained_model = train(model, buffer, total_steps=50_000)
 One-liner training function.
 
 ```python
-from worldloom.training import train
+from worldflux.training import train
 
 trained_model = train(
     model,
@@ -54,7 +54,7 @@ Trained model (`nn.Module`)
 Configuration for training.
 
 ```python
-from worldloom.training import TrainingConfig
+from worldflux.training import TrainingConfig
 
 config = TrainingConfig(
     # Duration
@@ -98,7 +98,7 @@ config = TrainingConfig(
 Full training control with callbacks.
 
 ```python
-from worldloom.training import Trainer, TrainingConfig
+from worldflux.training import Trainer, TrainingConfig
 
 config = TrainingConfig(total_steps=100_000)
 trainer = Trainer(model, config)
@@ -117,7 +117,7 @@ trained_model = trainer.train(buffer)
 #### add_callback
 
 ```python
-from worldloom.training.callbacks import CheckpointCallback
+from worldflux.training.callbacks import CheckpointCallback
 
 trainer.add_callback(CheckpointCallback(save_dir="./checkpoints"))
 ```
@@ -131,7 +131,7 @@ Storage for trajectory data.
 ### Creation
 
 ```python
-from worldloom.training import ReplayBuffer
+from worldflux.training import ReplayBuffer
 
 buffer = ReplayBuffer(
     capacity=100_000,
@@ -190,7 +190,7 @@ buffer = ReplayBuffer.load("buffer.npz")
 Progress bar with metrics.
 
 ```python
-from worldloom.training.callbacks import ProgressCallback
+from worldflux.training.callbacks import ProgressCallback
 
 trainer.add_callback(ProgressCallback())
 ```
@@ -200,7 +200,7 @@ trainer.add_callback(ProgressCallback())
 TensorBoard/console logging.
 
 ```python
-from worldloom.training.callbacks import LoggingCallback
+from worldflux.training.callbacks import LoggingCallback
 
 trainer.add_callback(LoggingCallback(
     log_dir="./logs",
@@ -213,7 +213,7 @@ trainer.add_callback(LoggingCallback(
 Periodic model saving.
 
 ```python
-from worldloom.training.callbacks import CheckpointCallback
+from worldflux.training.callbacks import CheckpointCallback
 
 trainer.add_callback(CheckpointCallback(
     save_dir="./checkpoints",
@@ -227,7 +227,7 @@ trainer.add_callback(CheckpointCallback(
 Stop on plateau.
 
 ```python
-from worldloom.training.callbacks import EarlyStoppingCallback
+from worldflux.training.callbacks import EarlyStoppingCallback
 
 trainer.add_callback(EarlyStoppingCallback(
     monitor="loss",
@@ -239,7 +239,7 @@ trainer.add_callback(EarlyStoppingCallback(
 ### Custom Callbacks
 
 ```python
-from worldloom.training.callbacks import Callback
+from worldflux.training.callbacks import Callback
 
 class MyCallback(Callback):
     def on_step_end(self, step, losses):
@@ -258,7 +258,7 @@ trainer.add_callback(MyCallback())
 Create buffer with random data for testing.
 
 ```python
-from worldloom.training.data import create_random_buffer
+from worldflux.training.data import create_random_buffer
 
 buffer = create_random_buffer(
     capacity=10_000,
@@ -275,9 +275,9 @@ buffer = create_random_buffer(
 ## Complete Example
 
 ```python
-from worldloom import create_world_model
-from worldloom.training import Trainer, TrainingConfig, ReplayBuffer
-from worldloom.training.callbacks import (
+from worldflux import create_world_model
+from worldflux.training import Trainer, TrainingConfig, ReplayBuffer
+from worldflux.training.callbacks import (
     ProgressCallback,
     LoggingCallback,
     CheckpointCallback,

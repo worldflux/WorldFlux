@@ -83,15 +83,50 @@ class WorldModelRegistry:
 
     @classmethod
     def register(cls, model_type: str, config_class: type[WorldModelConfig] | None = None):
-        """Register a model class with decorator."""
+        """
+        Register a model class with decorator.
+
+        Args:
+            model_type: Unique identifier for the model type.
+            config_class: Optional config class to associate with the model.
+
+        Returns:
+            Decorator function that registers the model class.
+
+        Raises:
+            ConfigurationError: If model_type is already registered.
+        """
 
         def decorator(model_class: type):
+            if model_type in cls._model_registry:
+                existing_class = cls._model_registry[model_type]
+                raise ConfigurationError(
+                    f"Model type '{model_type}' is already registered to {existing_class.__name__}. "
+                    f"Cannot re-register to {model_class.__name__}. "
+                    "Use a different model_type or unregister the existing model first."
+                )
             cls._model_registry[model_type] = model_class
             if config_class is not None:
                 cls._config_registry[model_type] = config_class
             return model_class
 
         return decorator
+
+    @classmethod
+    def unregister(cls, model_type: str) -> bool:
+        """
+        Unregister a model type.
+
+        Args:
+            model_type: The model type to unregister.
+
+        Returns:
+            True if the model was unregistered, False if it wasn't registered.
+        """
+        was_registered = model_type in cls._model_registry
+        cls._model_registry.pop(model_type, None)
+        cls._config_registry.pop(model_type, None)
+        return was_registered
 
     @classmethod
     def register_preset(cls, name: str, config: dict):

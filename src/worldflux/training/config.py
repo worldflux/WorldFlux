@@ -1,11 +1,11 @@
-"""Training configuration for WorldLoom."""
+"""Training configuration for WorldFlux."""
 
 import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from worldloom.core.exceptions import ConfigurationError
+from worldflux.core.exceptions import ConfigurationError
 
 
 @dataclass
@@ -68,6 +68,9 @@ class TrainingConfig:
     scheduler: str = "none"
     ema_decay: float | None = None
 
+    # Gradient accumulation
+    gradient_accumulation_steps: int = 1
+
     # Model-specific overrides (merged into model config at train time)
     model_overrides: dict[str, Any] = field(default_factory=dict)
 
@@ -114,6 +117,10 @@ class TrainingConfig:
             )
         if self.ema_decay is not None and not (0.0 < self.ema_decay < 1.0):
             raise ConfigurationError(f"ema_decay must be in (0, 1), got {self.ema_decay}")
+        if self.gradient_accumulation_steps < 1:
+            raise ConfigurationError(
+                f"gradient_accumulation_steps must be >= 1, got {self.gradient_accumulation_steps}"
+            )
 
     def to_dict(self) -> dict[str, Any]:
         """Convert config to dictionary."""

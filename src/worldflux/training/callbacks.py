@@ -121,7 +121,7 @@ class LoggingCallback(Callback):
                 import wandb
 
                 self._wandb_run = wandb.init(
-                    project=self.wandb_project or "worldloom",
+                    project=self.wandb_project or "worldflux",
                     name=self.wandb_run_name,
                     config=trainer.config.to_dict(),
                 )

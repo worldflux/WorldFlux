@@ -1,20 +1,20 @@
-# WorldLoom
+# WorldFlux
 
 <div align="center">
-<img src="assets/logo.svg" alt="WorldLoom Logo" width="180">
+<img src="assets/logo.svg" alt="WorldFlux Logo" width="180">
 </div>
 
 **Unified Interface for World Models in Reinforcement Learning**
 
 *One API. Multiple Architectures. Infinite Imagination.*
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/worldloom/WorldLoom/blob/main/examples/worldloom_quickstart.ipynb)
-[![GitHub](https://img.shields.io/badge/GitHub-worldloom-blue?logo=github)](https://github.com/worldloom/WorldLoom)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/worldflux/WorldFlux/blob/main/examples/worldflux_quickstart.ipynb)
+[![GitHub](https://img.shields.io/badge/GitHub-worldflux-blue?logo=github)](https://github.com/worldflux/WorldFlux)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ---
 
-WorldLoom provides a unified Python interface for world models used in reinforcement learning. Starting with efficient latent-space models (DreamerV3, TD-MPC2), with plans to support diverse architectures including autoregressive and diffusion-based world models.
+WorldFlux provides a unified Python interface for world models used in reinforcement learning. Starting with efficient latent-space models (DreamerV3, TD-MPC2), with plans to support diverse architectures including autoregressive and diffusion-based world models.
 
 ## Features
 
@@ -26,7 +26,7 @@ WorldLoom provides a unified Python interface for world models used in reinforce
 ## Quick Start
 
 ```python
-from worldloom import create_world_model
+from worldflux import create_world_model
 import torch
 
 # Create a world model
@@ -62,7 +62,7 @@ print(f"Predicted rewards: {trajectory.rewards.shape}")  # [15, 1, 1]
 
     ---
 
-    Install WorldLoom and learn the basics.
+    Install WorldFlux and learn the basics.
 
     [:octicons-arrow-right-24: Installation](getting-started/installation.md)
 
@@ -127,19 +127,19 @@ graph LR
 ## Installation
 
 ```bash
-git clone https://github.com/worldloom/WorldLoom.git
-cd worldloom
+git clone https://github.com/worldflux/WorldFlux.git
+cd worldflux
 pip install -e ".[training]"
 ```
 
 ## Try It Now
 
-The fastest way to get started is our [interactive Colab notebook](https://colab.research.google.com/github/worldloom/WorldLoom/blob/main/examples/worldloom_quickstart.ipynb).
+The fastest way to get started is our [interactive Colab notebook](https://colab.research.google.com/github/worldflux/WorldFlux/blob/main/examples/worldflux_quickstart.ipynb).
 
 ## Contributing
 
-Contributions are welcome! See our [Contributing Guide](https://github.com/worldloom/WorldLoom/blob/main/CONTRIBUTING.md).
+Contributions are welcome! See our [Contributing Guide](https://github.com/worldflux/WorldFlux/blob/main/CONTRIBUTING.md).
 
 ## License
 
-MIT License - see [LICENSE](https://github.com/worldloom/WorldLoom/blob/main/LICENSE) for details.
+MIT License - see [LICENSE](https://github.com/worldflux/WorldFlux/blob/main/LICENSE) for details.

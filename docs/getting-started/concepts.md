@@ -1,6 +1,6 @@
 # Core Concepts
 
-Understanding WorldLoom's architecture and key components.
+Understanding WorldFlux's architecture and key components.
 
 ## What is a World Model?
 

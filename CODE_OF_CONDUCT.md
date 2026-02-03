@@ -2,7 +2,7 @@
 
 ## Our Pledge
 
-WorldLoom is committed to providing a welcoming and inclusive environment for everyone.
+WorldFlux is committed to providing a welcoming and inclusive environment for everyone.
 
 ## Standards
 

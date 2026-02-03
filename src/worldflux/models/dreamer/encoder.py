@@ -1,6 +1,5 @@
 """Encoder modules for DreamerV3."""
 
-import torch
 import torch.nn as nn
 from torch import Tensor
 
@@ -41,11 +40,12 @@ class CNNEncoder(nn.Module):
 
         self.conv = nn.Sequential(*layers)
 
-        # Calculate output dimension
-        with torch.no_grad():
-            dummy = torch.zeros(1, *obs_shape)
-            out = self.conv(dummy)
-            self._output_dim = out.flatten(1).shape[1]
+        # Calculate output dimension analytically (no dummy tensor needed)
+        # After each conv layer, spatial dims are halved (with proper padding/stride)
+        final_h = obs_shape[1] // (stride ** len(kernels))
+        final_w = obs_shape[2] // (stride ** len(kernels))
+        final_channels = depth * (2 ** (len(kernels) - 1))
+        self._output_dim = final_channels * final_h * final_w
 
     @property
     def output_dim(self) -> int:

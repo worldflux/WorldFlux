@@ -1,5 +1,5 @@
 ---
-title: WorldLoom Demo
+title: WorldFlux Demo
 emoji: 🌐
 colorFrom: blue
 colorTo: purple
@@ -9,11 +9,11 @@ app_file: app.py
 pinned: false
 ---
 
-# WorldLoom Demo
+# WorldFlux Demo
 
 Experience world models in action!
 
-This Space demonstrates the imagination rollouts from the WorldLoom's world models.
+This Space demonstrates the imagination rollouts from the WorldFlux's world models.
 
 ## Features
 
@@ -27,6 +27,6 @@ Select a model type, set the imagination horizon, and click "Run Imagination"!
 
 ## Links
 
-- [GitHub](https://github.com/worldloom/WorldLoom)
-- [PyPI](https://pypi.org/project/worldloom/)
-- [Documentation](https://worldloom.readthedocs.io)
+- [GitHub](https://github.com/worldflux/WorldFlux)
+- [PyPI](https://pypi.org/project/worldflux/)
+- [Documentation](https://worldflux.readthedocs.io)

@@ -30,7 +30,7 @@ What actually happened.
 
 ```python
 # Minimal code to reproduce the issue
-from worldloom import create_world_model
+from worldflux import create_world_model
 
 model = create_world_model("dreamerv3:size12m")
 # ...

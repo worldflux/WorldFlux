@@ -2,7 +2,7 @@
 
 import torch
 
-from worldloom import AutoConfig, AutoWorldModel
+from worldflux import AutoConfig, AutoWorldModel
 
 
 class TestModelSwitching:

@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
   - name: Question / Discussion
-    url: https://github.com/worldloom/WorldLoom/discussions
+    url: https://github.com/worldflux/WorldLoom/discussions
     about: Ask questions and discuss ideas in GitHub Discussions
   - name: Documentation
-    url: https://worldloom.readthedocs.io
+    url: https://worldflux.readthedocs.io
     about: Check the documentation for guides and API reference
