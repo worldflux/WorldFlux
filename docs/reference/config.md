@@ -1,13 +1,13 @@
 # Configuration Reference
 
-Complete configuration options for WorldLoom.
+Complete configuration options for WorldFlux.
 
 ## Model Configuration
 
 ### DreamerV3Config
 
 ```python
-from worldloom.models.dreamer import DreamerV3Config
+from worldflux.models.dreamer import DreamerV3Config
 
 config = DreamerV3Config(
     # Required
@@ -46,7 +46,7 @@ config = DreamerV3Config(
 ### TDMPC2Config
 
 ```python
-from worldloom.models.tdmpc2 import TDMPC2Config
+from worldflux.models.tdmpc2 import TDMPC2Config
 
 config = TDMPC2Config(
     # Required
@@ -96,7 +96,7 @@ config = TDMPC2Config.from_size(
 ### TrainingConfig
 
 ```python
-from worldloom.training import TrainingConfig
+from worldflux.training import TrainingConfig
 
 config = TrainingConfig(
     # Duration
@@ -145,7 +145,7 @@ config = TrainingConfig(
 ### CheckpointCallback
 
 ```python
-from worldloom.training.callbacks import CheckpointCallback
+from worldflux.training.callbacks import CheckpointCallback
 
 callback = CheckpointCallback(
     save_dir="./checkpoints",
@@ -167,7 +167,7 @@ callback = CheckpointCallback(
 ### LoggingCallback
 
 ```python
-from worldloom.training.callbacks import LoggingCallback
+from worldflux.training.callbacks import LoggingCallback
 
 callback = LoggingCallback(
     log_dir="./logs",
@@ -185,7 +185,7 @@ callback = LoggingCallback(
 ### EarlyStoppingCallback
 
 ```python
-from worldloom.training.callbacks import EarlyStoppingCallback
+from worldflux.training.callbacks import EarlyStoppingCallback
 
 callback = EarlyStoppingCallback(
     monitor="loss",
@@ -233,7 +233,7 @@ callback = EarlyStoppingCallback(
 ### Loading Custom Config
 
 ```python
-from worldloom.models.dreamer import DreamerV3Config, DreamerV3WorldModel
+from worldflux.models.dreamer import DreamerV3Config, DreamerV3WorldModel
 
 # From dict
 config = DreamerV3Config(**config_dict)

@@ -3,8 +3,8 @@
 import pytest
 import torch
 
-from worldloom import AutoWorldModel, TDMPC2Config
-from worldloom.models.tdmpc2 import TDMPC2WorldModel
+from worldflux import AutoWorldModel, TDMPC2Config
+from worldflux.models.tdmpc2 import TDMPC2WorldModel
 
 
 class TestTDMPC2Config:

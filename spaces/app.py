@@ -1,4 +1,4 @@
-"""WorldLoom Imagination Rollout Demo - Gradio Interface"""
+"""WorldFlux Imagination Rollout Demo - Gradio Interface"""
 
 import gradio as gr
 import numpy as np
@@ -44,7 +44,7 @@ def plot_continues(continues):
 
 
 with gr.Blocks() as demo:
-    gr.Markdown("# WorldLoom Demo")
+    gr.Markdown("# WorldFlux Demo")
     gr.Markdown("Experience world model imagination rollouts")
 
     model_type = gr.Dropdown(

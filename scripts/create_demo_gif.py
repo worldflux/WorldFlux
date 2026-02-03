@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Create demo GIFs for WorldLoom documentation.
+Create demo GIFs for WorldFlux documentation.
 
 This script generates visualization GIFs showing:
 1. Imagination rollout comparison (real vs imagined)
@@ -50,6 +50,9 @@ def create_imagination_gif(
     """
     try:
         import imageio
+        import matplotlib
+
+        matplotlib.use("Agg")  # Use non-interactive backend for rendering
         import matplotlib.pyplot as plt
     except ImportError:
         raise ImportError("Please install: pip install matplotlib imageio pillow")
@@ -108,15 +111,14 @@ def create_imagination_gif(
 
         # Add reward annotation
         if t < len(trajectory.rewards):
-            reward = trajectory.rewards[t, 0, 0].item()
-            fig.suptitle(f"WorldLoom Imagination | Predicted Reward: {reward:.2f}", fontsize=12)
+            reward = trajectory.rewards[t, 0].item()
+            fig.suptitle(f"WorldFlux Imagination | Predicted Reward: {reward:.2f}", fontsize=12)
 
         plt.tight_layout()
 
         # Convert to image
         fig.canvas.draw()
-        img = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
-        img = img.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+        img = np.array(fig.canvas.renderer.buffer_rgba())[:, :, :3]
         frames.append(img)
 
     plt.close()
@@ -146,6 +148,9 @@ def create_latent_space_gif(
     """
     try:
         import imageio
+        import matplotlib
+
+        matplotlib.use("Agg")  # Use non-interactive backend for rendering
         import matplotlib.pyplot as plt
         from sklearn.decomposition import PCA
     except ImportError:
@@ -248,8 +253,7 @@ def create_latent_space_gif(
 
         # Convert to image
         fig.canvas.draw()
-        img = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
-        img = img.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+        img = np.array(fig.canvas.renderer.buffer_rgba())[:, :, :3]
         frames.append(img)
 
     plt.close()
@@ -270,6 +274,9 @@ def create_architecture_diagram(output_path: str = "architecture.png"):
     Shows the data flow through the world model components.
     """
     try:
+        import matplotlib
+
+        matplotlib.use("Agg")  # Use non-interactive backend for rendering
         import matplotlib.patches as patches
         import matplotlib.pyplot as plt
     except ImportError:
@@ -348,7 +355,7 @@ def create_architecture_diagram(output_path: str = "architecture.png"):
     ax.text(
         6,
         5.5,
-        "WorldLoom Architecture",
+        "WorldFlux Architecture",
         ha="center",
         va="center",
         fontsize=16,
@@ -368,7 +375,7 @@ def create_architecture_diagram(output_path: str = "architecture.png"):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Create demo GIFs for WorldLoom")
+    parser = argparse.ArgumentParser(description="Create demo GIFs for WorldFlux")
     parser.add_argument(
         "--model",
         type=str,
@@ -411,9 +418,9 @@ def main():
         return
 
     # Create or load model
-    from worldloom import create_world_model
-    from worldloom.training import ReplayBuffer
-    from worldloom.training.data import create_random_buffer
+    from worldflux import create_world_model
+    from worldflux.training import ReplayBuffer
+    from worldflux.training.data import create_random_buffer
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -444,10 +451,19 @@ def main():
             obs_shape=obs_shape,
             action_dim=action_dim,
         )
+        # Use one-hot actions if available (2D), otherwise use raw actions
+        if "actions_onehot" in data:
+            actions = data["actions_onehot"][:100]
+        else:
+            actions = data["actions"][:100]
+            # Ensure actions are 2D [T, action_dim]
+            if actions.ndim == 1:
+                actions = np.eye(action_dim, dtype=np.float32)[actions]
+
         # Add data as episodes (simplified - assumes contiguous)
         buffer.add_episode(
             obs=data["obs"][:100],
-            actions=data["actions"][:100] if "actions" in data else data["actions_onehot"][:100],
+            actions=actions,
             rewards=data["rewards"][:100],
             dones=data["dones"][:100],
         )

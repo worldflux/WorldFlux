@@ -5,7 +5,7 @@ This module provides a LangChain/HuggingFace-style interface for easily
 creating and switching between different world model implementations.
 
 Example:
-    from worldloom import create_world_model
+    from worldflux import create_world_model
 
     # Simple usage
     model = create_world_model("dreamerv3:size12m")
@@ -18,7 +18,7 @@ Example:
     )
 
     # List available models
-    from worldloom import list_models
+    from worldflux import list_models
     print(list_models())
 """
 

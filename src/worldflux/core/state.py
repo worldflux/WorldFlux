@@ -104,13 +104,16 @@ class LatentState:
 
         Concatenates deterministic and stochastic components into a single
         feature vector. For categorical stochastic states (3D tensors),
-        the last two dimensions are flattened.
+        the last two dimensions are flattened. For VQ-VAE states with
+        codebook_indices, creates a flattened one-hot representation.
 
         Returns:
             Combined features of shape [batch_size, feature_dim].
 
         Raises:
-            StateError: If no valid state components are available.
+            StateError: If no valid state components are available or if
+                VQ-VAE codebook_embeddings metadata is missing when using
+                codebook_indices.
 
         Example:
             >>> state = LatentState(
@@ -119,6 +122,14 @@ class LatentState:
             ... )
             >>> state.features.shape
             torch.Size([32, 1536])  # 512 + 32*32
+
+            >>> # VQ-VAE state with codebook embeddings
+            >>> state = LatentState(
+            ...     codebook_indices=torch.randint(0, 512, (32, 16)),
+            ...     latent_type="vq",
+            ...     metadata={"codebook_embeddings": codebook_tensor},  # [512, 64]
+            ... )
+            >>> state.features.shape  # [32, 16 * 64]
         """
         components: list[Tensor] = []
 
@@ -136,9 +147,31 @@ class LatentState:
                 )
             components.append(stoch)
 
+        # VQ-VAE: use codebook embeddings lookup or one-hot encoding
+        if self.codebook_indices is not None:
+            if "codebook_embeddings" in self.metadata:
+                # Lookup embeddings from codebook: [batch, num_tokens] -> [batch, num_tokens, embed_dim]
+                codebook = self.metadata["codebook_embeddings"]
+                embedded = torch.nn.functional.embedding(self.codebook_indices, codebook)
+                # Flatten: [batch, num_tokens * embed_dim]
+                components.append(embedded.flatten(start_dim=1))
+            elif "codebook_size" in self.metadata:
+                # Create one-hot encoding: [batch, num_tokens] -> [batch, num_tokens * codebook_size]
+                codebook_size = self.metadata["codebook_size"]
+                one_hot = torch.nn.functional.one_hot(
+                    self.codebook_indices, num_classes=codebook_size
+                ).float()
+                components.append(one_hot.flatten(start_dim=1))
+            else:
+                raise StateError(
+                    "VQ-VAE state requires either 'codebook_embeddings' or 'codebook_size' "
+                    "in metadata to compute features. "
+                    f"Available metadata keys: {list(self.metadata.keys())}"
+                )
+
         if not components:
             raise StateError(
-                "Cannot compute features: no deterministic or stochastic component. "
+                "Cannot compute features: no deterministic, stochastic, or codebook component. "
                 f"State has: deterministic={self.deterministic is not None}, "
                 f"stochastic={self.stochastic is not None}, "
                 f"codebook_indices={self.codebook_indices is not None}"

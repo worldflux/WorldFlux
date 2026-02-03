@@ -4,23 +4,23 @@ Common issues and solutions.
 
 ## Installation Issues
 
-### Import Error: No module named 'worldloom'
+### Import Error: No module named 'worldflux'
 
 ```
-ModuleNotFoundError: No module named 'worldloom'
+ModuleNotFoundError: No module named 'worldflux'
 ```
 
-**Solution**: Install WorldLoom in development mode:
+**Solution**: Install WorldFlux in development mode:
 
 ```bash
-cd worldloom
+cd worldflux
 pip install -e "."
 ```
 
 ### Missing training dependencies
 
 ```
-ModuleNotFoundError: No module named 'worldloom.training'
+ModuleNotFoundError: No module named 'worldflux.training'
 ```
 
 **Solution**: Install with training extras:
@@ -260,7 +260,7 @@ my_model/
 KeyError: 'new_parameter'
 ```
 
-**Cause**: Model saved with different WorldLoom version.
+**Cause**: Model saved with different WorldFlux version.
 
 **Solution**:
 ```python
@@ -318,10 +318,10 @@ trajectory = model.imagine(states, actions)  # Batched
 
 If your issue isn't listed here:
 
-1. Check [GitHub Issues](https://github.com/worldloom/WorldLoom/issues)
+1. Check [GitHub Issues](https://github.com/worldflux/WorldFlux/issues)
 2. Search existing issues for similar problems
 3. Open a new issue with:
-   - WorldLoom version (`worldloom.__version__`)
+   - WorldFlux version (`worldflux.__version__`)
    - Python version
    - PyTorch version
    - Full error traceback

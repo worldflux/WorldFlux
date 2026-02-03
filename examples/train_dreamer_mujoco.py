@@ -70,10 +70,10 @@ def main():
         logger.error("First collect data with: python examples/collect_mujoco.py")
         sys.exit(1)
 
-    # Import WorldLoom
-    from worldloom import create_world_model
-    from worldloom.training import ReplayBuffer, Trainer, TrainingConfig
-    from worldloom.training.callbacks import (
+    # Import WorldFlux
+    from worldflux import create_world_model
+    from worldflux.training import ReplayBuffer, Trainer, TrainingConfig
+    from worldflux.training.callbacks import (
         EarlyStoppingCallback,
         LoggingCallback,
         ProgressCallback,

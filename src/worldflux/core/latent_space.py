@@ -9,7 +9,13 @@ from torch import Tensor
 
 
 class LatentSpace(ABC, nn.Module):
-    """Base class for latent space sampling and KL computation."""
+    """
+    Base class for latent space sampling and KL computation.
+
+    All subclasses must implement a consistent interface for KL divergence
+    computation. The `kl_divergence` method should accept optional `free_nats`
+    parameter for KL-free bits optimization.
+    """
 
     @abstractmethod
     def sample(self, params: Tensor, deterministic: bool = False) -> Tensor:
@@ -17,8 +23,21 @@ class LatentSpace(ABC, nn.Module):
         ...
 
     @abstractmethod
-    def kl_divergence(self, posterior_params: Tensor, prior_params: Tensor) -> Tensor:
-        """Compute KL(posterior || prior)."""
+    def kl_divergence(
+        self, posterior_params: Tensor, prior_params: Tensor, free_nats: float = 0.0
+    ) -> Tensor:
+        """
+        Compute KL(posterior || prior).
+
+        Args:
+            posterior_params: Parameters of the posterior distribution.
+            prior_params: Parameters of the prior distribution.
+            free_nats: Minimum KL value (free bits). KL values below this
+                threshold are clamped to zero. Default: 0.0 (no free bits).
+
+        Returns:
+            KL divergence per batch element, shape [batch_size].
+        """
         ...
 
     @property
@@ -51,7 +70,9 @@ class GaussianLatentSpace(LatentSpace):
         eps = torch.randn_like(std)
         return mean + std * eps
 
-    def kl_divergence(self, posterior_params: Tensor, prior_params: Tensor) -> Tensor:
+    def kl_divergence(
+        self, posterior_params: Tensor, prior_params: Tensor, free_nats: float = 0.0
+    ) -> Tensor:
         p_mean, p_raw_std = posterior_params.chunk(2, dim=-1)
         q_mean, q_raw_std = prior_params.chunk(2, dim=-1)
 
@@ -61,7 +82,12 @@ class GaussianLatentSpace(LatentSpace):
         p_var, q_var = p_std**2, q_std**2
 
         kl = 0.5 * (torch.log(q_var / p_var) + (p_var + (p_mean - q_mean) ** 2) / q_var - 1)
-        return kl.sum(dim=-1)
+        kl = kl.sum(dim=-1)
+
+        if free_nats > 0:
+            kl = torch.clamp(kl - free_nats, min=0.0)
+
+        return kl
 
 
 class CategoricalLatentSpace(LatentSpace):
@@ -143,5 +169,35 @@ class SimNormLatentSpace(LatentSpace):
         normalized = F.softmax(reshaped, dim=-1)
         return normalized.view(-1, self.dim)
 
-    def kl_divergence(self, posterior_params: Tensor, prior_params: Tensor) -> Tensor:
-        return torch.zeros(posterior_params.shape[0], device=posterior_params.device)
+    def kl_divergence(
+        self, posterior_params: Tensor, prior_params: Tensor, free_nats: float = 0.0
+    ) -> Tensor:
+        """
+        Compute KL divergence for SimNorm latent space.
+
+        SimNorm uses categorical distributions over simplices, so we compute
+        the KL divergence between the softmax distributions. If both distributions
+        are the same (e.g., both are deterministic mappings), returns zeros.
+
+        Note: TD-MPC2 typically doesn't use KL regularization in its loss function,
+        but this implementation is provided for completeness and consistency with
+        the LatentSpace interface.
+        """
+        # Reshape to simplices
+        post_reshaped = posterior_params.view(-1, self.num_simplices, self.simnorm_dim)
+        prior_reshaped = prior_params.view(-1, self.num_simplices, self.simnorm_dim)
+
+        # Compute softmax distributions
+        post_dist = F.softmax(post_reshaped, dim=-1)
+        prior_dist = F.softmax(prior_reshaped, dim=-1)
+
+        # KL(post || prior) = sum(post * log(post / prior))
+        # Add small epsilon for numerical stability
+        eps = 1e-8
+        kl = (post_dist * (torch.log(post_dist + eps) - torch.log(prior_dist + eps))).sum(dim=-1)
+        kl = kl.sum(dim=-1)  # Sum over simplices
+
+        if free_nats > 0:
+            kl = torch.clamp(kl - free_nats, min=0.0)
+
+        return kl

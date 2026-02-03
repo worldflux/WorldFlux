@@ -1,17 +1,17 @@
-# WorldLoom
+# WorldFlux
 
 <div align="center">
 
-<img src="assets/logo.svg" alt="WorldLoom Logo" width="200">
+<img src="assets/logo.svg" alt="WorldFlux Logo" width="200">
 
 **Unified Interface for World Models in Reinforcement Learning**
 
 *One API. Multiple Architectures. Infinite Imagination.*
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/worldloom/WorldLoom/blob/main/examples/worldloom_quickstart.ipynb)
-[![Hugging Face Spaces](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Spaces-blue)](https://huggingface.co/spaces/WorldLoom/demo)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/worldflux/WorldFlux/blob/main/examples/worldflux_quickstart.ipynb)
+[![Hugging Face Spaces](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Spaces-blue)](https://huggingface.co/spaces/WorldFlux/demo)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Community-7289da?logo=discord&logoColor=white)](https://discord.gg/ZUBn9UEp2z)
-[![PyPI](https://img.shields.io/pypi/v/worldloom.svg)](https://pypi.org/project/worldloom/)
+[![PyPI](https://img.shields.io/pypi/v/worldflux.svg)](https://pypi.org/project/worldflux/)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
@@ -23,7 +23,23 @@
 
 ---
 
-WorldLoom provides a unified Python interface for world models used in reinforcement learning. Starting with efficient latent-space models (DreamerV3, TD-MPC2), with plans to support diverse architectures including autoregressive and diffusion-based world models.
+WorldFlux provides a unified Python interface for world models used in reinforcement learning. Starting with efficient latent-space models (DreamerV3, TD-MPC2), with plans to support diverse architectures including autoregressive and diffusion-based world models.
+
+## Demo
+
+### Imagination Rollout
+
+World model imagines future frames from a single observation:
+
+![Imagination Rollout](docs/assets/imagination_rollout.gif)
+
+*Left: Real game frames | Right: Model's imagination*
+
+### Latent Space Dynamics
+
+Visualization of how different episodes traverse the learned latent space:
+
+![Latent Space](docs/assets/latent_space.gif)
 
 ## Features
 
@@ -84,8 +100,8 @@ graph LR
 ### From Source (recommended)
 
 ```bash
-git clone https://github.com/worldloom/WorldLoom.git
-cd worldloom
+git clone https://github.com/worldflux/WorldFlux.git
+cd worldflux
 pip install -e "."
 
 # With training dependencies
@@ -101,7 +117,7 @@ pip install -e ".[dev]"
 ### From PyPI
 
 ```bash
-pip install worldloom
+pip install worldflux
 ```
 
 ## Quick Start
@@ -109,7 +125,7 @@ pip install worldloom
 ### Create a Model
 
 ```python
-from worldloom import create_world_model
+from worldflux import create_world_model
 
 # DreamerV3 (image observations)
 model = create_world_model("dreamerv3:size12m")
@@ -139,8 +155,8 @@ print(f"Continue probs: {trajectory.continues.shape}")
 ### Train a Model
 
 ```python
-from worldloom import create_world_model
-from worldloom.training import train, ReplayBuffer
+from worldflux import create_world_model
+from worldflux.training import train, ReplayBuffer
 
 # Create model
 model = create_world_model("dreamerv3:size12m", obs_shape=(4,), action_dim=2)
@@ -158,8 +174,8 @@ trained_model.save_pretrained("./my_model")
 ### Full Training Control
 
 ```python
-from worldloom import create_world_model
-from worldloom.training import Trainer, TrainingConfig, ReplayBuffer
+from worldflux import create_world_model
+from worldflux.training import Trainer, TrainingConfig, ReplayBuffer
 
 model = create_world_model("tdmpc2:5m", obs_shape=(39,), action_dim=6)
 buffer = ReplayBuffer(capacity=100_000, obs_shape=(39,), action_dim=6)
@@ -224,7 +240,7 @@ losses = model.compute_loss(batch)  # {"loss", "kl", "reconstruction", ...}
 ### Training API
 
 ```python
-from worldloom.training import (
+from worldflux.training import (
     Trainer,
     TrainingConfig,
     ReplayBuffer,
@@ -241,7 +257,7 @@ config = TrainingConfig(
 )
 
 # Callbacks
-from worldloom.training.callbacks import (
+from worldflux.training.callbacks import (
     LoggingCallback,
     CheckpointCallback,
     EarlyStoppingCallback,
@@ -253,7 +269,7 @@ from worldloom.training.callbacks import (
 
 See the `examples/` directory:
 
-- `worldloom_quickstart.ipynb` - Interactive Colab notebook
+- `worldflux_quickstart.ipynb` - Interactive Colab notebook
 - `train_dreamer.py` - DreamerV3 training example
 - `train_tdmpc2.py` - TD-MPC2 training example
 - `visualize_imagination.py` - Imagination rollout visualization
@@ -284,9 +300,9 @@ Results on standard benchmarks:
 
 ## Documentation
 
-- [Full Documentation](https://worldloom.readthedocs.io) - Comprehensive guides and API reference
-- [Tutorials](https://worldloom.readthedocs.io/tutorials/) - Step-by-step learning
-- [API Reference](https://worldloom.readthedocs.io/api/) - Detailed API docs
+- [Full Documentation](https://worldflux.readthedocs.io) - Comprehensive guides and API reference
+- [Tutorials](https://worldflux.readthedocs.io/tutorials/) - Step-by-step learning
+- [API Reference](https://worldflux.readthedocs.io/api/) - Detailed API docs
 
 ## Community
 
@@ -309,15 +325,15 @@ Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md)
 If you use this library in your research, please cite:
 
 ```bibtex
-@software{worldloom,
-  title = {WorldLoom: Unified Interface for World Models},
+@software{worldflux,
+  title = {WorldFlux: Unified Interface for World Models},
   year = {2026},
-  url = {https://github.com/worldloom/WorldLoom}
+  url = {https://github.com/worldflux/WorldFlux}
 }
 ```
 
 ## Acknowledgments
 
-WorldLoom builds on the excellent research from:
+WorldFlux builds on the excellent research from:
 - [DreamerV3](https://arxiv.org/abs/2301.04104) - Hafner et al.
 - [TD-MPC2](https://arxiv.org/abs/2310.16828) - Hansen et al.

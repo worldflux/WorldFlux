@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from worldloom.core.latent_space import (
+from worldflux.core.latent_space import (
     CategoricalLatentSpace,
     GaussianLatentSpace,
     SimNormLatentSpace,
@@ -122,13 +122,32 @@ class TestSimNormLatentSpace:
         out2 = space.sample(params)
         assert torch.allclose(out1, out2)
 
-    def test_kl_zero(self):
-        """SimNorm has zero KL (deterministic)."""
+    def test_kl_same_distribution_near_zero(self):
+        """SimNorm KL should be zero for identical distributions."""
+        space = SimNormLatentSpace(dim=256, simnorm_dim=8)
+        params = torch.randn(4, 256)
+        kl = space.kl_divergence(params, params)
+        assert torch.allclose(kl, torch.zeros(4), atol=1e-6)
+
+    def test_kl_positive_different_distributions(self):
+        """SimNorm KL should be positive for different distributions."""
         space = SimNormLatentSpace(dim=256, simnorm_dim=8)
         posterior = torch.randn(4, 256)
         prior = torch.randn(4, 256)
         kl = space.kl_divergence(posterior, prior)
-        assert torch.allclose(kl, torch.zeros(4))
+        assert (kl >= 0).all()
+        # Different distributions should have positive KL
+        assert (kl > 0.01).all()
+
+    def test_kl_with_free_nats(self):
+        """SimNorm KL should respect free_nats threshold."""
+        space = SimNormLatentSpace(dim=256, simnorm_dim=8)
+        posterior = torch.randn(4, 256)
+        prior = torch.randn(4, 256)
+        kl_no_free = space.kl_divergence(posterior, prior, free_nats=0.0)
+        kl_with_free = space.kl_divergence(posterior, prior, free_nats=10.0)
+        # With high free_nats, some or all should be clamped to zero
+        assert (kl_with_free <= kl_no_free).all()
 
     def test_invalid_dim_raises(self):
         """Dimension must be divisible by simnorm_dim."""

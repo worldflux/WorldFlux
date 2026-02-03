@@ -1,7 +1,7 @@
-site_name: WorldLoom
-site_url: https://worldloom.readthedocs.io
-repo_url: https://github.com/worldloom/WorldLoom
-repo_name: worldloom/WorldLoom
+site_name: WorldFlux
+site_url: https://worldflux.readthedocs.io
+repo_url: https://github.com/worldflux/WorldFlux
+repo_name: worldflux/WorldFlux
 
 theme:
   name: material
@@ -63,4 +63,5 @@ nav:
     - Training: api/training.md
   - Reference:
     - Configuration: reference/config.md
+    - Extensibility: EXTENSIBILITY.md
     - Troubleshooting: reference/troubleshooting.md

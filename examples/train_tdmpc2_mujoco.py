@@ -112,9 +112,9 @@ def main():
         sys.exit(1)
 
     # Import here to give better error messages for missing deps
-    from worldloom import create_world_model
-    from worldloom.training import ReplayBuffer, Trainer, TrainingConfig
-    from worldloom.training.callbacks import (
+    from worldflux import create_world_model
+    from worldflux.training import ReplayBuffer, Trainer, TrainingConfig
+    from worldflux.training.callbacks import (
         EarlyStoppingCallback,
         LoggingCallback,
         ProgressCallback,

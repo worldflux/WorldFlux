@@ -7,7 +7,7 @@ The main entry points for creating and managing world models.
 Create a world model from a preset, alias, or saved path.
 
 ```python
-from worldloom import create_world_model
+from worldflux import create_world_model
 
 model = create_world_model(
     model="dreamerv3:size12m",
@@ -83,7 +83,7 @@ A world model instance implementing the [`WorldModel` protocol](protocol.md).
 List all available model presets.
 
 ```python
-from worldloom import list_models
+from worldflux import list_models
 
 # Simple list
 models = list_models()

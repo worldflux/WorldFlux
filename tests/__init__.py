@@ -1,1 +1,1 @@
-"""WorldLoom tests."""
+"""WorldFlux tests."""

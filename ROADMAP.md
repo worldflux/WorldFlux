@@ -1,6 +1,6 @@
-# WorldLoom Roadmap
+# WorldFlux Roadmap
 
-This document outlines the planned features and improvements for WorldLoom.
+This document outlines the planned features and improvements for WorldFlux.
 
 ## Current Status: v0.1.0 (Alpha)
 
@@ -12,7 +12,7 @@ Core functionality is implemented and working. Ready for early adopters and feed
 
 ### v0.2.0 - Stability & Polish
 
-- [ ] **PyPI Release**: `pip install worldloom`
+- [ ] **PyPI Release**: `pip install worldflux`
 - [ ] **Pretrained Models**: Ready-to-use models for common benchmarks
   - [ ] DreamerV3: Atari Breakout, Pong, Seaquest
   - [ ] TD-MPC2: HalfCheetah, Walker, Humanoid
@@ -71,11 +71,11 @@ Core functionality is implemented and working. Ready for early adopters and feed
 
 We welcome contributions! Check out:
 
-1. [Good First Issues](https://github.com/worldloom/WorldLoom/labels/good%20first%20issue)
-2. [Help Wanted](https://github.com/worldloom/WorldLoom/labels/help%20wanted)
+1. [Good First Issues](https://github.com/worldflux/WorldFlux/labels/good%20first%20issue)
+2. [Help Wanted](https://github.com/worldflux/WorldFlux/labels/help%20wanted)
 3. [Contributing Guide](CONTRIBUTING.md)
 
-Have a feature request? [Open an issue](https://github.com/worldloom/WorldLoom/issues/new?template=feature_request.md)!
+Have a feature request? [Open an issue](https://github.com/worldflux/WorldFlux/issues/new?template=feature_request.md)!
 
 ---
 

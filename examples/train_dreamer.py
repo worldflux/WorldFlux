@@ -19,14 +19,14 @@ Usage:
 import argparse
 import logging
 
-from worldloom import create_world_model
-from worldloom.training import (
+from worldflux import create_world_model
+from worldflux.training import (
     ReplayBuffer,
     Trainer,
     TrainingConfig,
 )
-from worldloom.training.callbacks import EarlyStoppingCallback, ProgressCallback
-from worldloom.training.data import create_random_buffer
+from worldflux.training.callbacks import EarlyStoppingCallback, ProgressCallback
+from worldflux.training.data import create_random_buffer
 
 logging.basicConfig(
     level=logging.INFO,
