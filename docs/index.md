@@ -10,7 +10,7 @@
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/worldflux/Worldflux/blob/main/examples/worldflux_quickstart.ipynb)
 [![GitHub](https://img.shields.io/badge/GitHub-worldflux-blue?logo=github)](https://github.com/worldflux/Worldflux)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 ---
 
@@ -142,4 +142,5 @@ Contributions are welcome! See our [Contributing Guide](https://github.com/world
 
 ## License
 
-MIT License - see [LICENSE](https://github.com/worldflux/Worldflux/blob/main/LICENSE) for details.
+Apache License 2.0 - see [LICENSE](https://github.com/worldflux/Worldflux/blob/main/LICENSE) and
+[NOTICE](https://github.com/worldflux/Worldflux/blob/main/NOTICE) for details.
