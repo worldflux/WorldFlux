@@ -205,9 +205,9 @@ def validate_dreamer_mujoco(
 
     # Sample a batch
     batch = buffer.sample(batch_size=1, seq_len=horizon + 1, device=device)
-    obs = batch["obs"]  # [1, T+1, obs_dim]
-    actions = batch["actions"]  # [1, T+1, action_dim]
-    rewards = batch["rewards"]  # [1, T+1]
+    obs = batch.obs  # [1, T+1, obs_dim]
+    actions = batch.actions  # [1, T+1, action_dim]
+    rewards = batch.rewards  # [1, T+1]
 
     with torch.no_grad():
         # Encode initial observation

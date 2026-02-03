@@ -274,9 +274,9 @@ def validate_tdmpc2(
 
     # Sample a batch
     batch = buffer.sample(batch_size=1, seq_len=horizon + 1, device=device)
-    obs = batch["obs"]  # [1, T+1, obs_dim]
-    actions = batch["actions"]  # [1, T+1, action_dim]
-    rewards = batch["rewards"]  # [1, T+1]
+    obs = batch.obs  # [1, T+1, obs_dim]
+    actions = batch.actions  # [1, T+1, action_dim]
+    rewards = batch.rewards  # [1, T+1]
 
     with torch.no_grad():
         # Encode initial observation
@@ -311,11 +311,11 @@ def validate_tdmpc2(
     logger.info("\nLatent state analysis:")
     latent_norms = []
     for i, s in enumerate(trajectory.states[:5]):  # First 5 states
-        latent = (
-            s.tensors.get("latent")
-            or s.tensors.get("deter")
-            or next(iter(s.tensors.values()), None)
-        )
+        latent = s.tensors.get("latent")
+        if latent is None:
+            latent = s.tensors.get("deter")
+        if latent is None:
+            latent = next(iter(s.tensors.values()), None)
         if latent is not None:
             norm = latent.norm().item()
             latent_norms.append(norm)
