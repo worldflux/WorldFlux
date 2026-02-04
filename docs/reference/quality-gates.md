@@ -35,3 +35,30 @@ These can be tightened over time:
 
 - Loss decrease: **≥10%** within **2,000 steps** on bundled datasets.
 - Seed variance: **≤10%** on main loss components.
+
+## Measurement Commands
+
+The following scripts are committed for reproducible measurement runs.
+Defaults use **bundled datasets** and **small CI-sized models**.
+
+### Run Measurements (Balanced)
+
+```bash
+python scripts/measure_quality_gates.py \
+  --models dreamer,tdmpc2 \
+  --seeds 0,1,2,3,4 \
+  --steps 5000 \
+  --device auto
+```
+
+Output:
+
+- `reports/quality-gates/seed_runs.json`
+
+### Estimate Runtime from Measured Results
+
+```bash
+python scripts/estimate_quality_gate_runtime.py \
+  --input reports/quality-gates/seed_runs.json \
+  --scenarios 5x5000,7x10000,10x10000,7x20000,10x20000
+```
