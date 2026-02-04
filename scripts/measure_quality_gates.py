@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import time
 from pathlib import Path
 from statistics import mean, pstdev
@@ -19,6 +20,13 @@ import numpy as np
 
 from worldflux import create_world_model
 from worldflux.training import ReplayBuffer, Trainer, TrainingConfig
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    force=True,
+)
+logger = logging.getLogger(__name__)
 
 
 def _parse_seeds(seeds: str) -> list[int]:
@@ -154,6 +162,7 @@ def _run_model(
     eval_batches: int,
     log_interval: int,
 ) -> dict[str, Any]:
+    logger.info("Starting %s seed=%s steps=%s", model_id, seed, steps)
     model = create_world_model(
         model_id,
         obs_shape=buffer.obs_shape,
@@ -175,6 +184,9 @@ def _run_model(
 
     start_time = time.time()
     initial_metrics = trainer.evaluate(buffer, num_batches=eval_batches)
+    logger.info(
+        "Initial loss for %s seed=%s: %.6f", model_id, seed, initial_metrics.get("loss", 0.0)
+    )
     trainer.train(buffer)
     final_metrics = trainer.evaluate(buffer, num_batches=eval_batches)
     duration = time.time() - start_time
@@ -182,6 +194,14 @@ def _run_model(
     initial_loss = float(initial_metrics.get("loss", 0.0))
     final_loss = float(final_metrics.get("loss", 0.0))
     loss_drop = (initial_loss - final_loss) / initial_loss if initial_loss != 0 else 0.0
+    logger.info(
+        "Finished %s seed=%s: final_loss=%.6f loss_drop=%.6f duration=%.1fs",
+        model_id,
+        seed,
+        final_loss,
+        loss_drop,
+        duration,
+    )
 
     return {
         "model": model_id,
