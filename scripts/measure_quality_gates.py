@@ -152,6 +152,7 @@ def _run_model(
     device: str,
     output_dir: Path,
     eval_batches: int,
+    log_interval: int,
 ) -> dict[str, Any]:
     model = create_world_model(
         model_id,
@@ -166,7 +167,7 @@ def _run_model(
         output_dir=str(output_dir),
         device=device,
         seed=seed,
-        log_interval=max(1, steps // 5),
+        log_interval=max(1, log_interval),
         save_interval=steps + 1,
     )
 
@@ -204,6 +205,12 @@ def main() -> None:
     parser.add_argument("--steps", type=int, default=5000)
     parser.add_argument("--device", type=str, default="auto")
     parser.add_argument("--eval-batches", type=int, default=2)
+    parser.add_argument(
+        "--log-interval",
+        type=int,
+        default=100,
+        help="Training log interval (steps). Lower = more frequent progress.",
+    )
     parser.add_argument("--output", type=str, default="reports/quality-gates/seed_runs.json")
     parser.add_argument(
         "--models",
@@ -262,6 +269,7 @@ def main() -> None:
                     device=args.device,
                     output_dir=dreamer_out,
                     eval_batches=args.eval_batches,
+                    log_interval=args.log_interval,
                 )
             )
             summary = _summary(runs)
@@ -294,6 +302,7 @@ def main() -> None:
                     device=args.device,
                     output_dir=tdmpc_out,
                     eval_batches=args.eval_batches,
+                    log_interval=args.log_interval,
                 )
             )
             summary = _summary(runs)
