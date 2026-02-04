@@ -211,6 +211,24 @@ trainer.train(buffer)
 | `tdmpc2:48m` | 48M | Large |
 | `tdmpc2:317m` | 317M | Maximum capacity |
 
+### JEPA
+
+| Preset | Parameters | Description |
+|--------|------------|-------------|
+| `jepa:base` | ~1M+ | Representation prediction |
+
+### Token
+
+| Preset | Parameters | Description |
+|--------|------------|-------------|
+| `token:base` | ~1M+ | Discrete token dynamics |
+
+### Diffusion
+
+| Preset | Parameters | Description |
+|--------|------------|-------------|
+| `diffusion:base` | ~1M+ | Generative diffusion dynamics |
+
 ## API Reference
 
 ### Core Methods
@@ -228,7 +246,8 @@ next_state = model.transition(state, action)
 next_state = model.update(state, action, obs)
 
 # Decode latent state to predictions
-predictions = model.decode(state)  # {"obs", "reward", "continue"}
+output = model.decode(state)
+preds = output.preds  # e.g. {"obs", "reward", "continue"}
 
 # Multi-step imagination rollout
 trajectory = model.rollout(initial_state, actions)

@@ -65,6 +65,18 @@ loss_out = model.loss(batch)
 - `components`: individual loss terms
 - `metrics`: float metrics for logging
 
+## Capabilities
+
+Some models do not predict rewards or continuation probabilities. Use capability
+helpers to branch safely:
+
+```python
+if model.supports_reward():
+    ...
+if model.supports_continue():
+    ...
+```
+
 ## Batch Format
 
 Training uses the `Batch` container:

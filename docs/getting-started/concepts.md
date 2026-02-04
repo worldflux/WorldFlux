@@ -114,6 +114,30 @@ trajectory = model.rollout(initial_state, actions)
 - **Decoder**: None (implicit model)
 - **Best For**: Continuous control (MuJoCo)
 
+### JEPA
+
+- **Input**: Images or state vectors
+- **Architecture**: Context/target prediction in latent space
+- **Latent Space**: Deterministic embeddings
+- **Decoder**: Optional (non-generative by default)
+- **Best For**: Representation learning and masked prediction
+
+### Token World Models
+
+- **Input**: Discrete tokens (e.g., VQ-VAE codes)
+- **Architecture**: Transformer sequence model
+- **Latent Space**: Token embeddings
+- **Decoder**: Token logits or reconstructed observations
+- **Best For**: Autoregressive/video token modeling
+
+### Diffusion World Models
+
+- **Input**: Continuous state vectors or latents
+- **Architecture**: Denoising diffusion dynamics
+- **Latent Space**: Gaussian noise schedule
+- **Decoder**: Iterative denoising
+- **Best For**: Generative rollout and stochastic prediction
+
 ## Training Loop
 
 World models learn from trajectories collected from the environment:

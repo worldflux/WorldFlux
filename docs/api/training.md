@@ -37,7 +37,7 @@ trained_model = train(
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `model` | `WorldModel` | required | Model to train |
-| `buffer` | `ReplayBuffer` | required | Training data |
+| `buffer` | `ReplayBuffer` or `BatchProvider` | required | Training data |
 | `total_steps` | `int` | `50_000` | Training steps |
 | `batch_size` | `int` | `16` | Batch size |
 | `sequence_length` | `int` | `50` | Sequence length |

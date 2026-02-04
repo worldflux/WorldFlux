@@ -43,6 +43,19 @@ False
 
 ---
 
+## Plotting Issues
+
+### Matplotlib backend errors (headless servers)
+
+If you see errors like `cannot connect to X server`, use a non-interactive backend:
+
+```bash
+export MPLBACKEND=Agg
+export MPLCONFIGDIR=/tmp/matplotlib
+```
+
+The example scripts set these automatically when plotting.
+
 ## Memory Issues
 
 ### CUDA Out of Memory

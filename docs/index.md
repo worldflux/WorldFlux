@@ -53,6 +53,9 @@ print(f"Predicted rewards: {trajectory.rewards.shape}")  # [15, 1, 1]
 |-------|----------|---------|
 | **DreamerV3** | Images, Atari | `size12m`, `size25m`, `size50m`, `size100m`, `size200m` |
 | **TD-MPC2** | State vectors, MuJoCo | `5m`, `19m`, `48m`, `317m` |
+| **JEPA** | Representation prediction | `base` |
+| **Token** | Discrete token dynamics | `base` |
+| **Diffusion** | Stochastic dynamics | `base` |
 
 ## Documentation
 

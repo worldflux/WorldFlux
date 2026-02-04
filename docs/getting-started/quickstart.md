@@ -66,10 +66,14 @@ print(preds.get("continue"))   # Episode continuation probability
 ## Train a Model
 
 ```python
+from worldflux import set_seed
 from worldflux.training import train, ReplayBuffer
 
 # Load your data
 buffer = ReplayBuffer.load("trajectories.npz")
+
+# Reproducibility
+set_seed(42)
 
 # Train (one-liner)
 trained_model = train(model, buffer, total_steps=50_000)

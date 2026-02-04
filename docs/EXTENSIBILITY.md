@@ -111,6 +111,17 @@ class DreamerV3WorldModel(nn.Module): ...
 | **Video Prediction** | V-JEPA, VideoGPT | ⚪ Planned |
 | **Foundation Models** | Cosmos, Genie 3 | ⚪ Future consideration |
 
+### Required Components by Family
+
+| Family | Required Components |
+|--------|---------------------|
+| **Latent Dynamics (RSSM)** | Encoder, Dynamics, Decoder, Reward/Continue heads |
+| **Implicit Models** | Encoder, Dynamics, Value/Policy heads |
+| **Token Models** | Tokenizer, Dynamics (Transformer), Sampler |
+| **Diffusion Models** | Encoder, Sampler (denoising), Decoder |
+| **JEPA** | Encoder, Predictor, Objective (masked prediction) |
+| **Foundation Models** | Tokenizer/Encoder, Large generator, Sampler, Optional planner |
+
 ### Category Details
 
 #### 1. Latent Dynamics Models (RSSM-based)
