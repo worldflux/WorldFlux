@@ -44,6 +44,10 @@ MODEL_ALIASES: dict[str, str] = {
     "tdmpc-large": "tdmpc2:317m",
     # JEPA aliases
     "jepa": "jepa:base",
+    # Token model aliases
+    "token": "token:base",
+    # Diffusion model aliases
+    "diffusion": "diffusion:base",
 }
 
 # Available model presets with descriptions
@@ -107,6 +111,18 @@ MODEL_CATALOG: dict[str, dict[str, Any]] = {
         "params": "~1M+",
         "type": "jepa",
         "default_obs": "image",
+    },
+    "token:base": {
+        "description": "Token world model - Discrete sequence modeling",
+        "params": "~1M+",
+        "type": "token",
+        "default_obs": "token",
+    },
+    "diffusion:base": {
+        "description": "Diffusion world model - Generative dynamics",
+        "params": "~1M+",
+        "type": "diffusion",
+        "default_obs": "vector",
     },
 }
 

@@ -16,10 +16,12 @@ Simple Usage:
 Available Models:
     - dreamerv3:size12m, size25m, size50m, size100m, size200m
     - tdmpc2:5m, 19m, 48m, 317m
+    - jepa:base, token:base, diffusion:base
 
 Aliases:
     - "dreamer", "dreamer-small", "dreamer-medium", "dreamer-large"
     - "tdmpc", "tdmpc-small", "tdmpc-medium", "tdmpc-large"
+    - "jepa", "token", "diffusion"
 """
 
 from .core import (
@@ -30,6 +32,7 @@ from .core import (
     BatchProvider,
     Capability,
     CategoricalLatentSpace,
+    DiffusionWorldModelConfig,
     DreamerV3Config,
     DynamicsType,
     GaussianLatentSpace,
@@ -46,6 +49,7 @@ from .core import (
     StateSpec,
     TDMPC2Config,
     TokenSpec,
+    TokenWorldModelConfig,
     Trajectory,
     WorldModel,
     WorldModelConfig,
@@ -59,7 +63,14 @@ from .factory import (
     get_model_info,
     list_models,
 )
-from .models import DreamerV3WorldModel, JEPABaseWorldModel, TDMPC2WorldModel
+from .models import (
+    DiffusionWorldModel,
+    DreamerV3WorldModel,
+    JEPABaseWorldModel,
+    TDMPC2WorldModel,
+    TokenWorldModel,
+)
+from .utils import set_seed
 
 
 # Lazy import for training module (optional dependency)
@@ -107,6 +118,8 @@ __all__ = [
     "DreamerV3Config",
     "TDMPC2Config",
     "JEPABaseConfig",
+    "TokenWorldModelConfig",
+    "DiffusionWorldModelConfig",
     "WorldModel",
     "WorldModelRegistry",
     "AutoWorldModel",
@@ -120,4 +133,8 @@ __all__ = [
     "DreamerV3WorldModel",
     "TDMPC2WorldModel",
     "JEPABaseWorldModel",
+    "TokenWorldModel",
+    "DiffusionWorldModel",
+    # Utils
+    "set_seed",
 ]
