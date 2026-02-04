@@ -25,8 +25,13 @@ Requirements:
 
 import argparse
 import logging
+import os
 import sys
+import tempfile
 from pathlib import Path
+
+os.environ.setdefault("MPLBACKEND", "Agg")
+os.environ.setdefault("MPLCONFIGDIR", os.path.join(tempfile.gettempdir(), "matplotlib"))
 
 import numpy as np
 
@@ -306,9 +311,9 @@ def validate_imagination(
 
     # Sample a batch
     batch = buffer.sample(batch_size=1, seq_len=horizon + 1, device=device)
-    obs = batch["obs"]  # [1, T+1, C, H, W]
-    actions = batch["actions"]  # [1, T+1, A]
-    rewards = batch["rewards"]  # [1, T+1]
+    obs = batch.obs  # [1, T+1, C, H, W]
+    actions = batch.actions  # [1, T+1, A]
+    rewards = batch.rewards  # [1, T+1]
 
     # Encode initial observation
     with torch.no_grad():

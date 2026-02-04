@@ -11,11 +11,16 @@ Usage:
 
 import argparse
 import logging
+import os
 import sys
+import tempfile
 from pathlib import Path
 
 import numpy as np
 import torch
+
+os.environ.setdefault("MPLBACKEND", "Agg")
+os.environ.setdefault("MPLCONFIGDIR", os.path.join(tempfile.gettempdir(), "matplotlib"))
 
 logging.basicConfig(
     level=logging.INFO,

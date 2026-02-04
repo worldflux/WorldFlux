@@ -21,10 +21,17 @@ Requirements:
 
 import argparse
 import logging
+import os
+import tempfile
 from pathlib import Path
 
 import numpy as np
 import torch
+
+from worldflux.training import ReplayBuffer
+
+os.environ.setdefault("MPLBACKEND", "Agg")
+os.environ.setdefault("MPLCONFIGDIR", os.path.join(tempfile.gettempdir(), "matplotlib"))
 
 logging.basicConfig(
     level=logging.INFO,
@@ -64,7 +71,6 @@ def load_model(model_path: str):
 
 def load_buffer(data_path: str | None, obs_shape: tuple, action_dim: int):
     """Load data into a ReplayBuffer or create random data for testing."""
-    from worldflux.training import ReplayBuffer
     from worldflux.training.data import create_random_buffer
 
     # Use random data if no path provided or if path doesn't exist
@@ -137,8 +143,8 @@ def visualize_single_rollout(
 
     # Sample a batch
     batch = buffer.sample(batch_size=1, seq_len=horizon + 1, device=device)
-    obs = batch["obs"]  # [1, T+1, C, H, W]
-    actions = batch["actions"]  # [1, T+1, A]
+    obs = batch.obs  # [1, T+1, C, H, W]
+    actions = batch.actions  # [1, T+1, A]
 
     with torch.no_grad():
         # Encode initial observation
@@ -221,9 +227,9 @@ def visualize_reward_prediction(
 
     for _ in range(num_rollouts):
         batch = buffer.sample(batch_size=1, seq_len=horizon + 1, device=device)
-        obs = batch["obs"]
-        actions = batch["actions"]
-        rewards = batch["rewards"]
+        obs = batch.obs
+        actions = batch.actions
+        rewards = batch.rewards
 
         with torch.no_grad():
             initial_obs = obs[:, 0]
