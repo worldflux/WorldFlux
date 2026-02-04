@@ -643,3 +643,98 @@ class JEPABaseConfig(WorldModelConfig):
                 f"num_heads must be positive, got {self.num_heads}",
                 config_name=self.model_name,
             )
+
+
+@dataclass
+class TokenWorldModelConfig(WorldModelConfig):
+    """Configuration for token-based world models."""
+
+    model_type: str = "token"
+    latent_type: LatentType = LatentType.VQ
+    dynamics_type: DynamicsType = DynamicsType.TRANSFORMER
+
+    vocab_size: int = 1024
+    token_dim: int = 256
+    num_layers: int = 4
+    num_heads: int = 4
+    dropout: float = 0.1
+
+    def _validate(self) -> None:
+        super()._validate()
+        if self.vocab_size <= 0:
+            raise ConfigurationError(
+                f"vocab_size must be positive, got {self.vocab_size}",
+                config_name=self.model_name,
+            )
+        if self.token_dim <= 0:
+            raise ConfigurationError(
+                f"token_dim must be positive, got {self.token_dim}",
+                config_name=self.model_name,
+            )
+        if self.num_layers <= 0:
+            raise ConfigurationError(
+                f"num_layers must be positive, got {self.num_layers}",
+                config_name=self.model_name,
+            )
+        if self.num_heads <= 0:
+            raise ConfigurationError(
+                f"num_heads must be positive, got {self.num_heads}",
+                config_name=self.model_name,
+            )
+
+    @classmethod
+    def from_size(cls, size: str, **kwargs: Any) -> TokenWorldModelConfig:
+        presets: dict[str, dict[str, Any]] = {
+            "ci": {"token_dim": 32, "num_layers": 1, "num_heads": 1, "vocab_size": 64},
+            "tiny": {"token_dim": 64, "num_layers": 2, "num_heads": 2, "vocab_size": 128},
+            "base": {"token_dim": 256, "num_layers": 4, "num_heads": 4, "vocab_size": 1024},
+        }
+        if size not in presets:
+            raise ValueError(f"Unknown size: {size}. Available: {list(presets.keys())}")
+        preset = presets[size]
+        preset.update(kwargs)
+        return cls(model_name=size, **preset)
+
+
+@dataclass
+class DiffusionWorldModelConfig(WorldModelConfig):
+    """Configuration for diffusion-style world models."""
+
+    model_type: str = "diffusion"
+    latent_type: LatentType = LatentType.GAUSSIAN
+    dynamics_type: DynamicsType = DynamicsType.MLP
+
+    diffusion_steps: int = 4
+    beta_start: float = 1e-4
+    beta_end: float = 0.02
+
+    def _validate(self) -> None:
+        super()._validate()
+        if self.diffusion_steps <= 0:
+            raise ConfigurationError(
+                f"diffusion_steps must be positive, got {self.diffusion_steps}",
+                config_name=self.model_name,
+            )
+        if self.beta_start <= 0 or self.beta_end <= 0:
+            raise ConfigurationError(
+                f"beta values must be positive, got {self.beta_start}, {self.beta_end}",
+                config_name=self.model_name,
+            )
+        if self.beta_end <= self.beta_start:
+            raise ConfigurationError(
+                "beta_end must be greater than beta_start",
+                config_name=self.model_name,
+            )
+
+    @classmethod
+    def from_size(cls, size: str, **kwargs: Any) -> DiffusionWorldModelConfig:
+        presets: dict[str, dict[str, Any]] = {
+            "ci": {"hidden_dim": 32, "diffusion_steps": 1},
+            "tiny": {"hidden_dim": 64, "diffusion_steps": 2},
+            "base": {"hidden_dim": 256, "diffusion_steps": 4},
+        }
+        if size not in presets:
+            raise ValueError(f"Unknown size: {size}. Available: {list(presets.keys())}")
+        preset = presets[size]
+        preset.update(kwargs)
+        return cls(model_name=size, **preset)

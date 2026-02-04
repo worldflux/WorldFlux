@@ -1,5 +1,7 @@
 """Tests for core spec and output types."""
 
+import pytest
+
 from worldflux.core.output import LossOutput, ModelOutput
 from worldflux.core.spec import (
     ActionSpec,
@@ -56,3 +58,16 @@ class TestOutputTypes:
         loss2 = LossOutput(loss=torch.tensor(0.0))
         loss1.components["a"] = torch.tensor(1.0)
         assert "a" not in loss2.components
+
+    def test_model_output_validate_passes(self):
+        import torch
+
+        out = ModelOutput(preds={"obs": torch.randn(2, 3), "reward": torch.randn(2, 1)})
+        out.validate()
+
+    def test_model_output_validate_mismatch_raises(self):
+        import torch
+
+        out = ModelOutput(preds={"obs": torch.randn(2, 3), "reward": torch.randn(3, 1)})
+        with pytest.raises(Exception, match="batch size mismatch"):
+            out.validate()

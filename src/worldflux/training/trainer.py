@@ -15,6 +15,7 @@ from torch.optim.lr_scheduler import LRScheduler
 
 from worldflux.core.batch import Batch, BatchProvider
 from worldflux.core.exceptions import CheckpointError, ConfigurationError, TrainingError
+from worldflux.utils import set_seed
 
 from .callbacks import Callback, CallbackList, CheckpointCallback, LoggingCallback
 from .config import TrainingConfig
@@ -84,6 +85,7 @@ class Trainer:
         scheduler: LRScheduler | None = None,
     ):
         self.config = config or TrainingConfig()
+        set_seed(self.config.seed)
         self.device = torch.device(self.config.resolve_device())
 
         # Move model to device
@@ -153,7 +155,9 @@ class Trainer:
             raise TrainingError(
                 f"BatchProvider must yield Batch or dict, got {type(batch).__name__}"
             )
-        return batch.to(self.device)
+        batch = batch.to(self.device)
+        batch.validate(strict_time=True)
+        return batch
 
     def _create_optimizer(self) -> Optimizer:
         """Create optimizer based on config."""
@@ -186,7 +190,7 @@ class Trainer:
 
     def train(
         self,
-        data: ReplayBuffer,
+        data: BatchProvider | Any,
         num_steps: int | None = None,
         resume_from: str | None = None,
     ) -> nn.Module:
@@ -194,7 +198,7 @@ class Trainer:
         Train the model.
 
         Args:
-            data: ReplayBuffer containing training data.
+            data: BatchProvider or iterable yielding Batch/dict.
             num_steps: Number of steps to train. If None, uses config.total_steps.
             resume_from: Path to checkpoint to resume from.
 
@@ -298,7 +302,7 @@ class Trainer:
                         "Consider reducing learning rate or enabling gradient clipping."
                     )
 
-    def _train_step(self, data: ReplayBuffer) -> dict[str, float]:
+    def _train_step(self, data: BatchProvider | Any) -> dict[str, float]:
         """
         Execute a single training step with gradient accumulation support.
 
@@ -521,7 +525,7 @@ class Trainer:
 
 def train(
     model: nn.Module,
-    data: ReplayBuffer,
+    data: BatchProvider | Any,
     total_steps: int | None = None,
     batch_size: int = 16,
     sequence_length: int = 50,
@@ -536,7 +540,7 @@ def train(
 
     Args:
         model: World model to train.
-        data: ReplayBuffer containing training data.
+        data: BatchProvider or iterable yielding Batch/dict.
         total_steps: Number of training steps.
         batch_size: Batch size.
         sequence_length: Sequence length for trajectory sampling.

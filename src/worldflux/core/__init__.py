@@ -2,21 +2,25 @@
 
 from .batch import Batch, BatchProvider
 from .config import (
+    DiffusionWorldModelConfig,
     DreamerV3Config,
     DynamicsType,
     JEPABaseConfig,
     LatentType,
     TDMPC2Config,
+    TokenWorldModelConfig,
     WorldModelConfig,
 )
 from .exceptions import (
     BufferError,
+    CapabilityError,
     CheckpointError,
     ConfigurationError,
     ModelNotFoundError,
     ShapeMismatchError,
     StateError,
     TrainingError,
+    ValidationError,
     WorldFluxError,
 )
 from .latent_space import (
@@ -63,6 +67,8 @@ __all__ = [
     "DreamerV3Config",
     "TDMPC2Config",
     "JEPABaseConfig",
+    "TokenWorldModelConfig",
+    "DiffusionWorldModelConfig",
     # Protocol and Registry
     "WorldModel",
     "WorldModelRegistry",
@@ -82,4 +88,6 @@ __all__ = [
     "CheckpointError",
     "TrainingError",
     "BufferError",
+    "ValidationError",
+    "CapabilityError",
 ]

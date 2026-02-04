@@ -9,6 +9,7 @@ import torch.nn as nn
 from torch import Tensor
 
 from .batch import Batch
+from .exceptions import CapabilityError
 from .output import LossOutput, ModelOutput
 from .spec import Capability
 from .state import State
@@ -23,6 +24,27 @@ class WorldModel(nn.Module, ABC):
     def __init__(self) -> None:
         super().__init__()
         self.capabilities = set()
+
+    def supports(self, capability: Capability) -> bool:
+        """Return True if the model advertises a capability."""
+        return capability in self.capabilities
+
+    def require(self, capability: Capability, message: str | None = None) -> None:
+        """Raise if the model does not support a capability."""
+        if capability not in self.capabilities:
+            raise CapabilityError(message or f"Model lacks capability: {capability.value}")
+
+    @property
+    def supports_reward(self) -> bool:
+        return Capability.REWARD_PRED in self.capabilities
+
+    @property
+    def supports_continue(self) -> bool:
+        return Capability.CONTINUE_PRED in self.capabilities
+
+    @property
+    def supports_planning(self) -> bool:
+        return Capability.PLANNING in self.capabilities
 
     @abstractmethod
     def encode(self, obs: Tensor | dict[str, Tensor], deterministic: bool = False) -> State:

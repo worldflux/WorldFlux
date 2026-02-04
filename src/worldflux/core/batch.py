@@ -8,6 +8,8 @@ from typing import Any, Protocol
 import torch
 from torch import Tensor
 
+from .exceptions import ShapeMismatchError
+
 
 def _map_tensors(value: Any, fn) -> Any:
     if isinstance(value, Tensor):
@@ -15,6 +17,14 @@ def _map_tensors(value: Any, fn) -> Any:
     if isinstance(value, dict):
         return {k: _map_tensors(v, fn) for k, v in value.items()}
     return value
+
+
+def _iter_tensors(value: Any):
+    if isinstance(value, Tensor):
+        yield value
+    elif isinstance(value, dict):
+        for v in value.values():
+            yield from _iter_tensors(v)
 
 
 @dataclass
@@ -133,6 +143,65 @@ class Batch:
             "target": self.target,
             "extras": self.extras,
         }
+
+    def validate(self, *, strict_time: bool = True) -> None:
+        """Validate batch shapes and consistency.
+
+        Args:
+            strict_time: Enforce time dimension consistency when present.
+        """
+        # Infer batch/time from obs
+        obs_tensors = list(_iter_tensors(self.obs))
+        if not obs_tensors:
+            raise ShapeMismatchError("Cannot validate batch with empty obs dict")
+        batch_size = obs_tensors[0].shape[0]
+        time_dim: int | None = obs_tensors[0].shape[1] if obs_tensors[0].dim() >= 3 else None
+
+        for tensor in obs_tensors[1:]:
+            if tensor.shape[0] != batch_size:
+                raise ShapeMismatchError(
+                    "Observation batch size mismatch",
+                    expected=(batch_size,),
+                    got=(tensor.shape[0],),
+                )
+            if strict_time and time_dim is not None and tensor.dim() >= 2:
+                if tensor.shape[1] != time_dim:
+                    raise ShapeMismatchError(
+                        "Observation time dimension mismatch",
+                        expected=(time_dim,),
+                        got=(tensor.shape[1],),
+                    )
+
+        def _check(name: str, value: Any) -> None:
+            for tensor in _iter_tensors(value):
+                if tensor.shape[0] != batch_size:
+                    raise ShapeMismatchError(
+                        f"{name} batch size mismatch",
+                        expected=(batch_size,),
+                        got=(tensor.shape[0],),
+                    )
+                if strict_time and time_dim is not None and tensor.dim() >= 2:
+                    if tensor.shape[1] != time_dim:
+                        raise ShapeMismatchError(
+                            f"{name} time dimension mismatch",
+                            expected=(time_dim,),
+                            got=(tensor.shape[1],),
+                        )
+
+        if self.actions is not None:
+            _check("actions", self.actions)
+        if self.next_obs is not None:
+            _check("next_obs", self.next_obs)
+        if self.rewards is not None:
+            _check("rewards", self.rewards)
+        if self.terminations is not None:
+            _check("terminations", self.terminations)
+        if self.mask is not None:
+            _check("mask", self.mask)
+        if self.context is not None:
+            _check("context", self.context)
+        if self.target is not None:
+            _check("target", self.target)
 
 
 class BatchProvider(Protocol):

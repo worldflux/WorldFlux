@@ -37,6 +37,8 @@ class TDMPC2WorldModel(WorldModel):
             Capability.LATENT_DYNAMICS,
             Capability.VALUE,
             Capability.POLICY,
+            Capability.REWARD_PRED,
+            Capability.CONTINUE_PRED,
         }
 
         # Latent space

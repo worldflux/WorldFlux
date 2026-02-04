@@ -60,3 +60,27 @@ class TestBatch:
         batch = Batch(obs={"a": {"b": torch.randn(2, 4)}})
         moved = batch.to("cpu")
         assert moved.obs["a"]["b"].device.type == "cpu"
+
+    def test_validate_passes(self):
+        batch = Batch(
+            obs=torch.randn(3, 5, 4),
+            actions=torch.randn(3, 5, 2),
+            rewards=torch.randn(3, 5),
+        )
+        batch.validate(strict_time=True)
+
+    def test_validate_batch_mismatch_raises(self):
+        batch = Batch(
+            obs=torch.randn(3, 5, 4),
+            actions=torch.randn(2, 5, 2),
+        )
+        with pytest.raises(Exception, match="batch size mismatch"):
+            batch.validate()
+
+    def test_validate_time_mismatch_raises(self):
+        batch = Batch(
+            obs=torch.randn(3, 5, 4),
+            actions=torch.randn(3, 4, 2),
+        )
+        with pytest.raises(Exception, match="time dimension mismatch"):
+            batch.validate(strict_time=True)

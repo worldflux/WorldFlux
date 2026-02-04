@@ -8,6 +8,8 @@ from typing import Any
 import torch
 from torch import Tensor
 
+from .exceptions import ShapeMismatchError, StateError
+
 
 @dataclass
 class State:
@@ -49,3 +51,19 @@ class State:
             tensors={k: v.clone() for k, v in self.tensors.items()},
             meta=dict(self.meta),
         )
+
+    def validate(self) -> None:
+        """Validate state tensor shapes and batch consistency."""
+        if not self.tensors:
+            raise StateError("State has no tensors")
+        batch_size = None
+        for name, tensor in self.tensors.items():
+            if batch_size is None:
+                batch_size = tensor.shape[0]
+                continue
+            if tensor.shape[0] != batch_size:
+                raise ShapeMismatchError(
+                    f"State tensor '{name}' batch size mismatch",
+                    expected=(batch_size,),
+                    got=(tensor.shape[0],),
+                )

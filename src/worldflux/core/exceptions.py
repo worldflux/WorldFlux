@@ -39,6 +39,18 @@ class StateError(WorldFluxError):
     pass
 
 
+class ValidationError(WorldFluxError):
+    """Raised when runtime validation fails."""
+
+    pass
+
+
+class CapabilityError(WorldFluxError):
+    """Raised when a required model capability is missing."""
+
+    pass
+
+
 class ModelNotFoundError(WorldFluxError):
     """Raised when a requested model is not found in the registry."""
 

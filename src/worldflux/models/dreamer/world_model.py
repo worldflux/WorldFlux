@@ -37,6 +37,8 @@ class DreamerV3WorldModel(WorldModel):
             Capability.LATENT_DYNAMICS,
             Capability.OBS_DECODER,
             Capability.REPRESENTATION,
+            Capability.REWARD_PRED,
+            Capability.CONTINUE_PRED,
         }
 
         # Encoder

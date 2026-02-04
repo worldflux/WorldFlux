@@ -24,6 +24,8 @@ class Capability(str, Enum):
     LATENT_DYNAMICS = "latent_dynamics"
     OBS_DECODER = "obs_decoder"
     REPRESENTATION = "representation"
+    REWARD_PRED = "reward_pred"
+    CONTINUE_PRED = "continue_pred"
     VIDEO_PRED = "video_pred"
     TOKEN_MODEL = "token_model"
     DIFFUSION = "diffusion"

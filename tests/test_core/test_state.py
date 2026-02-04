@@ -40,3 +40,12 @@ class TestState:
         state = State()
         with pytest.raises(ValueError):
             _ = state.batch_size
+
+    def test_validate_passes(self):
+        state = State(tensors={"a": torch.randn(2, 3), "b": torch.randn(2, 4)})
+        state.validate()
+
+    def test_validate_batch_mismatch_raises(self):
+        state = State(tensors={"a": torch.randn(2, 3), "b": torch.randn(3, 4)})
+        with pytest.raises(Exception, match="batch size mismatch"):
+            state.validate()
