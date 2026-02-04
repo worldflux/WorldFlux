@@ -161,6 +161,7 @@ def _run_model(
     output_dir: Path,
     eval_batches: int,
     log_interval: int,
+    learning_rate: float | None = None,
 ) -> dict[str, Any]:
     logger.info("Starting %s seed=%s steps=%s", model_id, seed, steps)
     model = create_world_model(
@@ -169,16 +170,19 @@ def _run_model(
         action_dim=buffer.action_dim,
     )
 
-    config = TrainingConfig(
-        total_steps=steps,
-        batch_size=batch_size,
-        sequence_length=seq_len,
-        output_dir=str(output_dir),
-        device=device,
-        seed=seed,
-        log_interval=max(1, log_interval),
-        save_interval=steps + 1,
-    )
+    config_kwargs: dict[str, Any] = {
+        "total_steps": steps,
+        "batch_size": batch_size,
+        "sequence_length": seq_len,
+        "output_dir": str(output_dir),
+        "device": device,
+        "seed": seed,
+        "log_interval": max(1, log_interval),
+        "save_interval": steps + 1,
+    }
+    if learning_rate is not None:
+        config_kwargs["learning_rate"] = learning_rate
+    config = TrainingConfig(**config_kwargs)
 
     trainer = Trainer(model, config)
 
@@ -250,10 +254,22 @@ def main() -> None:
     parser.add_argument("--dreamer-size", type=str, default="ci")
     parser.add_argument("--dreamer-batch-size", type=int, default=4)
     parser.add_argument("--dreamer-seq-len", type=int, default=10)
+    parser.add_argument(
+        "--dreamer-lr",
+        type=float,
+        default=None,
+        help="Override Dreamer learning rate (default: TrainingConfig default)",
+    )
 
     parser.add_argument("--tdmpc2-size", type=str, default="ci")
     parser.add_argument("--tdmpc2-batch-size", type=int, default=16)
     parser.add_argument("--tdmpc2-seq-len", type=int, default=10)
+    parser.add_argument(
+        "--tdmpc2-lr",
+        type=float,
+        default=None,
+        help="Override TD-MPC2 learning rate (default: TrainingConfig default)",
+    )
 
     args = parser.parse_args()
 
@@ -290,6 +306,7 @@ def main() -> None:
                     output_dir=dreamer_out,
                     eval_batches=args.eval_batches,
                     log_interval=args.log_interval,
+                    learning_rate=args.dreamer_lr,
                 )
             )
             summary = _summary(runs)
@@ -323,6 +340,7 @@ def main() -> None:
                     output_dir=tdmpc_out,
                     eval_batches=args.eval_batches,
                     log_interval=args.log_interval,
+                    learning_rate=args.tdmpc2_lr,
                 )
             )
             summary = _summary(runs)
