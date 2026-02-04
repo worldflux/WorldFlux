@@ -1,0 +1,37 @@
+# OSS Quality Gates
+
+This document defines the **release readiness gates** for WorldFlux.
+
+## CI Gates (Required on PR)
+
+All PRs must pass:
+
+- **Lint**: `ruff check src/ tests/ examples/`
+- **Format**: `ruff format --check src/ tests/ examples/`
+- **Typecheck**: `mypy src/worldflux/`
+- **Unit tests**: `pytest tests/`
+- **Example smoke tests**:
+  - `python examples/train_dreamer.py --test`
+  - `python examples/train_tdmpc2.py --test`
+  - `python examples/train_jepa.py --steps 5 --batch-size 4 --obs-dim 8`
+  - `python examples/train_token_model.py --steps 5 --batch-size 4 --seq-len 8 --vocab-size 32`
+  - `python examples/train_diffusion_model.py --steps 5 --batch-size 4 --obs-dim 4 --action-dim 2`
+  - `python examples/plan_cem.py --horizon 3 --action-dim 2`
+- **Docs build**: `mkdocs build`
+
+## Reproducibility Gates (Nightly / Release)
+
+- **Seed stability**: same seed produces key losses/metrics within ±5–10%.
+- **Save/Load parity**: outputs after `save_pretrained` and reload differ only within tolerance.
+
+## Benchmark Gates (Release Only)
+
+- **Loss trend**: training loss decreases by a minimum threshold within N steps.
+- **Numerical stability**: no NaN/Inf during training in defined step budget.
+
+## Recommended Threshold Defaults
+
+These can be tightened over time:
+
+- Loss decrease: **≥10%** within **2,000 steps** on bundled datasets.
+- Seed variance: **≤10%** on main loss components.

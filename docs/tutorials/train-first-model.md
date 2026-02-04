@@ -190,6 +190,12 @@ model.save_pretrained("./my_trained_model")
 loaded_model = create_world_model("./my_trained_model")
 ```
 
+## Reproduce with Bundled Data
+
+If you want a **shortest real-data run** with bundled datasets, see:
+
+- [Reproduce Dreamer/TD-MPC2](reproduce-dreamer-tdmpc2.md)
+
 ## Tips
 
 ### Memory Issues

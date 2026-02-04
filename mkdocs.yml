@@ -56,6 +56,7 @@ nav:
   - Tutorials:
     - Train Your First Model: tutorials/train-first-model.md
     - DreamerV3 vs TD-MPC2: tutorials/dreamer-vs-tdmpc2.md
+    - Reproduce Dreamer/TD-MPC2: tutorials/reproduce-dreamer-tdmpc2.md
   - API Reference:
     - Factory: api/factory.md
     - WorldModel Protocol: api/protocol.md
@@ -64,4 +65,5 @@ nav:
   - Reference:
     - Configuration: reference/config.md
     - Extensibility: EXTENSIBILITY.md
+    - OSS Quality Gates: reference/quality-gates.md
     - Troubleshooting: reference/troubleshooting.md

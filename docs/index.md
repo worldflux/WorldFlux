@@ -83,6 +83,14 @@ print(f"Predicted rewards: {trajectory.rewards.shape}")  # [15, 1, 1]
 
     [:octicons-arrow-right-24: DreamerV3 vs TD-MPC2](tutorials/dreamer-vs-tdmpc2.md)
 
+-   **Reproduction**
+
+    ---
+
+    Reproduce results with bundled datasets.
+
+    [:octicons-arrow-right-24: Reproduce Dreamer/TD-MPC2](tutorials/reproduce-dreamer-tdmpc2.md)
+
 -   **API Reference**
 
     ---
@@ -94,6 +102,14 @@ print(f"Predicted rewards: {trajectory.rewards.shape}")  # [15, 1, 1]
     [:octicons-arrow-right-24: WorldModel Base Class](api/protocol.md)
 
     [:octicons-arrow-right-24: Training](api/training.md)
+
+-   **Reference**
+
+    ---
+
+    Release and quality guidance.
+
+    [:octicons-arrow-right-24: OSS Quality Gates](reference/quality-gates.md)
 
 </div>
 
