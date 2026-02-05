@@ -570,3 +570,75 @@ class TokenSequenceProvider:
             layouts=self.batch_layout(),
             strict_layout=True,
         )
+
+
+class TransitionArrayProvider:
+    """
+    Lightweight transition provider for pre-batched arrays.
+
+    This is useful for simple vector/image pipelines that do not need replay
+    semantics but still want to use the unified Trainer API.
+    """
+
+    def __init__(
+        self,
+        *,
+        obs: np.ndarray,
+        actions: np.ndarray,
+        rewards: np.ndarray | None = None,
+        next_obs: np.ndarray | None = None,
+        terminations: np.ndarray | None = None,
+    ):
+        if obs.ndim < 2:
+            raise ConfigurationError(f"obs must be rank-2+, got shape={obs.shape}")
+        if actions.ndim < 2:
+            raise ConfigurationError(f"actions must be rank-2+, got shape={actions.shape}")
+        if obs.shape[0] != actions.shape[0]:
+            raise ShapeMismatchError(
+                "obs/actions length mismatch",
+                expected=(obs.shape[0],),
+                got=(actions.shape[0],),
+            )
+        self.obs = obs.astype(np.float32, copy=False)
+        self.actions = actions.astype(np.float32, copy=False)
+        self.rewards = rewards.astype(np.float32, copy=False) if rewards is not None else None
+        self.next_obs = next_obs.astype(np.float32, copy=False) if next_obs is not None else None
+        self.terminations = (
+            terminations.astype(np.float32, copy=False) if terminations is not None else None
+        )
+        self.num_rows = self.obs.shape[0]
+
+    def batch_layout(self) -> dict[str, str]:
+        return {
+            "obs": "B...",
+            "actions": "B...",
+            "rewards": "B",
+            "next_obs": "B...",
+            "terminations": "B",
+        }
+
+    def sample(
+        self,
+        batch_size: int,
+        seq_len: int | None = None,
+        device: str | torch.device = "cpu",
+    ) -> Batch:
+        if batch_size <= 0:
+            raise ConfigurationError(f"batch_size must be positive, got {batch_size}")
+        idx = np.random.randint(0, self.num_rows, size=batch_size)
+        batch = Batch(
+            obs=torch.from_numpy(self.obs[idx]).to(device),
+            actions=torch.from_numpy(self.actions[idx]).to(device),
+            rewards=torch.from_numpy(self.rewards[idx]).to(device)
+            if self.rewards is not None
+            else None,
+            next_obs=torch.from_numpy(self.next_obs[idx]).to(device)
+            if self.next_obs is not None
+            else None,
+            terminations=torch.from_numpy(self.terminations[idx]).to(device)
+            if self.terminations is not None
+            else None,
+            layouts=self.batch_layout(),
+            strict_layout=True,
+        )
+        return batch

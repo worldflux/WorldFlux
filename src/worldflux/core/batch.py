@@ -183,6 +183,25 @@ class Batch:
                 return layout
         return None
 
+    def _validate_layout_keys(self) -> None:
+        valid_root_fields = {
+            "obs",
+            "actions",
+            "next_obs",
+            "rewards",
+            "terminations",
+            "mask",
+            "context",
+            "target",
+        }
+        for key in self.layouts:
+            root = key.split(".", 1)[0].split(":", 1)[0]
+            if root not in valid_root_fields:
+                raise ShapeMismatchError(
+                    f"Unknown layout field '{key}'. "
+                    f"Expected root field in {sorted(valid_root_fields)}",
+                )
+
     @staticmethod
     def _axis_from_layout(layout: str, axis: str) -> int | None:
         pos = layout.find(axis)
@@ -225,6 +244,9 @@ class Batch:
             strict_time: Enforce time dimension consistency when present.
         """
         # Infer batch/time from obs
+        if self.strict_layout:
+            self._validate_layout_keys()
+
         obs_entries = list(self._iter_named(self.obs))
         if not obs_entries:
             raise ShapeMismatchError("Cannot validate batch with empty obs dict")

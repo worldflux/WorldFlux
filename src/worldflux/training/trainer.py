@@ -15,8 +15,10 @@ from torch.optim.lr_scheduler import LRScheduler
 
 from worldflux.core.batch import Batch, BatchProvider
 from worldflux.core.exceptions import (
+    BufferError,
     CheckpointError,
     ConfigurationError,
+    ShapeMismatchError,
     TrainingError,
     ValidationError,
 )
@@ -195,7 +197,10 @@ class Trainer:
                 )
             batch = batch.to(self.device)
             batch = self._apply_contract_to_batch(batch, data)
-            batch.validate(strict_time=True)
+            try:
+                batch.validate(strict_time=True)
+            except (ShapeMismatchError, ValidationError, BufferError) as e:
+                raise TrainingError(f"Invalid batch for training: {e}") from e
             return batch
 
         if self._data_iter is None:
@@ -218,7 +223,10 @@ class Trainer:
             )
         batch = batch.to(self.device)
         batch = self._apply_contract_to_batch(batch, data)
-        batch.validate(strict_time=True)
+        try:
+            batch.validate(strict_time=True)
+        except (ShapeMismatchError, ValidationError, BufferError) as e:
+            raise TrainingError(f"Invalid batch for training: {e}") from e
         return batch
 
     def _create_optimizer(self) -> Optimizer:

@@ -2,7 +2,7 @@
 
 from .callbacks import Callback, CheckpointCallback, LoggingCallback
 from .config import TrainingConfig
-from .data import ReplayBuffer, TokenSequenceProvider, TrajectoryDataset
+from .data import ReplayBuffer, TokenSequenceProvider, TrajectoryDataset, TransitionArrayProvider
 from .trainer import Trainer, train
 
 __all__ = [
@@ -13,6 +13,7 @@ __all__ = [
     "ReplayBuffer",
     "TrajectoryDataset",
     "TokenSequenceProvider",
+    "TransitionArrayProvider",
     # Callbacks
     "Callback",
     "LoggingCallback",
