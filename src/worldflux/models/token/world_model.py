@@ -12,7 +12,17 @@ from ...core.config import TokenWorldModelConfig
 from ...core.model import WorldModel
 from ...core.output import LossOutput, ModelOutput
 from ...core.registry import WorldModelRegistry
-from ...core.spec import Capability
+from ...core.spec import (
+    ActionSpec,
+    Capability,
+    ModalityKind,
+    ModalitySpec,
+    ModelIOContract,
+    ObservationSpec,
+    PredictionSpec,
+    SequenceLayout,
+    StateSpec,
+)
 from ...core.state import State
 from ...samplers.token import TokenSampler
 
@@ -43,6 +53,46 @@ class TokenWorldModel(WorldModel):
         obs_dim = int(torch.prod(torch.tensor(config.obs_shape)).item())
         self.tokenizer = nn.Linear(obs_dim, config.vocab_size)
         self.sampler = TokenSampler()
+
+    def io_contract(self) -> ModelIOContract:
+        token_shape = self.config.obs_shape if self.config.obs_shape else (1,)
+        return ModelIOContract(
+            observation_spec=ObservationSpec(
+                modalities={"tokens": ModalitySpec(kind=ModalityKind.TOKENS, shape=token_shape)}
+            ),
+            action_spec=ActionSpec(
+                kind=self.config.action_type,
+                dim=self.config.action_dim,
+                discrete=self.config.action_type == "discrete",
+                num_actions=self.config.action_dim
+                if self.config.action_type == "discrete"
+                else None,
+            ),
+            state_spec=StateSpec(
+                tensors={
+                    "tokens": ModalitySpec(kind=ModalityKind.TOKENS, shape=token_shape),
+                    "emb": ModalitySpec(kind=ModalityKind.VECTOR, shape=(self.config.token_dim,)),
+                }
+            ),
+            prediction_spec=PredictionSpec(
+                tensors={
+                    "logits": ModalitySpec(
+                        kind=ModalityKind.VECTOR, shape=(self.config.vocab_size,)
+                    ),
+                    "tokens": ModalitySpec(kind=ModalityKind.TOKENS, shape=token_shape),
+                }
+            ),
+            sequence_layout=SequenceLayout(
+                axes_by_field={
+                    "obs": "BT",
+                    "target": "BT",
+                    "next_obs": "BT",
+                    "mask": "BT",
+                }
+            ),
+            required_batch_keys=("obs",),
+            required_state_keys=("tokens",),
+        )
 
     def _extract_obs(self, obs: Tensor | dict[str, Tensor]) -> Tensor:
         if isinstance(obs, dict):

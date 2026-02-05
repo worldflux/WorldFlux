@@ -8,6 +8,7 @@ from typing import Any
 from torch import Tensor
 
 from .exceptions import ShapeMismatchError
+from .spec import PredictionSpec, SequenceLayout
 from .state import State
 
 
@@ -18,6 +19,8 @@ class ModelOutput:
     preds: dict[str, Tensor] = field(default_factory=dict)
     state: State | None = None
     aux: dict[str, Any] = field(default_factory=dict)
+    prediction_spec: PredictionSpec | None = None
+    sequence_layout: SequenceLayout | None = None
 
     def validate(self) -> None:
         """Validate prediction tensor shapes and batch consistency."""
@@ -41,6 +44,10 @@ class ModelOutput:
                     expected=(batch_size,),
                     got=(state_batch,),
                 )
+        if self.prediction_spec is not None:
+            for key in self.prediction_spec.tensors:
+                if key not in self.preds:
+                    raise ShapeMismatchError(f"Prediction spec requires missing key: {key}")
 
     def items(self):
         """Compatibility helper for iterating over predictions."""

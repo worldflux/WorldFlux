@@ -9,7 +9,17 @@ from ...core.config import DreamerV3Config
 from ...core.model import WorldModel
 from ...core.output import LossOutput, ModelOutput
 from ...core.registry import WorldModelRegistry
-from ...core.spec import Capability
+from ...core.spec import (
+    ActionSpec,
+    Capability,
+    ModalityKind,
+    ModalitySpec,
+    ModelIOContract,
+    ObservationSpec,
+    PredictionSpec,
+    SequenceLayout,
+    StateSpec,
+)
 from ...core.state import State
 from .decoder import CNNDecoder, MLPDecoder
 from .encoder import CNNEncoder, MLPEncoder
@@ -107,6 +117,49 @@ class DreamerV3WorldModel(WorldModel):
         if not isinstance(device, torch.device):
             raise TypeError(f"Expected torch.device, got {type(device)}")
         return device
+
+    def io_contract(self) -> ModelIOContract:
+        obs_kind = ModalityKind.IMAGE if self.config.encoder_type == "cnn" else ModalityKind.VECTOR
+        return ModelIOContract(
+            observation_spec=ObservationSpec(
+                modalities={"obs": ModalitySpec(kind=obs_kind, shape=self.config.obs_shape)}
+            ),
+            action_spec=ActionSpec(
+                kind=self.config.action_type,
+                dim=self.config.action_dim,
+                discrete=self.config.action_type == "discrete",
+                num_actions=self.config.action_dim
+                if self.config.action_type == "discrete"
+                else None,
+            ),
+            state_spec=StateSpec(
+                tensors={
+                    "deter": ModalitySpec(kind=ModalityKind.VECTOR, shape=(self.config.deter_dim,)),
+                    "stoch": ModalitySpec(
+                        kind=ModalityKind.VECTOR,
+                        shape=(self.config.stoch_discrete, self.config.stoch_classes),
+                    ),
+                }
+            ),
+            prediction_spec=PredictionSpec(
+                tensors={
+                    "obs": ModalitySpec(kind=obs_kind, shape=self.config.obs_shape),
+                    "reward": ModalitySpec(kind=ModalityKind.VECTOR, shape=(1,)),
+                    "continue": ModalitySpec(kind=ModalityKind.VECTOR, shape=(1,)),
+                }
+            ),
+            sequence_layout=SequenceLayout(
+                axes_by_field={
+                    "obs": "BT...",
+                    "actions": "BT...",
+                    "rewards": "BT",
+                    "terminations": "BT",
+                    "next_obs": "BT...",
+                }
+            ),
+            required_batch_keys=("obs", "actions", "rewards", "terminations"),
+            required_state_keys=("deter", "stoch"),
+        )
 
     def encode(self, obs: Tensor | dict[str, Tensor], deterministic: bool = False) -> State:
         """Encode observation to latent state."""

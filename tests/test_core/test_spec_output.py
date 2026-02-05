@@ -7,7 +7,11 @@ from worldflux.core.spec import (
     ActionSpec,
     ModalityKind,
     ModalitySpec,
+    ModelIOContract,
+    ModelMaturity,
     ObservationSpec,
+    PredictionSpec,
+    SequenceLayout,
     StateSpec,
     TokenSpec,
 )
@@ -41,6 +45,39 @@ class TestSpecTypes:
         assert token_spec.vocab_size == 1024
         assert token_spec.seq_len == 256
 
+    def test_prediction_spec(self):
+        pred = PredictionSpec(
+            tensors={"reward": ModalitySpec(kind=ModalityKind.VECTOR, shape=(1,))}
+        )
+        assert "reward" in pred.tensors
+
+    def test_sequence_layout(self):
+        layout = SequenceLayout(axes_by_field={"obs": "BT..."})
+        assert layout.axes_by_field["obs"] == "BT..."
+
+    def test_model_io_contract(self):
+        contract = ModelIOContract(
+            observation_spec=ObservationSpec(
+                modalities={"obs": ModalitySpec(kind=ModalityKind.VECTOR, shape=(8,))}
+            ),
+            action_spec=ActionSpec(kind="continuous", dim=2),
+            state_spec=StateSpec(
+                tensors={"latent": ModalitySpec(kind=ModalityKind.VECTOR, shape=(16,))}
+            ),
+            prediction_spec=PredictionSpec(
+                tensors={"reward": ModalitySpec(kind=ModalityKind.VECTOR, shape=(1,))}
+            ),
+            sequence_layout=SequenceLayout(axes_by_field={"obs": "BT...", "actions": "BT..."}),
+            required_batch_keys=("obs", "actions"),
+            required_state_keys=("latent",),
+        )
+        assert contract.required_batch_keys == ("obs", "actions")
+        assert contract.required_state_keys == ("latent",)
+
+    def test_model_maturity_values(self):
+        assert ModelMaturity.REFERENCE.value == "reference"
+        assert ModelMaturity.EXPERIMENTAL.value == "experimental"
+
 
 class TestOutputTypes:
     """Output dataclass tests."""
@@ -70,4 +107,16 @@ class TestOutputTypes:
 
         out = ModelOutput(preds={"obs": torch.randn(2, 3), "reward": torch.randn(3, 1)})
         with pytest.raises(Exception, match="batch size mismatch"):
+            out.validate()
+
+    def test_model_output_validate_missing_spec_key_raises(self):
+        import torch
+
+        out = ModelOutput(
+            preds={"reward": torch.randn(2, 1)},
+            prediction_spec=PredictionSpec(
+                tensors={"obs": ModalitySpec(kind=ModalityKind.VECTOR, shape=(3,))}
+            ),
+        )
+        with pytest.raises(Exception, match="missing key"):
             out.validate()

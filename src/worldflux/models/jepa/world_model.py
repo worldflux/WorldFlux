@@ -12,7 +12,17 @@ from ...core.config import JEPABaseConfig
 from ...core.model import WorldModel
 from ...core.output import LossOutput, ModelOutput
 from ...core.registry import WorldModelRegistry
-from ...core.spec import Capability
+from ...core.spec import (
+    ActionSpec,
+    Capability,
+    ModalityKind,
+    ModalitySpec,
+    ModelIOContract,
+    ObservationSpec,
+    PredictionSpec,
+    SequenceLayout,
+    StateSpec,
+)
 from ...core.state import State
 
 
@@ -44,6 +54,45 @@ class JEPABaseWorldModel(WorldModel):
         self.projector = nn.Sequential(
             nn.Linear(config.encoder_dim, config.projection_dim),
             nn.GELU(),
+        )
+
+    def io_contract(self) -> ModelIOContract:
+        obs_kind = ModalityKind.IMAGE if len(self.config.obs_shape) == 3 else ModalityKind.VECTOR
+        return ModelIOContract(
+            observation_spec=ObservationSpec(
+                modalities={"obs": ModalitySpec(kind=obs_kind, shape=self.config.obs_shape)}
+            ),
+            action_spec=ActionSpec(
+                kind=self.config.action_type,
+                dim=self.config.action_dim,
+                discrete=self.config.action_type == "discrete",
+                num_actions=self.config.action_dim
+                if self.config.action_type == "discrete"
+                else None,
+            ),
+            state_spec=StateSpec(
+                tensors={
+                    "rep": ModalitySpec(kind=ModalityKind.VECTOR, shape=(self.config.encoder_dim,))
+                }
+            ),
+            prediction_spec=PredictionSpec(
+                tensors={
+                    "representation": ModalitySpec(
+                        kind=ModalityKind.VECTOR,
+                        shape=(self.config.projection_dim,),
+                    )
+                }
+            ),
+            sequence_layout=SequenceLayout(
+                axes_by_field={
+                    "obs": "B...",
+                    "context": "B...",
+                    "target": "B...",
+                    "mask": "B...",
+                }
+            ),
+            required_batch_keys=("obs",),
+            required_state_keys=("rep",),
         )
 
     def _flatten_obs(self, obs: Tensor) -> Tensor:

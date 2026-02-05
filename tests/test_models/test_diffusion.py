@@ -36,3 +36,16 @@ def test_diffusion_loss():
     loss_out = model.loss(batch)
     assert "diffusion_mse" in loss_out.components
     assert torch.isfinite(loss_out.loss)
+
+
+def test_diffusion_io_contract():
+    config = DiffusionWorldModelConfig(
+        obs_shape=(4,),
+        action_dim=2,
+        hidden_dim=16,
+        diffusion_steps=2,
+    )
+    model = DiffusionWorldModel(config)
+    contract = model.io_contract()
+    assert contract.required_state_keys == ("obs",)
+    assert contract.prediction_spec.tensors["obs"].shape == (4,)

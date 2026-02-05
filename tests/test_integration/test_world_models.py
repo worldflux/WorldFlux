@@ -69,6 +69,23 @@ class TestModelSwitching:
         assert len(trajectory.states) == 6
         assert trajectory.rewards is not None
 
+    def test_models_expose_io_contract(self):
+        dreamer = AutoWorldModel.from_pretrained(
+            "dreamerv3:size12m",
+            obs_shape=(3, 64, 64),
+            action_dim=6,
+        )
+        tdmpc = AutoWorldModel.from_pretrained(
+            "tdmpc2:5m",
+            obs_shape=(39,),
+            action_dim=6,
+        )
+
+        for model in [dreamer, tdmpc]:
+            contract = model.io_contract()
+            assert contract.required_batch_keys
+            assert "obs" in contract.observation_spec.modalities
+
 
 class TestAutoConfig:
     """Test AutoConfig functionality."""

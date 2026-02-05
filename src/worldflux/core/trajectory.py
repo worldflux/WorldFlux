@@ -6,6 +6,7 @@ import torch
 from torch import Tensor
 
 from .exceptions import StateError
+from .spec import SequenceLayout, StateSpec
 from .state import State
 
 
@@ -30,6 +31,8 @@ class Trajectory:
     rewards: Tensor | None = None
     values: Tensor | None = None
     continues: Tensor | None = None
+    state_spec: StateSpec | None = None
+    sequence_layout: SequenceLayout | None = None
     _validated: bool = field(default=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
@@ -118,6 +121,8 @@ class Trajectory:
             rewards=self.rewards.to(device) if self.rewards is not None else None,
             values=self.values.to(device) if self.values is not None else None,
             continues=self.continues.to(device) if self.continues is not None else None,
+            state_spec=self.state_spec,
+            sequence_layout=self.sequence_layout,
         )
 
     def detach(self) -> "Trajectory":
@@ -127,4 +132,6 @@ class Trajectory:
             rewards=self.rewards.detach() if self.rewards is not None else None,
             values=self.values.detach() if self.values is not None else None,
             continues=self.continues.detach() if self.continues is not None else None,
+            state_spec=self.state_spec,
+            sequence_layout=self.sequence_layout,
         )

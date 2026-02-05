@@ -38,3 +38,18 @@ def test_token_loss():
     loss_out = model.loss(batch)
     assert "token_ce" in loss_out.components
     assert torch.isfinite(loss_out.loss)
+
+
+def test_token_io_contract():
+    config = TokenWorldModelConfig(
+        obs_shape=(8,),
+        action_dim=1,
+        vocab_size=32,
+        token_dim=16,
+        num_layers=1,
+        num_heads=1,
+    )
+    model = TokenWorldModel(config)
+    contract = model.io_contract()
+    assert contract.required_state_keys == ("tokens",)
+    assert contract.sequence_layout.axes_by_field["obs"] == "BT"

@@ -12,9 +12,19 @@ from ...core.config import DiffusionWorldModelConfig
 from ...core.model import WorldModel
 from ...core.output import LossOutput, ModelOutput
 from ...core.registry import WorldModelRegistry
-from ...core.spec import Capability
+from ...core.spec import (
+    ActionSpec,
+    Capability,
+    ModalityKind,
+    ModalitySpec,
+    ModelIOContract,
+    ObservationSpec,
+    PredictionSpec,
+    SequenceLayout,
+    StateSpec,
+)
 from ...core.state import State
-from ...samplers.diffusion import DiffusionSampler
+from ...samplers.diffusion import DiffusionSampler, DiffusionScheduler
 
 
 @WorldModelRegistry.register("diffusion", DiffusionWorldModelConfig)
@@ -38,7 +48,46 @@ class DiffusionWorldModel(WorldModel):
             nn.ReLU(),
             nn.Linear(config.hidden_dim, obs_dim),
         )
-        self.sampler = DiffusionSampler()
+        self.scheduler = DiffusionScheduler(
+            num_train_steps=max(10, config.diffusion_steps * 25),
+            beta_start=config.beta_start,
+            beta_end=config.beta_end,
+            prediction_target="noise",
+        )
+        self.sampler = DiffusionSampler(self.scheduler)
+
+    def io_contract(self) -> ModelIOContract:
+        obs_dim = int(torch.prod(torch.tensor(self.config.obs_shape)).item())
+        obs_kind = ModalityKind.IMAGE if len(self.config.obs_shape) == 3 else ModalityKind.VECTOR
+        return ModelIOContract(
+            observation_spec=ObservationSpec(
+                modalities={"obs": ModalitySpec(kind=obs_kind, shape=self.config.obs_shape)}
+            ),
+            action_spec=ActionSpec(
+                kind=self.config.action_type,
+                dim=self.config.action_dim,
+                discrete=self.config.action_type == "discrete",
+                num_actions=self.config.action_dim
+                if self.config.action_type == "discrete"
+                else None,
+            ),
+            state_spec=StateSpec(
+                tensors={"obs": ModalitySpec(kind=ModalityKind.VECTOR, shape=(obs_dim,))}
+            ),
+            prediction_spec=PredictionSpec(
+                tensors={"obs": ModalitySpec(kind=ModalityKind.VECTOR, shape=(obs_dim,))}
+            ),
+            sequence_layout=SequenceLayout(
+                axes_by_field={
+                    "obs": "B...",
+                    "actions": "B...",
+                    "target": "B...",
+                    "next_obs": "B...",
+                }
+            ),
+            required_batch_keys=("obs",),
+            required_state_keys=("obs",),
+        )
 
     def _extract_obs(self, obs: Tensor | dict[str, Tensor]) -> Tensor:
         if isinstance(obs, dict):
@@ -60,11 +109,15 @@ class DiffusionWorldModel(WorldModel):
             return torch.zeros(obs.shape[0], self.config.action_dim, device=obs.device)
         return action
 
-    def denoise(self, x: Tensor, action: Tensor | None = None) -> Tensor:
+    def denoise(
+        self,
+        x: Tensor,
+        action: Tensor | None = None,
+        timestep: Tensor | None = None,
+    ) -> Tensor:
         action_t = self._action_or_zeros(x, action)
         inp = torch.cat([x, action_t], dim=-1)
-        pred = self.denoise_net(inp)
-        return x - pred
+        return self.denoise_net(inp)
 
     def encode(self, obs: Tensor | dict[str, Tensor], deterministic: bool = False) -> State:
         flat = self._flatten_obs(obs)
@@ -96,9 +149,12 @@ class DiffusionWorldModel(WorldModel):
         )
 
         noise = torch.randn_like(obs)
-        noisy = obs + noise
-        pred_noise = self.denoise_net(torch.cat([noisy, action_t], dim=-1))
-        denoised = noisy - pred_noise
+        timesteps = self.scheduler.sample_timesteps(obs.shape[0], device=obs.device)
+        noisy = self.scheduler.add_noise(obs, noise, timesteps)
+        pred_noise = self.denoise(noisy, action_t, timestep=timesteps)
+        denoised = self.scheduler.step(pred_noise, noisy, timesteps)
 
-        loss = F.mse_loss(denoised, target)
+        recon_loss = F.mse_loss(denoised, target)
+        noise_loss = F.mse_loss(pred_noise, noise)
+        loss = 0.5 * (recon_loss + noise_loss)
         return LossOutput(loss=loss, components={"diffusion_mse": loss})

@@ -34,6 +34,14 @@ class Capability(str, Enum):
     POLICY = "policy"
 
 
+class ModelMaturity(str, Enum):
+    """Public maturity tier for model families."""
+
+    REFERENCE = "reference"
+    EXPERIMENTAL = "experimental"
+    SKELETON = "skeleton"
+
+
 @dataclass(frozen=True)
 class ModalitySpec:
     """Specification of a single modality tensor."""
@@ -76,3 +84,35 @@ class TokenSpec:
     vocab_size: int
     seq_len: int
     dtype: str = "int64"
+
+
+@dataclass(frozen=True)
+class PredictionSpec:
+    """Specification for model prediction tensors."""
+
+    tensors: dict[str, ModalitySpec] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class SequenceLayout:
+    """
+    Explicit axis layout by field key.
+
+    Layout strings use axis markers like ``B`` (batch) and ``T`` (time),
+    for example ``BT...`` or ``B...``.
+    """
+
+    axes_by_field: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ModelIOContract:
+    """Runtime I/O contract for unified validation across model families."""
+
+    observation_spec: ObservationSpec = field(default_factory=ObservationSpec)
+    action_spec: ActionSpec = field(default_factory=ActionSpec)
+    state_spec: StateSpec = field(default_factory=StateSpec)
+    prediction_spec: PredictionSpec = field(default_factory=PredictionSpec)
+    sequence_layout: SequenceLayout = field(default_factory=SequenceLayout)
+    required_batch_keys: tuple[str, ...] = ()
+    required_state_keys: tuple[str, ...] = ()

@@ -67,3 +67,8 @@ class TestJEPABaseWorldModel:
     def test_auto_world_model(self):
         model = AutoWorldModel.from_pretrained("jepa:base")
         assert isinstance(model, JEPABaseWorldModel)
+
+    def test_io_contract(self, model):
+        contract = model.io_contract()
+        assert contract.required_state_keys == ("rep",)
+        assert "representation" in contract.prediction_spec.tensors

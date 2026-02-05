@@ -11,7 +11,17 @@ from ...core.latent_space import SimNormLatentSpace
 from ...core.model import WorldModel
 from ...core.output import LossOutput, ModelOutput
 from ...core.registry import WorldModelRegistry
-from ...core.spec import Capability
+from ...core.spec import (
+    ActionSpec,
+    Capability,
+    ModalityKind,
+    ModalitySpec,
+    ModelIOContract,
+    ObservationSpec,
+    PredictionSpec,
+    SequenceLayout,
+    StateSpec,
+)
 from ...core.state import State
 from .dynamics import Dynamics
 from .encoder import MLPEncoder
@@ -110,6 +120,55 @@ class TDMPC2WorldModel(WorldModel):
         if not isinstance(device, torch.device):
             raise TypeError(f"Expected torch.device, got {type(device)}")
         return device
+
+    def io_contract(self) -> ModelIOContract:
+        return ModelIOContract(
+            observation_spec=ObservationSpec(
+                modalities={
+                    "obs": ModalitySpec(kind=ModalityKind.VECTOR, shape=self.config.obs_shape)
+                }
+            ),
+            action_spec=ActionSpec(
+                kind=self.config.action_type,
+                dim=self.config.action_dim,
+                discrete=self.config.action_type == "discrete",
+                num_actions=self.config.action_dim
+                if self.config.action_type == "discrete"
+                else None,
+            ),
+            state_spec=StateSpec(
+                tensors={
+                    "latent": ModalitySpec(
+                        kind=ModalityKind.VECTOR, shape=(self.config.latent_dim,)
+                    )
+                }
+            ),
+            prediction_spec=PredictionSpec(
+                tensors={
+                    "reward": ModalitySpec(kind=ModalityKind.VECTOR, shape=(1,)),
+                    "continue": ModalitySpec(kind=ModalityKind.VECTOR, shape=(1,)),
+                    "q_values": ModalitySpec(
+                        kind=ModalityKind.VECTOR,
+                        shape=(self.config.num_q_networks, 1),
+                    ),
+                    "action": ModalitySpec(
+                        kind=ModalityKind.VECTOR,
+                        shape=(self.config.action_dim,),
+                    ),
+                }
+            ),
+            sequence_layout=SequenceLayout(
+                axes_by_field={
+                    "obs": "BT...",
+                    "actions": "BT...",
+                    "rewards": "BT",
+                    "terminations": "BT",
+                    "next_obs": "BT...",
+                }
+            ),
+            required_batch_keys=("obs", "actions", "rewards"),
+            required_state_keys=("latent",),
+        )
 
     def encode(self, obs: Tensor | dict[str, Tensor], deterministic: bool = False) -> State:
         """Encode observation to SimNorm latent space."""
