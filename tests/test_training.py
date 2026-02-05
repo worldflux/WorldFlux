@@ -524,6 +524,51 @@ class TestTrainer:
         assert isinstance(batch, Batch)
         assert batch.obs.shape == (2, 4)
 
+    def test_add_callback_registers_callback(self):
+        model = DummyModel()
+        config = TrainingConfig(total_steps=1, batch_size=2, sequence_length=1, device="cpu")
+        trainer = Trainer(model, config, callbacks=[])
+        callback = LoggingCallback(log_interval=10)
+        trainer.add_callback(callback)
+        assert callback in trainer.callbacks.callbacks
+
+    def test_scheduler_created_from_config(self):
+        model = DummyModel()
+        config = TrainingConfig(
+            total_steps=5,
+            batch_size=2,
+            sequence_length=1,
+            device="cpu",
+            scheduler="linear",
+            warmup_steps=1,
+        )
+        trainer = Trainer(model, config, callbacks=[])
+        assert trainer.scheduler is not None
+
+    def test_trainer_rejects_model_overrides(self):
+        model = DummyModel()
+        config = TrainingConfig(
+            total_steps=1,
+            batch_size=2,
+            sequence_length=1,
+            device="cpu",
+            model_overrides={"hidden_dim": 32},
+        )
+        with pytest.raises(ConfigurationError, match="model_overrides"):
+            Trainer(model, config, callbacks=[])
+
+    def test_trainer_rejects_ema_decay(self):
+        model = DummyModel()
+        config = TrainingConfig(
+            total_steps=1,
+            batch_size=2,
+            sequence_length=1,
+            device="cpu",
+            ema_decay=0.99,
+        )
+        with pytest.raises(ConfigurationError, match="ema_decay"):
+            Trainer(model, config, callbacks=[])
+
     def test_gradient_accumulation_steps(self):
         class CountingOptimizer(torch.optim.SGD):
             def __init__(self, params):
