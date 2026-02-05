@@ -14,7 +14,7 @@ ModuleNotFoundError: No module named 'worldflux'
 
 ```bash
 cd worldflux
-pip install -e "."
+uv sync
 ```
 
 ### Missing training dependencies
@@ -26,7 +26,7 @@ ModuleNotFoundError: No module named 'worldflux.training'
 **Solution**: Install with training extras:
 
 ```bash
-pip install -e ".[training]"
+uv sync --extra training
 ```
 
 ### CUDA not available
@@ -39,7 +39,7 @@ False
 
 **Solution**:
 1. Check NVIDIA drivers: `nvidia-smi`
-2. Reinstall PyTorch with CUDA: `pip install torch --index-url https://download.pytorch.org/whl/cu118`
+2. Reinstall PyTorch with CUDA: `uv pip install torch --index-url https://download.pytorch.org/whl/cu118`
 
 ---
 

@@ -122,27 +122,29 @@ graph LR
 
 ## Installation
 
+Install `uv` first if you do not have it yet: [uv installation guide](https://docs.astral.sh/uv/getting-started/installation/).
+
 ### From Source (recommended)
 
 ```bash
 git clone https://github.com/worldflux/Worldflux.git
 cd worldflux
-pip install -e "."
+uv sync
 
 # With training dependencies
-pip install -e ".[training]"
+uv sync --extra training
 
 # With all optional dependencies
-pip install -e ".[all]"
+uv sync --extra all
 
 # For development
-pip install -e ".[dev]"
+uv sync --extra dev
 ```
 
 ### From PyPI
 
 ```bash
-pip install worldflux
+uv pip install worldflux
 ```
 
 ## Quick Start

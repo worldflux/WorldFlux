@@ -7,17 +7,17 @@ policy for testing DreamerV3 world model training on real visual observations.
 
 Usage:
     # Basic collection
-    python examples/collect_atari.py
+    uv run python examples/collect_atari.py
 
     # Collect more episodes
-    python examples/collect_atari.py --episodes 100 --output breakout_data.npz
+    uv run python examples/collect_atari.py --episodes 100 --output breakout_data.npz
 
     # Use different environment
-    python examples/collect_atari.py --env ALE/Pong-v5
+    uv run python examples/collect_atari.py --env ALE/Pong-v5
 
 Requirements:
-    pip install "gymnasium[atari]" ale-py
-    autorom --accept-license
+    uv sync --extra atari
+    uv run autorom --accept-license
 """
 
 import argparse
@@ -33,9 +33,7 @@ try:
     # Register ALE environments with gymnasium
     gym.register_envs(ale_py)
 except ImportError:
-    raise ImportError(
-        "gymnasium not installed. Install with: pip install 'gymnasium[atari]' ale-py"
-    )
+    raise ImportError("gymnasium not installed. Install with: uv sync --extra atari")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -58,7 +56,7 @@ def preprocess_atari(obs: np.ndarray, target_size: tuple[int, int] = (64, 64)) -
     try:
         import cv2
     except ImportError:
-        raise ImportError("opencv-python not installed. Install with: pip install opencv-python")
+        raise ImportError("opencv-python not installed. Install with: uv sync --extra atari")
 
     # Resize to target size
     resized = cv2.resize(obs, target_size, interpolation=cv2.INTER_AREA)

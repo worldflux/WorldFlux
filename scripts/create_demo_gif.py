@@ -9,16 +9,16 @@ This script generates visualization GIFs showing:
 
 Usage:
     # Basic usage (generates all demos with random data)
-    python scripts/create_demo_gif.py
+    uv run python scripts/create_demo_gif.py
 
     # With a trained model
-    python scripts/create_demo_gif.py --model ./outputs/my_model --data ./data.npz
+    uv run python scripts/create_demo_gif.py --model ./outputs/my_model --data ./data.npz
 
     # Specific output directory
-    python scripts/create_demo_gif.py --output ./docs/assets
+    uv run python scripts/create_demo_gif.py --output ./docs/assets
 
 Requirements:
-    pip install matplotlib imageio pillow
+    uv sync --extra viz
 """
 
 import argparse
@@ -55,7 +55,7 @@ def create_imagination_gif(
         matplotlib.use("Agg")  # Use non-interactive backend for rendering
         import matplotlib.pyplot as plt
     except ImportError:
-        raise ImportError("Please install: pip install matplotlib imageio pillow")
+        raise ImportError("Please install visualization dependencies: uv sync --extra viz")
 
     device = next(model.parameters()).device
     logger.info(f"Creating imagination GIF with horizon={horizon}")
@@ -154,7 +154,7 @@ def create_latent_space_gif(
         import matplotlib.pyplot as plt
         from sklearn.decomposition import PCA
     except ImportError:
-        raise ImportError("Please install: pip install matplotlib imageio scikit-learn pillow")
+        raise ImportError("Please install visualization dependencies: uv sync --extra viz")
 
     device = next(model.parameters()).device
     logger.info(f"Creating latent space GIF with {num_trajectories} trajectories")
@@ -280,7 +280,7 @@ def create_architecture_diagram(output_path: str = "architecture.png"):
         import matplotlib.patches as patches
         import matplotlib.pyplot as plt
     except ImportError:
-        raise ImportError("Please install: pip install matplotlib")
+        raise ImportError("Please install visualization dependencies: uv sync --extra viz")
 
     logger.info("Creating architecture diagram")
 

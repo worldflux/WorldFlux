@@ -7,16 +7,16 @@ real observations with imagined observations over a multi-step horizon.
 
 Usage:
     # Basic visualization
-    python examples/visualize_imagination.py --model ./outputs/atari_dreamer/atari_dreamer_final
+    uv run python examples/visualize_imagination.py --model ./outputs/atari_dreamer/atari_dreamer_final
 
     # With custom data
-    python examples/visualize_imagination.py --model ./outputs/atari_dreamer/atari_dreamer_final --data atari_data.npz
+    uv run python examples/visualize_imagination.py --model ./outputs/atari_dreamer/atari_dreamer_final --data atari_data.npz
 
     # Longer horizon
-    python examples/visualize_imagination.py --model ./outputs/atari_dreamer/atari_dreamer_final --horizon 50
+    uv run python examples/visualize_imagination.py --model ./outputs/atari_dreamer/atari_dreamer_final --horizon 50
 
 Requirements:
-    pip install matplotlib
+    uv sync --extra viz
 """
 
 import argparse
@@ -137,7 +137,7 @@ def visualize_single_rollout(
     try:
         import matplotlib.pyplot as plt
     except ImportError:
-        raise ImportError("matplotlib not installed. Install with: pip install matplotlib")
+        raise ImportError("matplotlib not installed. Install with: uv sync --extra viz")
 
     device = next(model.parameters()).device
 
@@ -218,7 +218,7 @@ def visualize_reward_prediction(
     try:
         import matplotlib.pyplot as plt
     except ImportError:
-        raise ImportError("matplotlib not installed. Install with: pip install matplotlib")
+        raise ImportError("matplotlib not installed. Install with: uv sync --extra viz")
 
     device = next(model.parameters()).device
 
@@ -307,10 +307,7 @@ def visualize_latent_dynamics(
         import matplotlib.pyplot as plt
         from sklearn.decomposition import PCA
     except ImportError:
-        raise ImportError(
-            "matplotlib and scikit-learn required. "
-            "Install with: pip install matplotlib scikit-learn"
-        )
+        raise ImportError("matplotlib and scikit-learn required. Install with: uv sync --extra viz")
 
     device = next(model.parameters()).device
 

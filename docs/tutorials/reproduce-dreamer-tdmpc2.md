@@ -6,7 +6,7 @@ bundled datasets in the repository.
 ## Prerequisites
 
 ```bash
-pip install -e ".[training]"
+uv sync --extra training
 ```
 
 ## Bundled Datasets
@@ -24,7 +24,7 @@ for longer training runs.
 ### DreamerV3 (Atari)
 
 ```bash
-python examples/train_atari_dreamer.py --data atari_data.npz --steps 2000
+uv run python examples/train_atari_dreamer.py --data atari_data.npz --steps 2000
 ```
 
 Expected output:
@@ -34,7 +34,7 @@ Expected output:
 ### DreamerV3 (MuJoCo)
 
 ```bash
-python examples/train_dreamer_mujoco.py --data mujoco_data.npz --steps 2000
+uv run python examples/train_dreamer_mujoco.py --data mujoco_data.npz --steps 2000
 ```
 
 Expected output:
@@ -45,7 +45,7 @@ Expected output:
 ### TD-MPC2 (MuJoCo)
 
 ```bash
-python examples/train_tdmpc2_mujoco.py --data mujoco_data.npz --steps 2000
+uv run python examples/train_tdmpc2_mujoco.py --data mujoco_data.npz --steps 2000
 ```
 
 Expected output:
