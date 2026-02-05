@@ -9,7 +9,7 @@ import torch.nn as nn
 from torch import Tensor
 
 from .batch import Batch
-from .exceptions import CapabilityError
+from .exceptions import CapabilityError, ValidationError
 from .output import LossOutput, ModelOutput
 from .spec import (
     ActionSpec,
@@ -55,6 +55,37 @@ class WorldModel(nn.Module, ABC):
     @property
     def supports_planning(self) -> bool:
         return Capability.PLANNING in self.capabilities
+
+    def validate_batch_contract(self, batch: Batch) -> None:
+        """Validate batch keys/layouts against model I/O contract."""
+        contract = self.io_contract()
+        contract.validate()
+        missing = [key for key in contract.required_batch_keys if getattr(batch, key, None) is None]
+        if missing:
+            raise ValidationError(
+                f"Batch is missing required batch keys: {missing}. "
+                f"Required: {list(contract.required_batch_keys)}"
+            )
+
+    def validate_state_contract(self, state: State) -> None:
+        """Validate state tensor keys/shapes against model I/O contract."""
+        contract = self.io_contract()
+        contract.validate()
+        missing = [k for k in contract.required_state_keys if k not in state.tensors]
+        if missing:
+            raise ValidationError(
+                f"State is missing required state tensors: {missing}. "
+                f"Required: {list(contract.required_state_keys)}"
+            )
+        for key, spec in contract.state_spec.tensors.items():
+            tensor = state.tensors.get(key)
+            if tensor is None:
+                continue
+            if spec.shape and tensor.shape[1:] != spec.shape:
+                raise ValidationError(
+                    f"State tensor '{key}' has shape {tuple(tensor.shape[1:])}, "
+                    f"expected {spec.shape}"
+                )
 
     def io_contract(self) -> ModelIOContract:
         """

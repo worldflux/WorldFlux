@@ -45,6 +45,12 @@ class ValidationError(WorldFluxError):
     pass
 
 
+class ContractValidationError(ValidationError):
+    """Raised when model I/O contract validation fails."""
+
+    pass
+
+
 class CapabilityError(WorldFluxError):
     """Raised when a required model capability is missing."""
 

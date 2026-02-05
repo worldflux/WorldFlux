@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 
+from .exceptions import ContractValidationError
+
 
 class ModalityKind(str, Enum):
     """Common modality kinds."""
@@ -116,3 +118,62 @@ class ModelIOContract:
     sequence_layout: SequenceLayout = field(default_factory=SequenceLayout)
     required_batch_keys: tuple[str, ...] = ()
     required_state_keys: tuple[str, ...] = ()
+
+    def validate(self) -> None:
+        """Validate contract consistency."""
+        self._validate_batch_key_requirements()
+        self._validate_state_key_requirements()
+        self._validate_sequence_layout()
+
+    def _validate_batch_key_requirements(self) -> None:
+        valid = {
+            "obs",
+            "actions",
+            "next_obs",
+            "rewards",
+            "terminations",
+            "mask",
+            "context",
+            "target",
+        }
+        for key in self.required_batch_keys:
+            root = key.split(".", 1)[0].split(":", 1)[0]
+            if root not in valid:
+                raise ContractValidationError(
+                    f"Unknown required batch key '{key}'. " f"Expected one of: {sorted(valid)}"
+                )
+
+    def _validate_state_key_requirements(self) -> None:
+        available = set(self.state_spec.tensors.keys())
+        for key in self.required_state_keys:
+            if key not in available:
+                raise ContractValidationError(
+                    f"required_state_keys contains '{key}' but state_spec does not define it"
+                )
+
+    def _validate_sequence_layout(self) -> None:
+        valid_fields = {
+            "obs",
+            "actions",
+            "next_obs",
+            "rewards",
+            "terminations",
+            "mask",
+            "context",
+            "target",
+        }
+        for field_name, layout in self.sequence_layout.axes_by_field.items():
+            root = field_name.split(".", 1)[0].split(":", 1)[0]
+            if root not in valid_fields:
+                raise ContractValidationError(
+                    f"Unknown sequence layout field '{field_name}'. "
+                    f"Expected root field in {sorted(valid_fields)}"
+                )
+            if not layout:
+                raise ContractValidationError(
+                    f"Sequence layout for '{field_name}' must not be empty"
+                )
+            if "B" not in layout:
+                raise ContractValidationError(
+                    f"Sequence layout for '{field_name}' must include batch axis 'B', got '{layout}'"
+                )
