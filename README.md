@@ -53,6 +53,14 @@ Visualization of how different episodes traverse the learned latent space:
 - **Reference**: DreamerV3, TD-MPC2 (release baseline)
 - **Experimental**: JEPA, Token, Diffusion (API/metrics may evolve)
 
+## Extension Policy
+
+WorldFlux follows a **contract-first** extension policy:
+
+- define `io_contract()` before adding model-specific training logic
+- validate required batch/state keys at runtime
+- promote families from experimental to reference only after gate compliance
+
 You can inspect maturity tiers programmatically via:
 
 ```python

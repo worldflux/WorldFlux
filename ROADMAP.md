@@ -6,6 +6,19 @@ This document outlines the planned features and improvements for WorldFlux.
 
 Core functionality is implemented and working. Ready for early adopters and feedback.
 
+## Public Maturity Boundary
+
+WorldFlux ships with explicit maturity tiers:
+
+- **reference**: DreamerV3, TD-MPC2
+- **experimental**: JEPA, Token, Diffusion
+
+Promotion from experimental to reference is **contract-first** and requires:
+
+- stable `io_contract()` compatibility
+- common quality gates (finite metrics, save/load parity, seed success >= 80%)
+- family-specific gate pass
+
 ---
 
 ## 9/10 Readiness Minimum TODOs (MVP)

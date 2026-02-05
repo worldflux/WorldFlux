@@ -2,6 +2,9 @@
 
 This document provides a comprehensive analysis of WorldFlux's architecture, extensibility characteristics, and guidelines for extending the framework with new world model architectures.
 
+WorldFlux uses a **contract-first** policy: every model family defines and validates
+its runtime I/O contract before it is treated as release-ready.
+
 ## Table of Contents
 
 1. [Implementation Verification](#implementation-verification)
@@ -110,6 +113,12 @@ Current default policy:
 
 - **reference**: DreamerV3, TD-MPC2
 - **experimental**: JEPA, Token, Diffusion
+
+Promotion rule (experimental -> reference):
+
+- pass common quality gates (finite metrics, save/load parity, seed success >= 80%)
+- pass family-specific gates
+- keep API/runtime contract stable across releases
 
 ---
 
