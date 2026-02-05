@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from abc import ABC, abstractmethod
 
 import torch
@@ -56,11 +57,42 @@ class WorldModel(nn.Module, ABC):
     def supports_planning(self) -> bool:
         return Capability.PLANNING in self.capabilities
 
+    @staticmethod
+    def _split_batch_key(key: str) -> list[str]:
+        normalized = key.replace(":", ".")
+        return [part for part in normalized.split(".") if part]
+
+    @classmethod
+    def _resolve_batch_key(cls, batch: Batch, key: str):
+        parts = cls._split_batch_key(key)
+        if not parts:
+            return None
+
+        root = parts[0]
+        if hasattr(batch, root):
+            current = getattr(batch, root)
+        elif root == "extras":
+            current = batch.extras
+        else:
+            current = batch.extras.get(root)
+
+        for part in parts[1:]:
+            if not isinstance(current, dict):
+                return None
+            current = current.get(part)
+        return current
+
+    @classmethod
+    def has_batch_key(cls, batch: Batch, key: str) -> bool:
+        return cls._resolve_batch_key(batch, key) is not None
+
     def validate_batch_contract(self, batch: Batch) -> None:
         """Validate batch keys/layouts against model I/O contract."""
         contract = self.io_contract()
         contract.validate()
-        missing = [key for key in contract.required_batch_keys if getattr(batch, key, None) is None]
+        missing = [
+            key for key in contract.required_batch_keys if not self.has_batch_key(batch, key)
+        ]
         if missing:
             raise ValidationError(
                 f"Batch is missing required batch keys: {missing}. "
@@ -220,6 +252,18 @@ class WorldModel(nn.Module, ABC):
     def loss(self, batch: Batch) -> LossOutput:
         """Compute training loss."""
         ...
+
+    def save_pretrained(self, path: str) -> None:
+        """Save model weights and config using a unified directory layout."""
+        os.makedirs(path, exist_ok=True)
+
+        config = getattr(self, "config", None)
+        if config is None or not hasattr(config, "save"):
+            raise ValidationError(
+                f"{self.__class__.__name__} cannot be saved because config.save(...) is unavailable."
+            )
+        config.save(os.path.join(path, "config.json"))
+        torch.save(self.state_dict(), os.path.join(path, "model.pt"))
 
     @classmethod
     def from_pretrained(cls, name_or_path: str, **kwargs) -> WorldModel:

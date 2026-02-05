@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import os
 from collections.abc import Iterable, Iterator
 from pathlib import Path
@@ -98,6 +99,16 @@ class Trainer:
         # Move model to device
         self.model = model.to(self.device)
 
+        if self.config.model_overrides:
+            raise ConfigurationError(
+                "TrainingConfig.model_overrides is not applied by Trainer. "
+                "Pass model overrides at model creation time."
+            )
+        if self.config.ema_decay is not None:
+            raise ConfigurationError(
+                "TrainingConfig.ema_decay is not implemented yet. Set ema_decay=None."
+            )
+
         # Setup optimizer
         if optimizer is None:
             self.optimizer = self._create_optimizer()
@@ -105,7 +116,13 @@ class Trainer:
             self.optimizer = optimizer
 
         # Setup scheduler
-        self.scheduler = scheduler
+        self.scheduler: LRScheduler | None
+        if scheduler is not None:
+            self.scheduler = scheduler
+        elif self.config.scheduler != "none":
+            self.scheduler = self._create_scheduler()
+        else:
+            self.scheduler = None
 
         # Setup callbacks
         default_callbacks = [
@@ -169,7 +186,13 @@ class Trainer:
 
             missing = []
             for key in self.io_contract.required_batch_keys:
-                if getattr(batch, key, None) is None:
+                has_key = False
+                has_batch_key = getattr(self.model, "has_batch_key", None)
+                if callable(has_batch_key):
+                    has_key = bool(has_batch_key(batch, key))
+                else:
+                    has_key = getattr(batch, key, None) is not None
+                if not has_key:
                     missing.append(key)
             if missing:
                 raise TrainingError(f"Batch is missing required keys for model contract: {missing}")
@@ -257,6 +280,34 @@ class Trainer:
                 f"Unknown optimizer: '{self.config.optimizer}'. "
                 f"Supported optimizers: 'adamw', 'adam', 'sgd'"
             )
+
+    def _create_scheduler(self) -> LRScheduler:
+        """Create an LR scheduler based on config.scheduler and warmup settings."""
+        total_steps = max(1, self.config.total_steps)
+        warmup_steps = min(max(0, self.config.warmup_steps), total_steps - 1)
+        schedule_name = self.config.scheduler
+
+        def _lambda(step: int) -> float:
+            if warmup_steps > 0 and step < warmup_steps:
+                return float(step + 1) / float(warmup_steps)
+
+            if schedule_name == "constant":
+                return 1.0
+
+            denom = max(1, total_steps - warmup_steps)
+            progress = min(max((step - warmup_steps) / denom, 0.0), 1.0)
+
+            if schedule_name == "linear":
+                return max(0.0, 1.0 - progress)
+            if schedule_name == "cosine":
+                return 0.5 * (1.0 + math.cos(math.pi * progress))
+            return 1.0
+
+        return torch.optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda=_lambda)
+
+    def add_callback(self, callback: Callback) -> None:
+        """Register a callback after trainer construction."""
+        self.callbacks.append(callback)
 
     def train(
         self,
