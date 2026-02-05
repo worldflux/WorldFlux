@@ -26,11 +26,11 @@ WorldFlux implements a **unified API** through the `WorldModel` base class, ensu
 class WorldModel(ABC):
     config: WorldModelConfig
 
-    def encode(self, obs: Tensor | dict[str, Tensor], deterministic: bool = False) -> State: ...
-    def transition(self, state: State, action: Tensor, deterministic: bool = False) -> State: ...
-    def update(self, state: State, action: Tensor, obs: Tensor | dict[str, Tensor]) -> State: ...
-    def decode(self, state: State) -> ModelOutput: ...
-    def rollout(self, initial_state: State, actions: Tensor, deterministic: bool = False) -> Trajectory: ...
+    def encode(self, obs: Tensor | dict[str, Tensor] | WorldModelInput, deterministic: bool = False) -> State: ...
+    def transition(self, state: State, action: ActionPayload | Tensor | None, conditions: ConditionPayload | None = None, deterministic: bool = False) -> State: ...
+    def update(self, state: State, action: ActionPayload | Tensor | None, obs: Tensor | dict[str, Tensor] | WorldModelInput, conditions: ConditionPayload | None = None) -> State: ...
+    def decode(self, state: State, conditions: ConditionPayload | None = None) -> ModelOutput: ...
+    def rollout(self, initial_state: State, action_sequence: ActionSequence | Tensor | None, conditions: ConditionPayload | None = None, deterministic: bool = False, mode: str = "autoregressive") -> Trajectory: ...
     def initial_state(self, batch_size: int, device: ...) -> State: ...
     def loss(self, batch: Batch) -> LossOutput: ...
 ```
@@ -113,6 +113,7 @@ Current default policy:
 
 - **reference**: DreamerV3, TD-MPC2
 - **experimental**: JEPA, V-JEPA2, Token, Diffusion
+- **experimental (skeleton families)**: DiT, SSM, Renderer3D, Physics, GAN
 
 Promotion rule (experimental -> reference):
 
@@ -134,6 +135,36 @@ Promotion rule (experimental -> reference):
 | **Diffusion-based** | Diffusion World Models | 🔶 Partial (decoder abstraction needed) |
 | **Video Prediction** | V-JEPA, VideoGPT | ⚪ Planned |
 | **Foundation Models** | Cosmos, Genie 3 | ⚪ Future consideration |
+
+### Five-Layer Pluggable Core (v0.2)
+
+WorldFlux now standardizes model composition around five replaceable component types:
+
+1. `ObservationEncoder`
+2. `DynamicsModel`
+3. `ActionConditioner`
+4. `Decoder` (optional)
+5. `RolloutExecutor` (open-loop execution only)
+
+Planning strategies (`CEM`, future `MPPI`/tree-search) are defined separately through
+`worldflux.planners.interfaces.Planner` and return `ActionPayload`.
+
+New families should be assembled from these components instead of hard-coding monolithic model classes.
+
+### Planner Metadata Contract
+
+Planner outputs must set:
+
+- `extras["wf.planner.horizon"]` (required in `v0.3`)
+
+Compatibility in `v0.2`:
+
+- if horizon is missing, it is inferred from tensor shape with `DeprecationWarning`
+- `extras["wf.planner.sequence"]` is still accepted with `DeprecationWarning`
+
+Condition extras must be namespaced:
+
+- format: `wf.<domain>.<name>`
 
 ### Required Components by Family
 

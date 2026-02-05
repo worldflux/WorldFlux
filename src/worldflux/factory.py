@@ -22,6 +22,7 @@ Example:
     print(list_models())
 """
 
+import warnings
 from typing import Any
 
 from .core.config import WorldModelConfig
@@ -52,6 +53,12 @@ MODEL_ALIASES: dict[str, str] = {
     "token": "token:base",
     # Diffusion model aliases
     "diffusion": "diffusion:base",
+    # Skeleton families (cross-category adapters)
+    "dit": "dit:base",
+    "ssm": "ssm:base",
+    "renderer3d": "renderer3d:base",
+    "physics": "physics:base",
+    "gan": "gan:base",
 }
 
 # Available model presets with descriptions
@@ -161,6 +168,41 @@ MODEL_CATALOG: dict[str, dict[str, Any]] = {
         "default_obs": "vector",
         "maturity": ModelMaturity.EXPERIMENTAL.value,
     },
+    "dit:base": {
+        "description": "DiT skeleton - Transformer diffusion interface validation",
+        "params": "~1M+",
+        "type": "dit",
+        "default_obs": "image",
+        "maturity": ModelMaturity.EXPERIMENTAL.value,
+    },
+    "ssm:base": {
+        "description": "SSM skeleton - Long-context latent dynamics interface validation",
+        "params": "~1M+",
+        "type": "ssm",
+        "default_obs": "vector",
+        "maturity": ModelMaturity.EXPERIMENTAL.value,
+    },
+    "renderer3d:base": {
+        "description": "Renderer3D skeleton - 3D/camera-conditioned contract validation",
+        "params": "~1M+",
+        "type": "renderer3d",
+        "default_obs": "image",
+        "maturity": ModelMaturity.EXPERIMENTAL.value,
+    },
+    "physics:base": {
+        "description": "Physics skeleton - differentiable transition/reward interface validation",
+        "params": "~1M+",
+        "type": "physics",
+        "default_obs": "vector",
+        "maturity": ModelMaturity.EXPERIMENTAL.value,
+    },
+    "gan:base": {
+        "description": "GAN skeleton - adversarial generative interface validation",
+        "params": "~1M+",
+        "type": "gan",
+        "default_obs": "image",
+        "maturity": ModelMaturity.EXPERIMENTAL.value,
+    },
 }
 
 # Register aliases and catalog entries on import
@@ -187,6 +229,7 @@ def create_world_model(
     observation_modalities: dict[str, dict[str, Any]] | None = None,
     action_spec: dict[str, Any] | None = None,
     device: str = "cpu",
+    api_version: str = "v0.2",
     **kwargs: Any,
 ) -> WorldModel:
     """
@@ -229,6 +272,24 @@ def create_world_model(
     """
     import torch
 
+    if api_version not in {"v0.2", "v3"}:
+        raise ValueError(f"Unsupported api_version: {api_version}. Expected 'v0.2' or 'v3'.")
+    if api_version == "v0.2":
+        warnings.warn(
+            "create_world_model(..., api_version='v0.2') enables legacy compatibility adapters. "
+            "This mode is temporary and will be removed in v0.3.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+    else:
+        action_kind = None
+        if action_spec is not None:
+            action_kind = action_spec.get("kind")
+        if action_kind is None:
+            action_kind = kwargs.get("action_type")
+        if action_kind == "hybrid":
+            raise ValueError("action kind 'hybrid' is not supported when api_version='v3'.")
+
     # Resolve aliases
     resolved_model = WorldModelRegistry.resolve_alias(model)
 
@@ -253,6 +314,7 @@ def create_world_model(
     # Move to device
     if hasattr(world_model, "to"):
         world_model = world_model.to(torch.device(device))
+    setattr(world_model, "_wf_api_version", api_version)
 
     return world_model
 
