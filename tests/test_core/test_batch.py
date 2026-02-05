@@ -110,3 +110,12 @@ class TestBatch:
         assert updated.layouts["obs"] == "BT..."
         assert updated.layouts["actions"] == "BT..."
         assert updated.strict_layout is True
+
+    def test_validate_strict_layout_rejects_unknown_layout_key(self):
+        batch = Batch(
+            obs=torch.randn(2, 3, 4),
+            layouts={"imaginary": "BT..."},
+            strict_layout=True,
+        )
+        with pytest.raises(Exception, match="Unknown layout field"):
+            batch.validate(strict_time=True)
