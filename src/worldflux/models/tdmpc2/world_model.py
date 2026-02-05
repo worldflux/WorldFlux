@@ -7,9 +7,11 @@ from torch import Tensor
 
 from ...core.batch import Batch
 from ...core.config import TDMPC2Config
+from ...core.interfaces import ActionConditioner, Decoder, DynamicsModel, ObservationEncoder
 from ...core.latent_space import SimNormLatentSpace
 from ...core.model import WorldModel
 from ...core.output import LossOutput, ModelOutput
+from ...core.payloads import ActionPayload, ConditionPayload, WorldModelInput
 from ...core.registry import WorldModelRegistry
 from ...core.spec import (
     ActionSpec,
@@ -26,6 +28,71 @@ from ...core.state import State
 from .dynamics import Dynamics
 from .encoder import MLPEncoder
 from .heads import PolicyHead, QEnsemble, RewardHead
+
+
+class _TDMPC2ObservationEncoder(ObservationEncoder):
+    def __init__(self, model: "TDMPC2WorldModel"):
+        self.model = model
+
+    def encode(self, observations: dict[str, Tensor]) -> State:
+        obs = observations.get("obs")
+        if obs is None:
+            raise ValueError("TD-MPC2 encoder requires 'obs'")
+        z = self.model._encoder(obs)
+        z = self.model.latent_space.sample(z)
+        return State(tensors={"latent": z}, meta={"latent_type": "simnorm"})
+
+
+class _TDMPC2ActionConditioner(ActionConditioner):
+    def condition(
+        self,
+        state: State,
+        action: ActionPayload | None,
+        conditions: ConditionPayload | None = None,
+    ) -> dict[str, Tensor]:
+        del state, conditions
+        if action is not None and action.tensor is not None:
+            return {"action": action.tensor}
+        return {}
+
+
+class _TDMPC2Dynamics(DynamicsModel):
+    def __init__(self, model: "TDMPC2WorldModel"):
+        self.model = model
+
+    def transition(
+        self, state: State, conditioned: dict[str, Tensor], deterministic: bool = False
+    ) -> State:
+        del deterministic
+        z = state.tensors.get("latent")
+        if z is None:
+            raise ValueError("TD-MPC2 requires 'latent' in State")
+        action = conditioned.get("action")
+        if action is None:
+            action = torch.zeros(z.shape[0], self.model.config.action_dim, device=z.device)
+        z_delta = self.model._dynamics(z, action, None)
+        z_next = self.model.latent_space.sample(z + z_delta)
+        return State(tensors={"latent": z_next}, meta={"latent_type": "simnorm"})
+
+
+class _TDMPC2Decoder(Decoder):
+    def __init__(self, model: "TDMPC2WorldModel"):
+        self.model = model
+
+    def decode(self, state: State, conditions: ConditionPayload | None = None) -> dict[str, Tensor]:
+        del conditions
+        z = state.tensors.get("latent")
+        if z is None:
+            raise ValueError("TD-MPC2 requires 'latent' in State")
+        action = self.model._policy(z)
+        reward = self.model._reward_head(z, action)
+        q_values = self.model._q_ensemble(z, action)
+        return {
+            "reward": reward,
+            "continue": torch.ones_like(reward),
+            "q_values": q_values,
+            "action": action,
+        }
 
 
 @WorldModelRegistry.register("tdmpc2", TDMPC2Config)
@@ -114,6 +181,12 @@ class TDMPC2WorldModel(WorldModel):
 
         self.register_buffer("_device_tracker", torch.empty(0))
 
+        # Universal component graph (v0.2).
+        self.observation_encoder = _TDMPC2ObservationEncoder(self)
+        self.action_conditioner = _TDMPC2ActionConditioner()
+        self.dynamics_model = _TDMPC2Dynamics(self)
+        self.decoder_module = _TDMPC2Decoder(self)
+
     @property
     def device(self) -> torch.device:
         device = self._device_tracker.device
@@ -170,8 +243,15 @@ class TDMPC2WorldModel(WorldModel):
             required_state_keys=("latent",),
         )
 
-    def encode(self, obs: Tensor | dict[str, Tensor], deterministic: bool = False) -> State:
+    def encode(
+        self,
+        obs: Tensor | dict[str, Tensor] | WorldModelInput,
+        deterministic: bool = False,
+    ) -> State:
         """Encode observation to SimNorm latent space."""
+        del deterministic
+        if isinstance(obs, WorldModelInput):
+            return super().encode(obs)
         if isinstance(obs, dict):
             if "obs" in obs:
                 obs = obs["obs"]
@@ -188,17 +268,23 @@ class TDMPC2WorldModel(WorldModel):
     def transition(
         self,
         state: State,
-        action: Tensor,
+        action: ActionPayload | Tensor | None,
+        conditions: ConditionPayload | None = None,
         deterministic: bool = False,
         task_id: Tensor | None = None,
     ) -> State:
         """Predict next state."""
+        del conditions
         z = state.tensors.get("latent")
         if z is None:
             raise ValueError("TD-MPC2 requires 'latent' in State")
 
+        action_tensor = self.action_tensor_or_none(action)
+        if action_tensor is None:
+            action_tensor = torch.zeros(z.shape[0], self.config.action_dim, device=z.device)
+
         # Residual prediction
-        z_delta = self._dynamics(z, action, task_id)
+        z_delta = self._dynamics(z, action_tensor, task_id)
         z_next = z + z_delta
         z_next = self.latent_space.sample(z_next)
 
@@ -207,11 +293,18 @@ class TDMPC2WorldModel(WorldModel):
             meta={"latent_type": "simnorm"},
         )
 
-    def update(self, state: State, action: Tensor, obs: Tensor | dict[str, Tensor]) -> State:
+    def update(
+        self,
+        state: State,
+        action: ActionPayload | Tensor | None,
+        obs: Tensor | dict[str, Tensor] | WorldModelInput,
+        conditions: ConditionPayload | None = None,
+    ) -> State:
         """TD-MPC2 directly encodes observations (no posterior like RSSM)."""
+        del state, action, conditions
         return self.encode(obs)
 
-    def decode(self, state: State) -> ModelOutput:
+    def decode(self, state: State, conditions: ConditionPayload | None = None) -> ModelOutput:
         """
         Decode latent state to predictions.
 
@@ -231,22 +324,8 @@ class TDMPC2WorldModel(WorldModel):
             is intentionally omitted. Use isinstance checks or model_type to
             determine if observation decoding is available.
         """
-        z = state.tensors.get("latent")
-        if z is None:
-            raise ValueError("TD-MPC2 requires 'latent' in State")
-
-        action = self._policy(z)
-        reward = self._reward_head(z, action)
-        q_values = self._q_ensemble(z, action)
-
-        return ModelOutput(
-            preds={
-                "reward": reward,
-                "continue": torch.ones_like(reward),
-                "q_values": q_values,
-                "action": action,
-            }
-        )
+        del conditions
+        return super().decode(state)
 
     def initial_state(self, batch_size: int, device: torch.device | None = None) -> State:
         """Initial state (uniform SimNorm)."""

@@ -10,10 +10,15 @@ from .batch import (
 )
 from .config import (
     DiffusionWorldModelConfig,
+    DiTSkeletonConfig,
     DreamerV3Config,
     DynamicsType,
+    GANSkeletonConfig,
     JEPABaseConfig,
     LatentType,
+    PhysicsSkeletonConfig,
+    Renderer3DSkeletonConfig,
+    SSMSkeletonConfig,
     TDMPC2Config,
     TokenWorldModelConfig,
     VJEPA2Config,
@@ -31,6 +36,15 @@ from .exceptions import (
     ValidationError,
     WorldFluxError,
 )
+from .interfaces import (
+    ActionConditioner,
+    ComponentSpec,
+    Decoder,
+    DynamicsModel,
+    ObservationEncoder,
+    RolloutEngine,
+    RolloutExecutor,
+)
 from .latent_space import (
     CategoricalLatentSpace,
     GaussianLatentSpace,
@@ -38,11 +52,24 @@ from .latent_space import (
     SimNormLatentSpace,
 )
 from .model import WorldModel
-from .output import LossOutput, ModelOutput
+from .output import LossOutput, ModelOutput, WorldModelOutput
+from .payloads import (
+    ACTION_COMPONENTS_KEY,
+    PLANNER_HORIZON_KEY,
+    PLANNER_SEQUENCE_KEY,
+    ActionPayload,
+    ActionSequence,
+    ConditionPayload,
+    WorldModelInput,
+    first_action,
+    is_namespaced_extra_key,
+    normalize_planned_action,
+)
 from .registry import AutoConfig, AutoWorldModel, WorldModelRegistry
 from .spec import (
     ActionSpec,
     Capability,
+    ConditionSpec,
     ModalityKind,
     ModalitySpec,
     ModelIOContract,
@@ -67,12 +94,31 @@ __all__ = [
     "TokenProvider",
     "VideoProvider",
     "ModelOutput",
+    "WorldModelOutput",
     "LossOutput",
+    "ActionPayload",
+    "ActionSequence",
+    "ConditionPayload",
+    "WorldModelInput",
+    "normalize_planned_action",
+    "first_action",
+    "PLANNER_HORIZON_KEY",
+    "PLANNER_SEQUENCE_KEY",
+    "ACTION_COMPONENTS_KEY",
+    "is_namespaced_extra_key",
+    "ComponentSpec",
+    "ObservationEncoder",
+    "DynamicsModel",
+    "ActionConditioner",
+    "Decoder",
+    "RolloutExecutor",
+    "RolloutEngine",
     # Specs
     "ModalityKind",
     "ModalitySpec",
     "ObservationSpec",
     "ActionSpec",
+    "ConditionSpec",
     "StateSpec",
     "TokenSpec",
     "PredictionSpec",
@@ -90,6 +136,11 @@ __all__ = [
     "VJEPA2Config",
     "TokenWorldModelConfig",
     "DiffusionWorldModelConfig",
+    "DiTSkeletonConfig",
+    "SSMSkeletonConfig",
+    "Renderer3DSkeletonConfig",
+    "PhysicsSkeletonConfig",
+    "GANSkeletonConfig",
     # Protocol and Registry
     "WorldModel",
     "WorldModelRegistry",

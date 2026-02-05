@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import warnings
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from enum import Enum
 
 from .exceptions import ContractValidationError
+from .payloads import is_namespaced_extra_key
 
 
 class ModalityKind(str, Enum):
@@ -57,9 +60,17 @@ class ModalitySpec:
 
 @dataclass(frozen=True)
 class ObservationSpec:
-    """Specification of observation inputs."""
+    """Specification of observation or generic input tensors."""
 
     modalities: dict[str, ModalitySpec] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ConditionSpec:
+    """Specification for optional conditioning signals."""
+
+    modalities: dict[str, ModalitySpec] = field(default_factory=dict)
+    allowed_extra_keys: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -70,6 +81,31 @@ class ActionSpec:
     dim: int = 0
     discrete: bool = False
     num_actions: int | None = None
+
+    def __post_init__(self) -> None:
+        valid_kinds = {
+            "none",
+            "continuous",
+            "discrete",
+            "token",
+            "latent",
+            "text",
+            "hybrid",
+        }
+        if self.kind not in valid_kinds:
+            raise ContractValidationError(
+                f"Unknown action kind '{self.kind}'. Expected one of: {sorted(valid_kinds)}"
+            )
+        if self.kind == "hybrid":
+            warnings.warn(
+                "Action kind 'hybrid' is deprecated in v0.2 and will be removed in v0.3.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        if self.dim < 0:
+            raise ContractValidationError(f"Action dim must be non-negative, got {self.dim}")
+        if self.discrete and self.num_actions is None and self.dim > 0:
+            raise ContractValidationError("Discrete actions require num_actions or a positive dim")
 
 
 @dataclass(frozen=True)
@@ -111,6 +147,7 @@ class SequenceLayout:
 class ModelIOContract:
     """Runtime I/O contract for unified validation across model families."""
 
+    # Legacy name preserved for v0.2 compatibility.
     observation_spec: ObservationSpec = field(default_factory=ObservationSpec)
     action_spec: ActionSpec = field(default_factory=ActionSpec)
     state_spec: StateSpec = field(default_factory=StateSpec)
@@ -120,32 +157,60 @@ class ModelIOContract:
     required_state_keys: tuple[str, ...] = ()
     additional_batch_fields: dict[str, ModalitySpec] = field(default_factory=dict)
 
+    # New contract fields for universal API.
+    input_spec: ObservationSpec | None = None
+    target_spec: ObservationSpec = field(default_factory=ObservationSpec)
+    condition_spec: ConditionSpec = field(default_factory=ConditionSpec)
+
+    @staticmethod
+    def _root_name(key: str) -> str:
+        return key.split(".", 1)[0].split(":", 1)[0]
+
+    @property
+    def effective_input_spec(self) -> ObservationSpec:
+        return self.input_spec or self.observation_spec
+
     def validate(self) -> None:
         """Validate contract consistency."""
         self._validate_batch_key_requirements()
         self._validate_state_key_requirements()
         self._validate_sequence_layout()
+        self._validate_condition_spec()
 
-    def _validate_batch_key_requirements(self) -> None:
-        valid = {
+    def _declared_fields(self) -> set[str]:
+        fields: set[str] = set()
+        fields.update(self.effective_input_spec.modalities.keys())
+        fields.update(self.target_spec.modalities.keys())
+        fields.update(self.condition_spec.modalities.keys())
+        fields.update(self._root_name(k) for k in self.condition_spec.allowed_extra_keys)
+        fields.update(self._root_name(k) for k in self.additional_batch_fields.keys())
+        return fields
+
+    def _allowed_batch_roots(self) -> set[str]:
+        reserved = {
             "obs",
+            "inputs",
+            "targets",
             "actions",
+            "action",
             "next_obs",
             "rewards",
             "terminations",
             "mask",
             "context",
             "target",
+            "conditions",
             "extras",
         }
-        valid.update(
-            key.split(".", 1)[0].split(":", 1)[0] for key in self.additional_batch_fields.keys()
-        )
+        return reserved | self._declared_fields()
+
+    def _validate_batch_key_requirements(self) -> None:
+        valid = self._allowed_batch_roots()
         for key in self.required_batch_keys:
-            root = key.split(".", 1)[0].split(":", 1)[0]
+            root = self._root_name(key)
             if root not in valid:
                 raise ContractValidationError(
-                    f"Unknown required batch key '{key}'. Expected one of: {sorted(valid)}"
+                    f"Unknown required batch key '{key}'. Expected root in: {sorted(valid)}"
                 )
 
     def _validate_state_key_requirements(self) -> None:
@@ -157,22 +222,9 @@ class ModelIOContract:
                 )
 
     def _validate_sequence_layout(self) -> None:
-        valid_fields = {
-            "obs",
-            "actions",
-            "next_obs",
-            "rewards",
-            "terminations",
-            "mask",
-            "context",
-            "target",
-            "extras",
-        }
-        valid_fields.update(
-            key.split(".", 1)[0].split(":", 1)[0] for key in self.additional_batch_fields.keys()
-        )
+        valid_fields = self._allowed_batch_roots()
         for field_name, layout in self.sequence_layout.axes_by_field.items():
-            root = field_name.split(".", 1)[0].split(":", 1)[0]
+            root = self._root_name(field_name)
             if root not in valid_fields:
                 raise ContractValidationError(
                     f"Unknown sequence layout field '{field_name}'. "
@@ -185,4 +237,16 @@ class ModelIOContract:
             if "B" not in layout:
                 raise ContractValidationError(
                     f"Sequence layout for '{field_name}' must include batch axis 'B', got '{layout}'"
+                )
+
+    def _validate_condition_spec(self) -> None:
+        self._validate_extra_keys(self.condition_spec.allowed_extra_keys, source="condition_spec")
+
+    @staticmethod
+    def _validate_extra_keys(keys: Iterable[str], *, source: str) -> None:
+        for key in keys:
+            if not is_namespaced_extra_key(key):
+                raise ContractValidationError(
+                    f"{source} contains invalid namespaced extra key {key!r}. "
+                    "Expected format 'wf.<domain>.<name>'."
                 )

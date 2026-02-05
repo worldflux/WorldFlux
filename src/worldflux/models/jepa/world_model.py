@@ -11,6 +11,7 @@ from ...core.batch import Batch
 from ...core.config import JEPABaseConfig
 from ...core.model import WorldModel
 from ...core.output import LossOutput, ModelOutput
+from ...core.payloads import ActionPayload, ConditionPayload, WorldModelInput
 from ...core.registry import WorldModelRegistry
 from ...core.spec import (
     ActionSpec,
@@ -100,8 +101,15 @@ class JEPABaseWorldModel(WorldModel):
             return obs.view(obs.shape[0], -1)
         return obs
 
-    def encode(self, obs: Tensor | dict[str, Tensor], deterministic: bool = False) -> State:
+    def encode(
+        self,
+        obs: Tensor | dict[str, Tensor] | WorldModelInput,
+        deterministic: bool = False,
+    ) -> State:
+        del deterministic
         obs_tensor: Tensor | None
+        if isinstance(obs, WorldModelInput):
+            obs = obs.observations
         if isinstance(obs, dict):
             obs_tensor = obs.get("obs")
             if obs_tensor is None:
@@ -114,18 +122,33 @@ class JEPABaseWorldModel(WorldModel):
         rep = self.encoder(obs_flat)
         return State(tensors={"rep": rep})
 
-    def transition(self, state: State, action: Tensor, deterministic: bool = False) -> State:
+    def transition(
+        self,
+        state: State,
+        action: ActionPayload | Tensor | None,
+        conditions: ConditionPayload | None = None,
+        deterministic: bool = False,
+    ) -> State:
+        del action, conditions, deterministic
         return state
 
-    def update(self, state: State, action: Tensor, obs: Tensor | dict[str, Tensor]) -> State:
+    def update(
+        self,
+        state: State,
+        action: ActionPayload | Tensor | None,
+        obs: Tensor | dict[str, Tensor] | WorldModelInput,
+        conditions: ConditionPayload | None = None,
+    ) -> State:
+        del state, action, conditions
         return self.encode(obs)
 
-    def decode(self, state: State) -> ModelOutput:
+    def decode(self, state: State, conditions: ConditionPayload | None = None) -> ModelOutput:
+        del conditions
         rep = state.tensors.get("rep")
         if rep is None:
             raise ValueError("JEPA state requires 'rep'")
         proj = self.projector(rep)
-        return ModelOutput(preds={"representation": proj})
+        return ModelOutput(predictions={"representation": proj})
 
     def loss(self, batch: Batch) -> LossOutput:
         context_raw = batch.context if batch.context is not None else batch.obs

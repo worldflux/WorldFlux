@@ -10,6 +10,7 @@ import torch
 
 from .config import WorldModelConfig
 from .exceptions import ConfigurationError
+from .interfaces import ComponentSpec
 from .model import WorldModel
 
 
@@ -91,6 +92,7 @@ class WorldModelRegistry:
     _model_registry: dict[str, type] = {}
     _aliases: dict[str, str] = {}
     _catalog: dict[str, dict[str, Any]] = {}
+    _component_registry: dict[str, tuple[ComponentSpec, type]] = {}
 
     @classmethod
     def register(
@@ -191,6 +193,38 @@ class WorldModelRegistry:
     @classmethod
     def list_catalog(cls) -> dict[str, dict[str, Any]]:
         return dict(cls._catalog)
+
+    @classmethod
+    def register_component(
+        cls,
+        component_id: str,
+        component_class: type,
+        spec: ComponentSpec,
+    ) -> None:
+        if component_id in cls._component_registry:
+            existing = cls._component_registry[component_id][1]
+            raise ConfigurationError(
+                f"Component '{component_id}' is already registered to {existing.__name__}. "
+                f"Cannot re-register to {component_class.__name__}."
+            )
+        cls._component_registry[component_id] = (spec, component_class)
+
+    @classmethod
+    def unregister_component(cls, component_id: str) -> bool:
+        return cls._component_registry.pop(component_id, None) is not None
+
+    @classmethod
+    def get_component(cls, component_id: str) -> tuple[ComponentSpec, type]:
+        if component_id not in cls._component_registry:
+            raise ConfigurationError(
+                f"Unknown component id '{component_id}'. "
+                f"Available: {sorted(cls._component_registry.keys())}"
+            )
+        return cls._component_registry[component_id]
+
+    @classmethod
+    def list_components(cls) -> dict[str, ComponentSpec]:
+        return {component_id: spec for component_id, (spec, _) in cls._component_registry.items()}
 
 
 class AutoWorldModel:
