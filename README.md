@@ -319,9 +319,9 @@ Results on standard benchmarks:
 
 ## Documentation
 
-- [Full Documentation](https://worldflux.github.io/Worldflux/) - Comprehensive guides and API reference
-- [Tutorials](https://worldflux.github.io/Worldflux/tutorials/) - Step-by-step learning
-- [API Reference](https://worldflux.github.io/Worldflux/api/) - Detailed API docs
+- [Full Documentation](https://github.com/worldflux/WorldFlux/tree/main/docs) - Comprehensive guides and API reference
+- [Tutorials](https://github.com/worldflux/WorldFlux/tree/main/docs/tutorials) - Step-by-step learning
+- [API Reference](https://github.com/worldflux/WorldFlux/tree/main/docs/api) - Detailed API docs
 
 ## Community
 
