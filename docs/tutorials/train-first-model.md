@@ -5,7 +5,7 @@ A complete walkthrough of training a world model from scratch.
 ## Prerequisites
 
 ```bash
-pip install -e ".[training]"
+uv sync --extra training
 ```
 
 ## Step 1: Prepare Your Data

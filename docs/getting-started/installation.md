@@ -4,38 +4,39 @@
 
 - Python 3.10+
 - PyTorch 2.0+
+- [uv](https://docs.astral.sh/uv/getting-started/installation/)
 
 ## From Source (Recommended)
 
 ```bash
 git clone https://github.com/worldflux/Worldflux.git
 cd worldflux
-pip install -e "."
+uv sync
 ```
 
 ### With Optional Dependencies
 
 ```bash
 # Training infrastructure (Trainer, ReplayBuffer, callbacks)
-pip install -e ".[training]"
+uv sync --extra training
 
 # Visualization (matplotlib, imageio for GIFs)
-pip install -e ".[viz]"
+uv sync --extra viz
 
 # Atari environments (gymnasium[atari], ale-py)
-pip install -e ".[atari]"
+uv sync --extra atari
 
 # All optional dependencies
-pip install -e ".[all]"
+uv sync --extra all
 
 # Development (testing, linting, type checking)
-pip install -e ".[dev]"
+uv sync --extra dev
 ```
 
 ## From PyPI (Coming Soon)
 
 ```bash
-pip install worldflux
+uv pip install worldflux
 ```
 
 ## Verify Installation
@@ -79,5 +80,5 @@ config = TrainingConfig(batch_size=8)  # Instead of 16
 If you get import errors for training features:
 
 ```bash
-pip install -e ".[training]"
+uv sync --extra training
 ```

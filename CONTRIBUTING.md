@@ -10,15 +10,17 @@ Thank you for your interest in contributing to WorldFlux! This document provides
    cd worldflux
    ```
 
-2. **Create a virtual environment**
+2. **Install `uv` (if needed)**
    ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   # macOS (Homebrew)
+   brew install uv
+
+   # Or: https://docs.astral.sh/uv/getting-started/installation/
    ```
 
 3. **Install development dependencies**
    ```bash
-   pip install -e ".[dev]"
+   uv sync --extra dev
    ```
 
 ## Code Quality
@@ -27,16 +29,16 @@ We maintain high code quality standards. Before submitting a PR, ensure your cod
 
 ```bash
 # Run tests
-pytest tests/ -v
+uv run pytest tests/ -v
 
 # Type checking
-mypy src/worldflux/
+uv run mypy src/worldflux/
 
 # Linting
-ruff check src/
+uv run ruff check src/
 
 # Fix lint issues automatically
-ruff check --fix src/
+uv run ruff check --fix src/
 ```
 
 ## Coding Standards
@@ -84,13 +86,13 @@ def encode(self, obs: Tensor) -> LatentState:
 
 ```bash
 # Run all tests
-pytest tests/ -v
+uv run pytest tests/ -v
 
 # Run specific test file
-pytest tests/test_training.py -v
+uv run pytest tests/test_training.py -v
 
 # Run with coverage
-pytest tests/ --cov=worldflux --cov-report=html
+uv run pytest tests/ --cov=worldflux --cov-report=html
 ```
 
 ### Writing Tests
@@ -115,9 +117,9 @@ pytest tests/ --cov=worldflux --cov-report=html
 
 3. **Ensure all checks pass**
    ```bash
-   pytest tests/ -v
-   mypy src/worldflux/
-   ruff check src/
+   uv run pytest tests/ -v
+   uv run mypy src/worldflux/
+   uv run ruff check src/
    ```
 
 4. **Submit a pull request**
