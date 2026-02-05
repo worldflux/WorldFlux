@@ -118,6 +118,7 @@ class ModelIOContract:
     sequence_layout: SequenceLayout = field(default_factory=SequenceLayout)
     required_batch_keys: tuple[str, ...] = ()
     required_state_keys: tuple[str, ...] = ()
+    additional_batch_fields: dict[str, ModalitySpec] = field(default_factory=dict)
 
     def validate(self) -> None:
         """Validate contract consistency."""
@@ -135,12 +136,16 @@ class ModelIOContract:
             "mask",
             "context",
             "target",
+            "extras",
         }
+        valid.update(
+            key.split(".", 1)[0].split(":", 1)[0] for key in self.additional_batch_fields.keys()
+        )
         for key in self.required_batch_keys:
             root = key.split(".", 1)[0].split(":", 1)[0]
             if root not in valid:
                 raise ContractValidationError(
-                    f"Unknown required batch key '{key}'. " f"Expected one of: {sorted(valid)}"
+                    f"Unknown required batch key '{key}'. Expected one of: {sorted(valid)}"
                 )
 
     def _validate_state_key_requirements(self) -> None:
@@ -161,7 +166,11 @@ class ModelIOContract:
             "mask",
             "context",
             "target",
+            "extras",
         }
+        valid_fields.update(
+            key.split(".", 1)[0].split(":", 1)[0] for key in self.additional_batch_fields.keys()
+        )
         for field_name, layout in self.sequence_layout.axes_by_field.items():
             root = field_name.split(".", 1)[0].split(":", 1)[0]
             if root not in valid_fields:

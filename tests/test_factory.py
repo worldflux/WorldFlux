@@ -11,8 +11,10 @@ from worldflux import (
     get_model_info,
     list_models,
 )
+from worldflux.core.registry import WorldModelRegistry
 from worldflux.models.dreamer import DreamerV3WorldModel
 from worldflux.models.tdmpc2 import TDMPC2WorldModel
+from worldflux.models.vjepa2 import VJEPA2WorldModel
 
 
 class TestListModels:
@@ -25,6 +27,7 @@ class TestListModels:
         assert "dreamerv3:size12m" in models
         assert "tdmpc2:5m" in models
         assert "jepa:base" in models
+        assert "vjepa2:base" in models
 
     def test_list_models_verbose(self):
         """list_models with verbose returns detailed info."""
@@ -39,6 +42,7 @@ class TestListModels:
         exp_models = list_models(maturity="experimental")
         assert "dreamerv3:size12m" in ref_models
         assert "jepa:base" in exp_models
+        assert "vjepa2:base" in exp_models
 
 
 class TestGetModelInfo:
@@ -65,6 +69,10 @@ class TestGetModelInfo:
     def test_get_model_info_jepa_alias(self):
         info = get_model_info("jepa")
         assert info["model_id"] == "jepa:base"
+
+    def test_get_model_info_vjepa2_alias(self):
+        info = get_model_info("vjepa2")
+        assert info["model_id"] == "vjepa2:base"
 
 
 class TestGetConfig:
@@ -144,6 +152,10 @@ class TestCreateWorldModel:
         model = create_world_model("dreamer", device="cpu")
         assert model.device == torch.device("cpu")
 
+    def test_create_vjepa2_basic(self):
+        model = create_world_model("vjepa2:base", obs_shape=(4,), action_dim=1)
+        assert isinstance(model, VJEPA2WorldModel)
+
 
 class TestModelAliases:
     """Tests for model aliases."""
@@ -171,6 +183,9 @@ class TestModelAliases:
         """JEPA alias is correct."""
         assert MODEL_ALIASES["jepa"] == "jepa:base"
 
+    def test_vjepa2_alias(self):
+        assert MODEL_ALIASES["vjepa2"] == "vjepa2:base"
+
 
 class TestModelCatalog:
     """Tests for model catalog."""
@@ -190,6 +205,9 @@ class TestModelCatalog:
     def test_catalog_has_jepa(self):
         assert "jepa:base" in MODEL_CATALOG
 
+    def test_catalog_has_vjepa2(self):
+        assert "vjepa2:base" in MODEL_CATALOG
+
     def test_catalog_entries_have_required_fields(self):
         """All catalog entries have required fields."""
         required_fields = ["description", "params", "type", "default_obs"]
@@ -200,3 +218,22 @@ class TestModelCatalog:
     def test_catalog_entries_have_maturity(self):
         for model_id, info in MODEL_CATALOG.items():
             assert info.get("maturity") in {"reference", "experimental", "skeleton"}, model_id
+
+    def test_list_models_reflects_dynamic_registry_catalog_entries(self):
+        model_id = "extplugin:demo"
+        try:
+            WorldModelRegistry.register_catalog_entry(
+                model_id,
+                {
+                    "description": "External plugin demo model",
+                    "params": "~0M",
+                    "type": "extplugin",
+                    "default_obs": "vector",
+                    "maturity": "experimental",
+                },
+            )
+            models = list_models()
+            assert model_id in models
+            assert get_model_info(model_id)["type"] == "extplugin"
+        finally:
+            WorldModelRegistry.unregister_catalog_entry(model_id)

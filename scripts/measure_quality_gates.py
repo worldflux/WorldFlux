@@ -169,7 +169,7 @@ def _summary(runs: list[dict[str, Any]]) -> dict[str, Any]:
             family_gates["token_ce_finite"] = {"pass": all(finite_flags)}
         elif family == "diffusion":
             family_gates["denoise_error_finite"] = {"pass": all(finite_flags)}
-        elif family == "jepa":
+        elif family in {"jepa", "vjepa2"}:
             family_gates["representation_loss_finite"] = {"pass": all(finite_flags)}
         family_pass = (
             all(gate.get("pass", False) for gate in family_gates.values()) if family_gates else True

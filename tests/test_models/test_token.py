@@ -3,6 +3,7 @@
 import pytest
 import torch
 
+from worldflux import AutoWorldModel
 from worldflux.core.batch import Batch
 from worldflux.core.config import TokenWorldModelConfig
 from worldflux.models.token import TokenWorldModel
@@ -71,3 +72,19 @@ def test_token_loss_rejects_mismatched_target_contract():
     batch = Batch(obs={"tokens": obs_tokens}, target={"obs": target_obs})
     with pytest.raises(ValueError, match="target tokens"):
         model.loss(batch)
+
+
+def test_token_save_pretrained_and_load(tmp_path):
+    config = TokenWorldModelConfig(
+        obs_shape=(8,),
+        action_dim=1,
+        vocab_size=32,
+        token_dim=16,
+        num_layers=1,
+        num_heads=1,
+    )
+    model = TokenWorldModel(config)
+    save_path = str(tmp_path / "token_model")
+    model.save_pretrained(save_path)
+    loaded = AutoWorldModel.from_pretrained(save_path)
+    assert loaded.config.model_type == "token"
