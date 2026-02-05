@@ -20,16 +20,33 @@ class CEMPlanner:
         num_samples: int = 256,
         num_elites: int = 32,
         iterations: int = 1,
+        action_low: float | Tensor | None = None,
+        action_high: float | Tensor | None = None,
     ):
         self.horizon = horizon
         self.action_dim = action_dim
         self.num_samples = num_samples
         self.num_elites = num_elites
         self.iterations = iterations
+        self.action_low = action_low
+        self.action_high = action_high
+
+    def _apply_action_bounds(self, actions: Tensor) -> Tensor:
+        if self.action_low is not None:
+            actions = torch.maximum(
+                actions, torch.as_tensor(self.action_low, device=actions.device)
+            )
+        if self.action_high is not None:
+            actions = torch.minimum(
+                actions, torch.as_tensor(self.action_high, device=actions.device)
+            )
+        return actions
 
     def plan(self, model: WorldModel, state, device: torch.device | None = None) -> Tensor:
         if not model.supports_reward:
             raise CapabilityError("Planner requires reward prediction capability")
+        contract_fn = getattr(model, "io_contract", None)
+        contract = contract_fn() if callable(contract_fn) else None
 
         if device is None:
             try:
@@ -45,6 +62,7 @@ class CEMPlanner:
         for _ in range(self.iterations):
             noise = torch.randn(self.horizon, self.num_samples, self.action_dim, device=device)
             actions = mean[:, None, :] + std[:, None, :] * noise
+            actions = self._apply_action_bounds(actions)
             rollout_state = state
             if isinstance(state, State):
                 batch_size = state.batch_size
@@ -60,10 +78,26 @@ class CEMPlanner:
                     raise CapabilityError(
                         f"Planner requires batch size 1 or {self.num_samples}, got {batch_size}"
                     )
-            trajectory = model.rollout(rollout_state, actions)
-            if trajectory.rewards is None:
-                raise CapabilityError("Model rollout did not produce rewards")
-            scores = trajectory.rewards.sum(dim=0)
+                if contract is not None:
+                    missing_state = [
+                        k for k in contract.required_state_keys if k not in rollout_state.tensors
+                    ]
+                    if missing_state:
+                        raise CapabilityError(
+                            f"State is missing required keys for planner contract: {missing_state}"
+                        )
+
+            rewards = []
+            step_state = rollout_state
+            for t in range(self.horizon):
+                step_state = model.plan_step(step_state, actions[t])
+                step_output = model.sample_step(step_state)
+                reward_t = step_output.preds.get("reward")
+                if reward_t is None:
+                    raise CapabilityError("Planner requires reward prediction from sample_step")
+                rewards.append(reward_t.squeeze(-1))
+
+            scores = torch.stack(rewards, dim=0).sum(dim=0)
             elite_idx = scores.topk(self.num_elites).indices
             elite = actions[:, elite_idx]
             mean = elite.mean(dim=1)

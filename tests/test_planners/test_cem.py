@@ -40,3 +40,20 @@ def test_cem_planner_returns_actions():
     init_state = model.encode(torch.zeros(1, 4))
     actions = planner.plan(model, init_state)
     assert actions.shape == (5, 3)
+
+
+def test_cem_planner_respects_action_bounds():
+    model = DummyRewardModel(action_dim=2)
+    planner = CEMPlanner(
+        horizon=3,
+        action_dim=2,
+        num_samples=16,
+        num_elites=4,
+        iterations=1,
+        action_low=-0.1,
+        action_high=0.1,
+    )
+    init_state = model.encode(torch.zeros(1, 4))
+    actions = planner.plan(model, init_state)
+    assert torch.all(actions <= 0.10001)
+    assert torch.all(actions >= -0.10001)
