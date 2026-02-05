@@ -16,6 +16,15 @@ from worldflux.core.exceptions import (
 )
 from worldflux.core.model import WorldModel
 from worldflux.core.output import LossOutput
+from worldflux.core.spec import (
+    ActionSpec,
+    ModalityKind,
+    ModalitySpec,
+    ModelIOContract,
+    ObservationSpec,
+    SequenceLayout,
+    StateSpec,
+)
 from worldflux.core.state import State
 from worldflux.training import (
     CheckpointCallback,
@@ -83,6 +92,22 @@ class NaNModel(WorldModel):
     def loss(self, batch) -> LossOutput:
         loss = self.param * torch.tensor(float("nan"))
         return LossOutput(loss=loss, components={"loss": loss})
+
+
+class InvalidContractModel(DummyModel):
+    """Dummy model with an invalid io_contract."""
+
+    def io_contract(self) -> ModelIOContract:
+        return ModelIOContract(
+            observation_spec=ObservationSpec(
+                modalities={"obs": ModalitySpec(kind=ModalityKind.VECTOR, shape=(4,))}
+            ),
+            action_spec=ActionSpec(kind="continuous", dim=2),
+            state_spec=StateSpec(tensors={}),
+            sequence_layout=SequenceLayout(axes_by_field={"imaginary": "BT..."}),
+            required_batch_keys=("obs",),
+            required_state_keys=("latent",),
+        )
 
 
 class TestTrainingConfig:
@@ -609,6 +634,12 @@ class TestTrainer:
 
         with pytest.raises(TrainingError, match="missing required keys"):
             trainer._next_batch(IncompleteProvider())
+
+    def test_trainer_rejects_invalid_model_contract(self):
+        model = InvalidContractModel()
+        config = TrainingConfig(total_steps=1, batch_size=2, sequence_length=3, device="cpu")
+        with pytest.raises(TrainingError, match="Invalid model I/O contract"):
+            Trainer(model, config, callbacks=[])
 
 
 class TestTrainFunction:
