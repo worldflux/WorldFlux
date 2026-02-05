@@ -88,7 +88,7 @@ all = [
 
 [project.urls]
 Homepage = "https://github.com/worldflux/Worldflux"
-Documentation = "https://worldflux.readthedocs.io"
+Documentation = "https://worldflux.github.io/Worldflux/"
 Repository = "https://github.com/worldflux/Worldflux"
 Changelog = "https://github.com/worldflux/Worldflux/blob/main/CHANGELOG.md"
 Issues = "https://github.com/worldflux/Worldflux/issues"
