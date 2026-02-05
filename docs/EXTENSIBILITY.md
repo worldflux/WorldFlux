@@ -98,6 +98,21 @@ class DreamerV3WorldModel(nn.Module): ...
 
 ---
 
+## Maturity Tiers (Public Policy)
+
+WorldFlux now classifies model families by maturity tier in the model catalog:
+
+- **reference**: Production-grade baseline families with stronger compatibility expectations.
+- **experimental**: Functional but evolving APIs/metrics (not yet release-grade parity).
+- **skeleton**: Interface stubs intended for design exploration only.
+
+Current default policy:
+
+- **reference**: DreamerV3, TD-MPC2
+- **experimental**: JEPA, Token, Diffusion
+
+---
+
 ## World Model Classification
 
 ### Taxonomy of World Model Architectures
@@ -121,6 +136,15 @@ class DreamerV3WorldModel(nn.Module): ...
 | **Diffusion Models** | Encoder, Sampler (denoising), Decoder |
 | **JEPA** | Encoder, Predictor, Objective (masked prediction) |
 | **Foundation Models** | Tokenizer/Encoder, Large generator, Sampler, Optional planner |
+
+### Contract Compatibility Matrix
+
+Each model family should publish and satisfy:
+
+- **Required capabilities** (`Capability` flags)
+- **Required batch keys** (for training/eval)
+- **Required state keys** (for planner/sampler hooks)
+- **Sequence layout** (explicit `B`/`T` axis mapping by field)
 
 ### Category Details
 

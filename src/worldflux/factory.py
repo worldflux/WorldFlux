@@ -27,6 +27,7 @@ from typing import Any
 from .core.config import WorldModelConfig
 from .core.model import WorldModel
 from .core.registry import ConfigRegistry, WorldModelRegistry
+from .core.spec import ModelMaturity
 
 # Model aliases for user convenience
 MODEL_ALIASES: dict[str, str] = {
@@ -57,72 +58,84 @@ MODEL_CATALOG: dict[str, dict[str, Any]] = {
         "params": "~12M",
         "type": "dreamer",
         "default_obs": "image",
+        "maturity": ModelMaturity.REFERENCE.value,
     },
     "dreamerv3:size25m": {
         "description": "DreamerV3 25M params - Balanced performance",
         "params": "~25M",
         "type": "dreamer",
         "default_obs": "image",
+        "maturity": ModelMaturity.REFERENCE.value,
     },
     "dreamerv3:size50m": {
         "description": "DreamerV3 50M params - Strong performance",
         "params": "~50M",
         "type": "dreamer",
         "default_obs": "image",
+        "maturity": ModelMaturity.REFERENCE.value,
     },
     "dreamerv3:size100m": {
         "description": "DreamerV3 100M params - High capacity",
         "params": "~100M",
         "type": "dreamer",
         "default_obs": "image",
+        "maturity": ModelMaturity.REFERENCE.value,
     },
     "dreamerv3:size200m": {
         "description": "DreamerV3 200M params - Maximum capacity",
         "params": "~200M",
         "type": "dreamer",
         "default_obs": "image",
+        "maturity": ModelMaturity.REFERENCE.value,
     },
     "tdmpc2:5m": {
         "description": "TD-MPC2 5M params - Fast planning",
         "params": "~5M",
         "type": "tdmpc2",
         "default_obs": "vector",
+        "maturity": ModelMaturity.REFERENCE.value,
     },
     "tdmpc2:19m": {
         "description": "TD-MPC2 19M params - Balanced",
         "params": "~19M",
         "type": "tdmpc2",
         "default_obs": "vector",
+        "maturity": ModelMaturity.REFERENCE.value,
     },
     "tdmpc2:48m": {
         "description": "TD-MPC2 48M params - Strong performance",
         "params": "~48M",
         "type": "tdmpc2",
         "default_obs": "vector",
+        "maturity": ModelMaturity.REFERENCE.value,
     },
     "tdmpc2:317m": {
         "description": "TD-MPC2 317M params - Maximum capacity",
         "params": "~317M",
         "type": "tdmpc2",
         "default_obs": "vector",
+        "maturity": ModelMaturity.REFERENCE.value,
     },
     "jepa:base": {
         "description": "JEPA base model - Representation prediction",
         "params": "~1M+",
         "type": "jepa",
         "default_obs": "image",
+        "maturity": ModelMaturity.EXPERIMENTAL.value,
     },
     "token:base": {
         "description": "Token world model - Discrete sequence modeling",
         "params": "~1M+",
         "type": "token",
         "default_obs": "token",
+        "maturity": ModelMaturity.EXPERIMENTAL.value,
     },
     "diffusion:base": {
         "description": "Diffusion world model - Generative dynamics",
         "params": "~1M+",
         "type": "diffusion",
         "default_obs": "vector",
+        "maturity": ModelMaturity.EXPERIMENTAL.value,
     },
 }
 
@@ -203,12 +216,16 @@ def create_world_model(
     return world_model
 
 
-def list_models(verbose: bool = False) -> list[str] | dict[str, dict[str, Any]]:
+def list_models(
+    verbose: bool = False,
+    maturity: str | None = None,
+) -> list[str] | dict[str, dict[str, Any]]:
     """
     List all available world model presets.
 
     Args:
         verbose: If True, return detailed model information
+        maturity: Optional maturity filter ("reference", "experimental", "skeleton")
 
     Returns:
         List of model names, or dict with detailed info if verbose=True
@@ -229,9 +246,13 @@ def list_models(verbose: bool = False) -> list[str] | dict[str, dict[str, Any]]:
             ...
         }
     """
+    catalog = dict(MODEL_CATALOG)
+    if maturity is not None:
+        maturity = maturity.lower()
+        catalog = {k: v for k, v in catalog.items() if v.get("maturity") == maturity}
     if verbose:
-        return dict(MODEL_CATALOG)
-    return list(MODEL_CATALOG.keys())
+        return catalog
+    return list(catalog.keys())
 
 
 def get_model_info(model: str) -> dict[str, Any]:

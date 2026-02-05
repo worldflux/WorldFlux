@@ -34,6 +34,12 @@ class TestListModels:
         assert "description" in models["dreamerv3:size12m"]
         assert "params" in models["dreamerv3:size12m"]
 
+    def test_list_models_with_maturity_filter(self):
+        ref_models = list_models(maturity="reference")
+        exp_models = list_models(maturity="experimental")
+        assert "dreamerv3:size12m" in ref_models
+        assert "jepa:base" in exp_models
+
 
 class TestGetModelInfo:
     """Tests for get_model_info function."""
@@ -188,3 +194,7 @@ class TestModelCatalog:
         for model_id, info in MODEL_CATALOG.items():
             for field in required_fields:
                 assert field in info, f"Model {model_id} missing field {field}"
+
+    def test_catalog_entries_have_maturity(self):
+        for model_id, info in MODEL_CATALOG.items():
+            assert info.get("maturity") in {"reference", "experimental", "skeleton"}, model_id

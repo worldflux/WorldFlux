@@ -48,6 +48,20 @@ Visualization of how different episodes traverse the learned latent space:
 - **Training Infrastructure**: Complete training loop with callbacks, checkpointing, and logging
 - **Type Safe**: Full type annotations and mypy compatibility
 
+## Model Maturity Policy
+
+- **Reference**: DreamerV3, TD-MPC2 (release baseline)
+- **Experimental**: JEPA, Token, Diffusion (API/metrics may evolve)
+
+You can inspect maturity tiers programmatically via:
+
+```python
+from worldflux import list_models
+
+reference_models = list_models(maturity="reference")
+experimental_models = list_models(maturity="experimental")
+```
+
 ## Architecture
 
 ```mermaid
