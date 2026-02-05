@@ -31,7 +31,7 @@ WorldFlux provides a unified Python interface for world models used in reinforce
 
 World model rolls out future frames from a single observation:
 
-![Imagination Rollout](docs/assets/imagination_rollout.gif)
+![Imagination Rollout](https://raw.githubusercontent.com/worldflux/WorldFlux/main/docs/assets/imagination_rollout.gif)
 
 *Left: Real game frames | Right: Model's imagination*
 
@@ -39,7 +39,7 @@ World model rolls out future frames from a single observation:
 
 Visualization of how different episodes traverse the learned latent space:
 
-![Latent Space](docs/assets/latent_space.gif)
+![Latent Space](https://raw.githubusercontent.com/worldflux/WorldFlux/main/docs/assets/latent_space.gif)
 
 ## Features
 
