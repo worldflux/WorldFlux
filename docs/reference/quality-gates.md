@@ -23,11 +23,28 @@ All PRs must pass:
 
 - **Seed stability**: same seed produces key losses/metrics within ±5–10%.
 - **Save/Load parity**: outputs after `save_pretrained` and reload differ only within tolerance.
+- **Seed success rate**: at least **80%** of seeds pass family-specific success criteria.
 
 ## Benchmark Gates (Release Only)
 
 - **Loss trend**: training loss decreases by a minimum threshold within N steps.
 - **Numerical stability**: no NaN/Inf during training in defined step budget.
+
+## Family-Specific Gates
+
+- **Reference families** (DreamerV3, TD-MPC2):
+  - loss drop threshold
+  - finite loss components
+  - seed success rate >= 80%
+- **Token family**:
+  - token cross-entropy/perplexity trend
+  - finite logits and loss
+- **Diffusion family**:
+  - denoise error trend
+  - finite scheduler states and losses
+- **JEPA family**:
+  - representation prediction loss trend
+  - finite context/target projections
 
 ## Recommended Threshold Defaults
 

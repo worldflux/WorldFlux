@@ -127,10 +127,28 @@ def _summary(runs: list[dict[str, Any]]) -> dict[str, Any]:
     for model, items in by_model.items():
         final_losses = [item["final_loss"] for item in items]
         loss_drops = [item["loss_drop"] for item in items]
+        success_flags = [bool(item.get("is_success", False)) for item in items]
+        finite_flags = [bool(item.get("is_finite", False)) for item in items]
         final_stats = _loss_stats(final_losses)
         drop_stats = _loss_stats(loss_drops)
         tolerance = _tolerance(final_stats["mean"], final_stats["std"])
         drop_threshold = drop_stats["mean"] - 2.0 * drop_stats["std"]
+        success_rate = (
+            mean([1.0 if flag else 0.0 for flag in success_flags]) if success_flags else 0.0
+        )
+        common_pass = all(finite_flags) and success_rate >= 0.80
+        family = model.split(":")[0]
+        family_gates: dict[str, Any] = {}
+        if family in {"dreamerv3", "tdmpc2"}:
+            family_gates["loss_drop_threshold"] = {
+                "value": drop_stats["mean"],
+                "threshold": 0.10,
+                "pass": drop_stats["mean"] >= 0.10,
+            }
+        elif family == "token":
+            family_gates["token_ce_finite"] = {"pass": all(finite_flags)}
+        elif family == "diffusion":
+            family_gates["denoise_error_finite"] = {"pass": all(finite_flags)}
         summary[model] = {
             "seeds": [item["seed"] for item in items],
             "steps": items[0]["steps"] if items else 0,
@@ -144,6 +162,15 @@ def _summary(runs: list[dict[str, Any]]) -> dict[str, Any]:
                 "mean": drop_stats["mean"],
                 "std": drop_stats["std"],
                 "threshold": drop_threshold,
+            },
+            "success_rate": success_rate,
+            "gates": {
+                "common": {
+                    "finite": all(finite_flags),
+                    "success_rate_threshold": 0.80,
+                    "pass": common_pass,
+                },
+                "family": family_gates,
             },
         }
     return summary
@@ -198,6 +225,8 @@ def _run_model(
     initial_loss = float(initial_metrics.get("loss", 0.0))
     final_loss = float(final_metrics.get("loss", 0.0))
     loss_drop = (initial_loss - final_loss) / initial_loss if initial_loss != 0 else 0.0
+    is_finite = np.isfinite(initial_loss) and np.isfinite(final_loss) and np.isfinite(loss_drop)
+    is_success = bool(is_finite and loss_drop >= 0.10)
     logger.info(
         "Finished %s seed=%s: final_loss=%.6f loss_drop=%.6f duration=%.1fs",
         model_id,
@@ -219,6 +248,8 @@ def _run_model(
         "initial_loss": initial_loss,
         "final_loss": final_loss,
         "loss_drop": loss_drop,
+        "is_finite": bool(is_finite),
+        "is_success": is_success,
         "duration_sec": duration,
     }
 
