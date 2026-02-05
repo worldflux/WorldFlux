@@ -771,6 +771,7 @@ class DiffusionWorldModelConfig(WorldModelConfig):
     diffusion_steps: int = 4
     beta_start: float = 1e-4
     beta_end: float = 0.02
+    prediction_target: str = "noise"
 
     def _validate(self) -> None:
         super()._validate()
@@ -787,6 +788,11 @@ class DiffusionWorldModelConfig(WorldModelConfig):
         if self.beta_end <= self.beta_start:
             raise ConfigurationError(
                 "beta_end must be greater than beta_start",
+                config_name=self.model_name,
+            )
+        if self.prediction_target not in {"noise", "x0"}:
+            raise ConfigurationError(
+                f"prediction_target must be 'noise' or 'x0', got {self.prediction_target!r}",
                 config_name=self.model_name,
             )
 

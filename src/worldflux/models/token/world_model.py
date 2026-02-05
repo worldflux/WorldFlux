@@ -158,6 +158,7 @@ class TokenWorldModel(WorldModel):
         return ModelOutput(preds=preds)
 
     def loss(self, batch: Batch) -> LossOutput:
+        obs_has_tokens = isinstance(batch.obs, dict) and "tokens" in batch.obs
         tokens = self._tokenize(batch.obs)
         if batch.target is not None:
             target = batch.target
@@ -165,6 +166,9 @@ class TokenWorldModel(WorldModel):
             target = batch.next_obs
         else:
             target = batch.obs
+        target_has_tokens = isinstance(target, dict) and "tokens" in target
+        if obs_has_tokens and not target_has_tokens:
+            raise ValueError("Token loss requires target tokens when obs contains 'tokens'")
         target_tokens = self._tokenize(target)
 
         if tokens.shape != target_tokens.shape:

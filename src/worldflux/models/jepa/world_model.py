@@ -158,8 +158,22 @@ class JEPABaseWorldModel(WorldModel):
             target_rep = self.projector(self.encoder(self._flatten_obs(target)))
 
         if batch.mask is not None:
-            pred = pred * batch.mask
-            target_rep = target_rep * batch.mask
+            mask = batch.mask
+            if mask.shape[0] != pred.shape[0]:
+                raise ValueError(
+                    f"mask shape mismatch: batch dimension {mask.shape[0]} != {pred.shape[0]}"
+                )
+            if mask.dim() == 1:
+                mask = mask.unsqueeze(-1)
+            if mask.dim() != 2:
+                raise ValueError(f"mask shape mismatch: expected rank-2 mask, got {mask.shape}")
+            if mask.shape[1] not in (1, pred.shape[1]):
+                raise ValueError(
+                    f"mask shape mismatch: second dimension must be 1 or {pred.shape[1]}, "
+                    f"got {mask.shape[1]}"
+                )
+            pred = pred * mask
+            target_rep = target_rep * mask
 
         loss = F.mse_loss(pred, target_rep)
         components = {"jepa": loss}

@@ -52,7 +52,7 @@ class DiffusionWorldModel(WorldModel):
             num_train_steps=max(10, config.diffusion_steps * 25),
             beta_start=config.beta_start,
             beta_end=config.beta_end,
-            prediction_target="noise",
+            prediction_target=config.prediction_target,
         )
         self.sampler = DiffusionSampler(self.scheduler)
 
@@ -125,8 +125,12 @@ class DiffusionWorldModel(WorldModel):
 
     def transition(self, state: State, action: Tensor, deterministic: bool = False) -> State:
         obs = state.tensors["obs"]
-        next_obs = self.sampler.sample(self, obs, action, steps=self.config.diffusion_steps)
-        return State(tensors={"obs": next_obs})
+        start_timestep = max(self.config.diffusion_steps - 1, 0)
+        next_obs = self.sampler.sample(
+            self, obs, action, steps=self.config.diffusion_steps, start_timestep=start_timestep
+        )
+        timestep = torch.full((obs.shape[0],), start_timestep, device=obs.device, dtype=torch.long)
+        return State(tensors={"obs": next_obs}, meta={"timestep": timestep})
 
     def update(self, state: State, action: Tensor, obs: Tensor | dict[str, Tensor]) -> State:
         return self.encode(obs)

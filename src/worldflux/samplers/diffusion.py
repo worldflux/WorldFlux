@@ -38,11 +38,26 @@ class DiffusionScheduler:
             0, self.num_train_steps, (batch_size,), device=device, dtype=torch.long
         )
 
+    def _validate_timesteps(self, timesteps: Tensor) -> None:
+        if timesteps.dtype != torch.long:
+            raise ValueError(f"timesteps must be torch.long, got {timesteps.dtype}")
+        if timesteps.numel() == 0:
+            return
+        min_t = int(timesteps.min().item())
+        max_t = int(timesteps.max().item())
+        if min_t < 0 or max_t >= self.num_train_steps:
+            raise ValueError(
+                f"timesteps out of range [0, {self.num_train_steps - 1}], "
+                f"got min={min_t}, max={max_t}"
+            )
+
     def add_noise(self, clean: Tensor, noise: Tensor, timesteps: Tensor) -> Tensor:
+        self._validate_timesteps(timesteps)
         alpha_bar = self._extract(self.alpha_cumprod, timesteps, clean)
         return alpha_bar.sqrt() * clean + (1.0 - alpha_bar).sqrt() * noise
 
     def step(self, prediction: Tensor, x_t: Tensor, timesteps: Tensor) -> Tensor:
+        self._validate_timesteps(timesteps)
         alpha_bar = self._extract(self.alpha_cumprod, timesteps, x_t)
         if self.prediction_target == "x0":
             x0 = prediction
