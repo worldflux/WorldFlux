@@ -151,6 +151,8 @@ def create_world_model(
     *,
     obs_shape: tuple[int, ...] | None = None,
     action_dim: int | None = None,
+    observation_modalities: dict[str, dict[str, Any]] | None = None,
+    action_spec: dict[str, Any] | None = None,
     device: str = "cpu",
     **kwargs: Any,
 ) -> WorldModel:
@@ -205,6 +207,12 @@ def create_world_model(
 
     if action_dim is not None:
         config_kwargs["action_dim"] = action_dim
+
+    if observation_modalities is not None:
+        config_kwargs["observation_modalities"] = observation_modalities
+
+    if action_spec is not None:
+        config_kwargs["action_spec"] = action_spec
 
     # Create model
     world_model = WorldModelRegistry.from_pretrained(resolved_model, **config_kwargs)

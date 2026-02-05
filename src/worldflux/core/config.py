@@ -69,6 +69,8 @@ class WorldModelConfig:
     obs_shape: tuple[int, ...] = (3, 64, 64)
     action_dim: int = 6
     action_type: str = "continuous"
+    observation_modalities: dict[str, dict[str, Any]] = field(default_factory=dict)
+    action_spec: dict[str, Any] = field(default_factory=dict)
 
     # Latent space
     latent_type: LatentType = LatentType.DETERMINISTIC
@@ -90,7 +92,58 @@ class WorldModelConfig:
 
     def __post_init__(self) -> None:
         """Validate configuration after initialization."""
+        self._normalize_interface_specs()
         self._validate()
+
+    def _normalize_interface_specs(self) -> None:
+        """Normalize modality/action specs while preserving legacy fields."""
+        normalized_modalities: dict[str, dict[str, Any]] = {}
+        if self.observation_modalities:
+            for key, spec in self.observation_modalities.items():
+                spec_copy = dict(spec)
+                shape = spec_copy.get("shape")
+                if isinstance(shape, list):
+                    spec_copy["shape"] = tuple(shape)
+                elif isinstance(shape, tuple):
+                    spec_copy["shape"] = shape
+                elif shape is None:
+                    spec_copy["shape"] = self.obs_shape
+                else:
+                    spec_copy["shape"] = tuple(shape)
+                spec_copy.setdefault("kind", self._infer_observation_kind(spec_copy["shape"]))
+                spec_copy.setdefault("dtype", self.dtype)
+                normalized_modalities[key] = spec_copy
+        else:
+            normalized_modalities["obs"] = {
+                "shape": self.obs_shape,
+                "kind": self._infer_observation_kind(self.obs_shape),
+                "dtype": self.dtype,
+            }
+
+        self.observation_modalities = normalized_modalities
+        if "obs" in self.observation_modalities:
+            obs_shape = self.observation_modalities["obs"].get("shape", self.obs_shape)
+            self.obs_shape = tuple(obs_shape)
+
+        normalized_action_spec = dict(self.action_spec) if self.action_spec else {}
+        normalized_action_spec.setdefault("kind", self.action_type)
+        normalized_action_spec.setdefault("dim", self.action_dim)
+        normalized_action_spec.setdefault("discrete", normalized_action_spec["kind"] == "discrete")
+        if normalized_action_spec["kind"] == "discrete":
+            normalized_action_spec.setdefault("num_actions", normalized_action_spec["dim"])
+        self.action_spec = normalized_action_spec
+        self.action_type = str(self.action_spec["kind"])
+        self.action_dim = int(self.action_spec["dim"])
+
+    @staticmethod
+    def _infer_observation_kind(shape: tuple[int, ...]) -> str:
+        if len(shape) == 1:
+            return "vector"
+        if len(shape) == 3:
+            return "image"
+        if len(shape) == 4:
+            return "video"
+        return "other"
 
     def _validate(self) -> None:
         """Validate configuration parameters."""
@@ -169,6 +222,15 @@ class WorldModelConfig:
             d["dynamics_type"] = DynamicsType(d["dynamics_type"])
         if "obs_shape" in d and isinstance(d["obs_shape"], list):
             d["obs_shape"] = tuple(d["obs_shape"])
+        if "observation_modalities" in d and isinstance(d["observation_modalities"], dict):
+            normalized: dict[str, dict[str, Any]] = {}
+            for key, spec in d["observation_modalities"].items():
+                spec_copy = dict(spec)
+                shape = spec_copy.get("shape")
+                if isinstance(shape, list):
+                    spec_copy["shape"] = tuple(shape)
+                normalized[key] = spec_copy
+            d["observation_modalities"] = normalized
         return cls(**d)
 
     def save(self, path: str | Path) -> None:
@@ -287,6 +349,7 @@ class DreamerV3Config(WorldModelConfig):
 
     def __post_init__(self) -> None:
         """Initialize derived values and validate."""
+        self._normalize_interface_specs()
         self.stoch_dim = self.stoch_discrete * self.stoch_classes
         self._validate()
 
@@ -492,6 +555,7 @@ class TDMPC2Config(WorldModelConfig):
 
     def __post_init__(self) -> None:
         """Validate configuration."""
+        self._normalize_interface_specs()
         self._validate()
 
     def _validate(self) -> None:
