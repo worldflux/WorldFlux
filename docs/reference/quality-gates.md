@@ -46,6 +46,9 @@ All PRs must pass:
 - **JEPA family**:
   - representation prediction loss trend
   - finite context/target projections
+- **V-JEPA2 family**:
+  - representation prediction loss trend
+  - finite context/target/mask pipelines
 
 ## Recommended Threshold Defaults
 

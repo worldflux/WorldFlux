@@ -118,8 +118,16 @@ class WorldModelRegistry:
         cls._aliases[name.lower()] = target
 
     @classmethod
+    def unregister_alias(cls, name: str) -> bool:
+        return cls._aliases.pop(name.lower(), None) is not None
+
+    @classmethod
     def register_catalog_entry(cls, model_id: str, info: dict[str, Any]) -> None:
         cls._catalog[model_id] = dict(info)
+
+    @classmethod
+    def unregister_catalog_entry(cls, model_id: str) -> bool:
+        return cls._catalog.pop(model_id, None) is not None
 
     @classmethod
     def unregister(cls, model_type: str) -> bool:

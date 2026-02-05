@@ -125,17 +125,17 @@ config = TrainingConfig(
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `total_steps` | `int` | 50000 | Total training steps |
+| `total_steps` | `int` | 100000 | Total training steps |
 | `batch_size` | `int` | 16 | Batch size |
 | `sequence_length` | `int` | 50 | BPTT sequence length |
 | `learning_rate` | `float` | 3e-4 | Adam learning rate |
 | `weight_decay` | `float` | 0.0 | L2 regularization |
 | `grad_clip` | `float` | 100.0 | Max gradient norm |
 | `warmup_steps` | `int` | 0 | LR warmup steps |
-| `log_interval` | `int` | 1000 | Logging frequency |
-| `eval_interval` | `int` | 5000 | Evaluation frequency |
+| `log_interval` | `int` | 100 | Logging frequency |
+| `eval_interval` | `int` | 1000 | Evaluation frequency |
 | `save_interval` | `int` | 10000 | Checkpoint frequency |
-| `device` | `str` | "cuda" | Training device |
+| `device` | `str` | "auto" | Training device |
 | `seed` | `int` | 42 | Random seed |
 
 ---
@@ -148,21 +148,19 @@ config = TrainingConfig(
 from worldflux.training.callbacks import CheckpointCallback
 
 callback = CheckpointCallback(
-    save_dir="./checkpoints",
-    save_every=10000,
-    keep_last=3,
+    output_dir="./checkpoints",
+    save_interval=10000,
+    max_checkpoints=3,
     save_best=True,
-    monitor="loss",
 )
 ```
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `save_dir` | `str` | required | Directory for checkpoints |
-| `save_every` | `int` | 10000 | Steps between saves |
-| `keep_last` | `int` | 3 | Number to keep |
+| `output_dir` | `str` | "./outputs" | Directory for checkpoints |
+| `save_interval` | `int` | 10000 | Steps between saves |
+| `max_checkpoints` | `int \| None` | 5 | Number of non-best checkpoints to keep |
 | `save_best` | `bool` | True | Save best model |
-| `monitor` | `str` | "loss" | Metric to monitor |
 
 ### LoggingCallback
 
@@ -170,17 +168,17 @@ callback = CheckpointCallback(
 from worldflux.training.callbacks import LoggingCallback
 
 callback = LoggingCallback(
-    log_dir="./logs",
-    log_to_console=True,
-    log_to_tensorboard=True,
+    log_interval=100,
+    use_wandb=False,
 )
 ```
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `log_dir` | `str` | None | TensorBoard log directory |
-| `log_to_console` | `bool` | True | Print to console |
-| `log_to_tensorboard` | `bool` | False | Enable TensorBoard |
+| `log_interval` | `int` | 100 | Logging frequency in steps |
+| `use_wandb` | `bool` | False | Enable W&B logging |
+| `wandb_project` | `str \| None` | None | W&B project name |
+| `wandb_run_name` | `str \| None` | None | W&B run name |
 
 ### EarlyStoppingCallback
 
@@ -191,7 +189,6 @@ callback = EarlyStoppingCallback(
     monitor="loss",
     patience=5000,
     min_delta=1e-4,
-    mode="min",
 )
 ```
 
@@ -200,7 +197,6 @@ callback = EarlyStoppingCallback(
 | `monitor` | `str` | "loss" | Metric to monitor |
 | `patience` | `int` | 5000 | Steps without improvement |
 | `min_delta` | `float` | 1e-4 | Minimum change |
-| `mode` | `str` | "min" | "min" or "max" |
 
 ---
 

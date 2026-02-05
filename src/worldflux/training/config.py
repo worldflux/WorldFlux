@@ -71,7 +71,7 @@ class TrainingConfig:
     # Gradient accumulation
     gradient_accumulation_steps: int = 1
 
-    # Model-specific overrides (merged into model config at train time)
+    # Reserved for future trainer-level model patching. Currently unsupported by Trainer.
     model_overrides: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:

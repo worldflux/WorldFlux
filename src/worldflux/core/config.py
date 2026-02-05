@@ -710,6 +710,101 @@ class JEPABaseConfig(WorldModelConfig):
 
 
 @dataclass
+class VJEPA2Config(WorldModelConfig):
+    """Configuration for V-JEPA2-style predictive representation models."""
+
+    model_type: str = "vjepa2"
+    latent_type: LatentType = LatentType.DETERMINISTIC
+    dynamics_type: DynamicsType = DynamicsType.TRANSFORMER
+
+    encoder_dim: int = 512
+    predictor_dim: int = 512
+    projection_dim: int = 512
+    num_layers: int = 6
+    num_heads: int = 8
+    dropout: float = 0.0
+    mask_ratio: float = 0.5
+    temporal_window: int = 8
+
+    def _validate(self) -> None:
+        super()._validate()
+        if self.encoder_dim <= 0:
+            raise ConfigurationError(
+                f"encoder_dim must be positive, got {self.encoder_dim}",
+                config_name=self.model_name,
+            )
+        if self.predictor_dim <= 0:
+            raise ConfigurationError(
+                f"predictor_dim must be positive, got {self.predictor_dim}",
+                config_name=self.model_name,
+            )
+        if self.projection_dim <= 0:
+            raise ConfigurationError(
+                f"projection_dim must be positive, got {self.projection_dim}",
+                config_name=self.model_name,
+            )
+        if self.num_layers <= 0:
+            raise ConfigurationError(
+                f"num_layers must be positive, got {self.num_layers}",
+                config_name=self.model_name,
+            )
+        if self.num_heads <= 0:
+            raise ConfigurationError(
+                f"num_heads must be positive, got {self.num_heads}",
+                config_name=self.model_name,
+            )
+        if not (0.0 <= self.dropout < 1.0):
+            raise ConfigurationError(
+                f"dropout must be in [0, 1), got {self.dropout}",
+                config_name=self.model_name,
+            )
+        if not (0.0 <= self.mask_ratio <= 1.0):
+            raise ConfigurationError(
+                f"mask_ratio must be in [0, 1], got {self.mask_ratio}",
+                config_name=self.model_name,
+            )
+        if self.temporal_window <= 0:
+            raise ConfigurationError(
+                f"temporal_window must be positive, got {self.temporal_window}",
+                config_name=self.model_name,
+            )
+
+    @classmethod
+    def from_size(cls, size: str, **kwargs: Any) -> VJEPA2Config:
+        presets: dict[str, dict[str, Any]] = {
+            "ci": {
+                "encoder_dim": 64,
+                "predictor_dim": 64,
+                "projection_dim": 64,
+                "num_layers": 1,
+                "num_heads": 2,
+                "temporal_window": 2,
+            },
+            "tiny": {
+                "encoder_dim": 128,
+                "predictor_dim": 128,
+                "projection_dim": 128,
+                "num_layers": 2,
+                "num_heads": 4,
+                "temporal_window": 4,
+            },
+            "base": {
+                "encoder_dim": 512,
+                "predictor_dim": 512,
+                "projection_dim": 512,
+                "num_layers": 6,
+                "num_heads": 8,
+                "temporal_window": 8,
+            },
+        }
+        if size not in presets:
+            raise ValueError(f"Unknown size: {size}. Available: {list(presets.keys())}")
+        preset = presets[size]
+        preset.update(kwargs)
+        return cls(model_name=size, **preset)
+
+
+@dataclass
 class TokenWorldModelConfig(WorldModelConfig):
     """Configuration for token-based world models."""
 

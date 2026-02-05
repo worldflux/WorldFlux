@@ -132,10 +132,10 @@ trainer = Trainer(model, config)
 
 # Add callbacks
 trainer.add_callback(ProgressCallback())
-trainer.add_callback(LoggingCallback(log_dir="./logs"))
+trainer.add_callback(LoggingCallback(log_interval=100))
 trainer.add_callback(CheckpointCallback(
-    save_dir="./checkpoints",
-    save_every=10_000,
+    output_dir="./checkpoints",
+    save_interval=10_000,
 ))
 
 # Train

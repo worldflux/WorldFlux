@@ -2,6 +2,7 @@
 
 import torch
 
+from worldflux import AutoWorldModel
 from worldflux.core.batch import Batch
 from worldflux.core.config import DiffusionWorldModelConfig
 from worldflux.models.diffusion import DiffusionWorldModel
@@ -76,3 +77,17 @@ def test_diffusion_transition_populates_timestep_meta():
     next_state = model.transition(state, torch.randn(2, 2))
     assert "timestep" in next_state.meta
     assert next_state.meta["timestep"].shape == (2,)
+
+
+def test_diffusion_save_pretrained_and_load(tmp_path):
+    config = DiffusionWorldModelConfig(
+        obs_shape=(4,),
+        action_dim=2,
+        hidden_dim=16,
+        diffusion_steps=2,
+    )
+    model = DiffusionWorldModel(config)
+    save_path = str(tmp_path / "diffusion_model")
+    model.save_pretrained(save_path)
+    loaded = AutoWorldModel.from_pretrained(save_path)
+    assert loaded.config.model_type == "diffusion"

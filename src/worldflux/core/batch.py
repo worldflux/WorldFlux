@@ -193,6 +193,7 @@ class Batch:
             "mask",
             "context",
             "target",
+            "extras",
         }
         for key in self.layouts:
             root = key.split(".", 1)[0].split(":", 1)[0]

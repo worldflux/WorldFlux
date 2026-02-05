@@ -71,9 +71,9 @@ Some models do not predict rewards or continuation probabilities. Use capability
 helpers to branch safely:
 
 ```python
-if model.supports_reward():
+if model.supports_reward:
     ...
-if model.supports_continue():
+if model.supports_continue:
     ...
 ```
 

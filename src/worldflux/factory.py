@@ -45,6 +45,9 @@ MODEL_ALIASES: dict[str, str] = {
     "tdmpc-large": "tdmpc2:317m",
     # JEPA aliases
     "jepa": "jepa:base",
+    # V-JEPA2 aliases
+    "vjepa2": "vjepa2:base",
+    "v-jepa2": "vjepa2:base",
     # Token model aliases
     "token": "token:base",
     # Diffusion model aliases
@@ -123,6 +126,27 @@ MODEL_CATALOG: dict[str, dict[str, Any]] = {
         "default_obs": "image",
         "maturity": ModelMaturity.EXPERIMENTAL.value,
     },
+    "vjepa2:ci": {
+        "description": "V-JEPA2 CI model - Fast representation smoke tests",
+        "params": "~0.2M+",
+        "type": "vjepa2",
+        "default_obs": "image",
+        "maturity": ModelMaturity.EXPERIMENTAL.value,
+    },
+    "vjepa2:tiny": {
+        "description": "V-JEPA2 tiny model - Lightweight representation learning",
+        "params": "~1M+",
+        "type": "vjepa2",
+        "default_obs": "image",
+        "maturity": ModelMaturity.EXPERIMENTAL.value,
+    },
+    "vjepa2:base": {
+        "description": "V-JEPA2 base model - Predictive representation learning",
+        "params": "~4M+",
+        "type": "vjepa2",
+        "default_obs": "image",
+        "maturity": ModelMaturity.EXPERIMENTAL.value,
+    },
     "token:base": {
         "description": "Token world model - Discrete sequence modeling",
         "params": "~1M+",
@@ -144,6 +168,15 @@ for alias, target in MODEL_ALIASES.items():
     WorldModelRegistry.register_alias(alias, target)
 for model_id, info in MODEL_CATALOG.items():
     WorldModelRegistry.register_catalog_entry(model_id, info)
+
+
+def _resolved_catalog() -> dict[str, dict[str, Any]]:
+    """Return the current catalog view, including dynamically registered entries."""
+    # Ensure model modules are imported so plugin registrations run.
+    WorldModelRegistry.list_models()
+    catalog = dict(MODEL_CATALOG)
+    catalog.update(WorldModelRegistry.list_catalog())
+    return catalog
 
 
 def create_world_model(
@@ -254,7 +287,7 @@ def list_models(
             ...
         }
     """
-    catalog = dict(MODEL_CATALOG)
+    catalog = _resolved_catalog()
     if maturity is not None:
         maturity = maturity.lower()
         catalog = {k: v for k, v in catalog.items() if v.get("maturity") == maturity}
@@ -278,14 +311,15 @@ def get_model_info(model: str) -> dict[str, Any]:
     """
     resolved = WorldModelRegistry.resolve_alias(model)
 
-    if resolved in MODEL_CATALOG:
-        info = dict(MODEL_CATALOG[resolved])
+    catalog = _resolved_catalog()
+    if resolved in catalog:
+        info = dict(catalog[resolved])
         info["model_id"] = resolved
         if model in MODEL_ALIASES:
             info["alias"] = model
         return info
 
-    raise ValueError(f"Unknown model: {model}. Available models: {list(MODEL_CATALOG.keys())}")
+    raise ValueError(f"Unknown model: {model}. Available models: {list(catalog.keys())}")
 
 
 def get_config(

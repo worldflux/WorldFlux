@@ -11,7 +11,7 @@ Core functionality is implemented and working. Ready for early adopters and feed
 WorldFlux ships with explicit maturity tiers:
 
 - **reference**: DreamerV3, TD-MPC2
-- **experimental**: JEPA, Token, Diffusion
+- **experimental**: JEPA, V-JEPA2, Token, Diffusion
 
 Promotion from experimental to reference is **contract-first** and requires:
 

@@ -17,9 +17,9 @@ def test_readme_and_extensibility_define_same_maturity_families():
     assert "Reference" in readme
     assert "Experimental" in readme
     assert "DreamerV3, TD-MPC2" in readme
-    assert "JEPA, Token, Diffusion" in readme
+    assert "JEPA, V-JEPA2, Token, Diffusion" in readme
     assert "**reference**: DreamerV3, TD-MPC2" in ext
-    assert "**experimental**: JEPA, Token, Diffusion" in ext
+    assert "**experimental**: JEPA, V-JEPA2, Token, Diffusion" in ext
 
 
 def test_roadmap_mentions_public_maturity_boundary():
@@ -29,6 +29,7 @@ def test_roadmap_mentions_public_maturity_boundary():
     assert "DreamerV3" in roadmap
     assert "TD-MPC2" in roadmap
     assert "JEPA" in roadmap
+    assert "V-JEPA2" in roadmap
     assert "Token" in roadmap
     assert "Diffusion" in roadmap
 

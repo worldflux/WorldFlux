@@ -16,12 +16,12 @@ Simple Usage:
 Available Models:
     - dreamerv3:size12m, size25m, size50m, size100m, size200m
     - tdmpc2:5m, 19m, 48m, 317m
-    - jepa:base, token:base, diffusion:base
+    - jepa:base, vjepa2:ci, vjepa2:tiny, vjepa2:base, token:base, diffusion:base
 
 Aliases:
     - "dreamer", "dreamer-small", "dreamer-medium", "dreamer-large"
     - "tdmpc", "tdmpc-small", "tdmpc-medium", "tdmpc-large"
-    - "jepa", "token", "diffusion"
+    - "jepa", "vjepa2", "token", "diffusion"
 """
 
 from .core import (
@@ -59,6 +59,7 @@ from .core import (
     Trajectory,
     TransitionProvider,
     VideoProvider,
+    VJEPA2Config,
     WorldModel,
     WorldModelConfig,
     WorldModelRegistry,
@@ -77,6 +78,7 @@ from .models import (
     JEPABaseWorldModel,
     TDMPC2WorldModel,
     TokenWorldModel,
+    VJEPA2WorldModel,
 )
 from .utils import set_seed
 
@@ -134,6 +136,7 @@ __all__ = [
     "DreamerV3Config",
     "TDMPC2Config",
     "JEPABaseConfig",
+    "VJEPA2Config",
     "TokenWorldModelConfig",
     "DiffusionWorldModelConfig",
     "WorldModel",
@@ -149,6 +152,7 @@ __all__ = [
     "DreamerV3WorldModel",
     "TDMPC2WorldModel",
     "JEPABaseWorldModel",
+    "VJEPA2WorldModel",
     "TokenWorldModel",
     "DiffusionWorldModel",
     # Utils
