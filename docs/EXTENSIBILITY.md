@@ -112,7 +112,7 @@ WorldFlux now classifies model families by maturity tier in the model catalog:
 Current default policy:
 
 - **reference**: DreamerV3, TD-MPC2
-- **experimental**: JEPA, Token, Diffusion
+- **experimental**: JEPA, V-JEPA2, Token, Diffusion
 
 Promotion rule (experimental -> reference):
 

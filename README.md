@@ -51,7 +51,7 @@ Visualization of how different episodes traverse the learned latent space:
 ## Model Maturity Policy
 
 - **Reference**: DreamerV3, TD-MPC2 (release baseline)
-- **Experimental**: JEPA, Token, Diffusion (API/metrics may evolve)
+- **Experimental**: JEPA, V-JEPA2, Token, Diffusion (API/metrics may evolve)
 
 ## Extension Policy
 
@@ -238,6 +238,14 @@ trainer.train(buffer)
 | Preset | Parameters | Description |
 |--------|------------|-------------|
 | `jepa:base` | ~1M+ | Representation prediction |
+
+### V-JEPA2
+
+| Preset | Parameters | Description |
+|--------|------------|-------------|
+| `vjepa2:ci` | ~0.2M+ | CI smoke-test representation model |
+| `vjepa2:tiny` | ~1M+ | Lightweight predictive representation |
+| `vjepa2:base` | ~4M+ | Predictive representation baseline |
 
 ### Token
 

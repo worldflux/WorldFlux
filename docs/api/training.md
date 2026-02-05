@@ -38,7 +38,7 @@ trained_model = train(
 |-----------|------|---------|-------------|
 | `model` | `WorldModel` | required | Model to train |
 | `buffer` | `ReplayBuffer` or `BatchProvider` | required | Training data |
-| `total_steps` | `int` | `50_000` | Training steps |
+| `total_steps` | `int` | `100_000` | Training steps |
 | `batch_size` | `int` | `16` | Batch size |
 | `sequence_length` | `int` | `50` | Sequence length |
 | `learning_rate` | `float` | `3e-4` | Learning rate |
@@ -78,17 +78,17 @@ config = TrainingConfig(
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `total_steps` | `int` | `50_000` | Total training steps |
+| `total_steps` | `int` | `100_000` | Total training steps |
 | `batch_size` | `int` | `16` | Batch size |
 | `sequence_length` | `int` | `50` | Sequence length for BPTT |
 | `learning_rate` | `float` | `3e-4` | Adam learning rate |
 | `weight_decay` | `float` | `0.0` | L2 regularization |
 | `grad_clip` | `float` | `100.0` | Gradient clipping norm |
 | `warmup_steps` | `int` | `0` | Learning rate warmup |
-| `log_interval` | `int` | `1000` | Steps between logging |
-| `eval_interval` | `int` | `5000` | Steps between evaluation |
+| `log_interval` | `int` | `100` | Steps between logging |
+| `eval_interval` | `int` | `1000` | Steps between evaluation |
 | `save_interval` | `int` | `10000` | Steps between checkpoints |
-| `device` | `str` | `"cuda"` | Training device |
+| `device` | `str` | `"auto"` | Training device |
 | `seed` | `int` | `42` | Random seed |
 
 ---
@@ -119,7 +119,7 @@ trained_model = trainer.train(buffer)
 ```python
 from worldflux.training.callbacks import CheckpointCallback
 
-trainer.add_callback(CheckpointCallback(save_dir="./checkpoints"))
+trainer.add_callback(CheckpointCallback(output_dir="./checkpoints"))
 ```
 
 ---
@@ -203,8 +203,8 @@ TensorBoard/console logging.
 from worldflux.training.callbacks import LoggingCallback
 
 trainer.add_callback(LoggingCallback(
-    log_dir="./logs",
-    log_to_console=True,
+    log_interval=100,
+    use_wandb=False,
 ))
 ```
 
@@ -216,9 +216,9 @@ Periodic model saving.
 from worldflux.training.callbacks import CheckpointCallback
 
 trainer.add_callback(CheckpointCallback(
-    save_dir="./checkpoints",
-    save_every=10_000,
-    keep_last=3,
+    output_dir="./checkpoints",
+    save_interval=10_000,
+    max_checkpoints=3,
 ))
 ```
 
@@ -306,8 +306,8 @@ config = TrainingConfig(
 # Setup trainer
 trainer = Trainer(model, config)
 trainer.add_callback(ProgressCallback())
-trainer.add_callback(LoggingCallback(log_dir="./logs"))
-trainer.add_callback(CheckpointCallback(save_dir="./ckpt", save_every=10000))
+trainer.add_callback(LoggingCallback(log_interval=100))
+trainer.add_callback(CheckpointCallback(output_dir="./ckpt", save_interval=10000))
 
 # Train
 trained_model = trainer.train(buffer)
