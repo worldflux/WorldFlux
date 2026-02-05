@@ -7,10 +7,12 @@ from torch import Tensor
 
 from ..core.exceptions import CapabilityError
 from ..core.model import WorldModel
+from ..core.payloads import PLANNER_HORIZON_KEY, ActionPayload, ConditionPayload
 from ..core.state import State
+from .interfaces import Planner
 
 
-class CEMPlanner:
+class CEMPlanner(Planner):
     """Simple planner that ranks sampled action sequences by predicted reward."""
 
     def __init__(
@@ -42,7 +44,13 @@ class CEMPlanner:
             )
         return actions
 
-    def plan(self, model: WorldModel, state, device: torch.device | None = None) -> Tensor:
+    def plan(
+        self,
+        model: WorldModel,
+        state: State,
+        conditions: ConditionPayload | None = None,
+        device: torch.device | None = None,
+    ) -> ActionPayload:
         if not model.supports_reward:
             raise CapabilityError("Planner requires reward prediction capability")
         contract_fn = getattr(model, "io_contract", None)
@@ -90,8 +98,8 @@ class CEMPlanner:
             rewards = []
             step_state = rollout_state
             for t in range(self.horizon):
-                step_state = model.plan_step(step_state, actions[t])
-                step_output = model.sample_step(step_state)
+                step_state = model.plan_step(step_state, actions[t], conditions=conditions)
+                step_output = model.sample_step(step_state, conditions=conditions)
                 reward_t = step_output.preds.get("reward")
                 if reward_t is None:
                     raise CapabilityError("Planner requires reward prediction from sample_step")
@@ -103,4 +111,8 @@ class CEMPlanner:
             mean = elite.mean(dim=1)
             std = elite.std(dim=1).clamp_min(1e-3)
 
-        return mean
+        return ActionPayload(
+            kind="continuous",
+            tensor=mean,
+            extras={PLANNER_HORIZON_KEY: self.horizon},
+        )

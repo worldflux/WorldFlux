@@ -1,74 +1,69 @@
 # WorldModel Base Class
 
-All world models implement the `WorldModel` abstract base class.
+All world models implement the `WorldModel` base class.
 
-## Interface
+## Interface (v0.2)
 
 ```python
 class WorldModel(nn.Module, ABC):
-    def encode(self, obs: Tensor | dict[str, Tensor], deterministic: bool = False) -> State: ...
-    def transition(self, state: State, action: Tensor, deterministic: bool = False) -> State: ...
-    def update(self, state: State, action: Tensor, obs: Tensor | dict[str, Tensor]) -> State: ...
-    def decode(self, state: State) -> ModelOutput: ...
-    def rollout(self, initial_state: State, actions: Tensor, deterministic: bool = False) -> Trajectory: ...
+    def encode(self, obs: Tensor | dict[str, Tensor] | WorldModelInput, deterministic: bool = False) -> State: ...
+    def transition(
+        self,
+        state: State,
+        action: ActionPayload | Tensor | None,
+        conditions: ConditionPayload | None = None,
+        deterministic: bool = False,
+    ) -> State: ...
+    def update(
+        self,
+        state: State,
+        action: ActionPayload | Tensor | None,
+        obs: Tensor | dict[str, Tensor] | WorldModelInput,
+        conditions: ConditionPayload | None = None,
+    ) -> State: ...
+    def decode(self, state: State, conditions: ConditionPayload | None = None) -> ModelOutput: ...
+    def rollout(
+        self,
+        initial_state: State,
+        action_sequence: ActionSequence | ActionPayload | Tensor | None,
+        conditions: ConditionPayload | None = None,
+        deterministic: bool = False,
+        mode: str = "autoregressive",
+    ) -> Trajectory: ...
     def loss(self, batch: Batch) -> LossOutput: ...
 ```
 
-## Key Methods
+Legacy calls (`encode(obs)`, `transition(state, action_tensor)`) still work in `v0.2`.
 
-### encode
+`rollout(..., mode=...)` is deprecated in `v0.2` and removed in `v0.3`.
+Use planner strategies (`worldflux.planners`) for re-planning and tree-search behaviors.
 
-```python
-state = model.encode(obs)
-```
-
-### transition
+## Key Payload Types
 
 ```python
-next_state = model.transition(state, action)
+ActionPayload(kind, tensor=None, tokens=None, latent=None, text=None, extras={})
+ConditionPayload(text_condition=None, goal=None, spatial=None, camera_pose=None, extras={})
+WorldModelInput(observations, context, action, conditions)
 ```
 
-### update
+Planner payload metadata:
 
-```python
-next_state = model.update(state, action, obs)
-```
+- canonical key: `extras["wf.planner.horizon"]` (`int >= 1`)
+- legacy key: `extras["wf.planner.sequence"]` (deprecated in v0.2, removed in v0.3)
+- helper APIs: `normalize_planned_action(...)`, `first_action(...)`
 
-### decode
+## ModelOutput
 
-```python
-output = model.decode(state)
-preds = output.preds
-```
+`ModelOutput` now uses `predictions` as canonical field, with `preds` kept as a compatibility alias.
 
-`ModelOutput` contains:
-
-- `preds`: model predictions (e.g. `obs`, `reward`, `continue`, `q_values`)
+- `predictions`: model predictions (`obs`, `reward`, `continue`, `q_values`, ...)
 - `state`: optional state
+- `uncertainty`: optional uncertainty tensor
 - `aux`: optional metadata
-
-### rollout
-
-```python
-trajectory = model.rollout(initial_state, actions)
-```
-
-### loss
-
-```python
-loss_out = model.loss(batch)
-```
-
-`LossOutput` contains:
-
-- `loss`: scalar training loss
-- `components`: individual loss terms
-- `metrics`: float metrics for logging
 
 ## Capabilities
 
-Some models do not predict rewards or continuation probabilities. Use capability
-helpers to branch safely:
+Use capability helpers to branch safely:
 
 ```python
 if model.supports_reward:
@@ -79,18 +74,20 @@ if model.supports_continue:
 
 ## Batch Format
 
-Training uses the `Batch` container:
+`Batch` supports both legacy and universal forms in `v0.2`:
 
 ```python
 batch = Batch(
+    # legacy
     obs=...,
     actions=...,
     rewards=...,
     terminations=...,
-    mask=...,
-    context=...,
-    target=...,
-    extras=...,
+    # universal
+    inputs={...},
+    targets={...},
+    conditions={...},
+    extras={...},
 )
 ```
 

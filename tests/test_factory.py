@@ -28,6 +28,8 @@ class TestListModels:
         assert "tdmpc2:5m" in models
         assert "jepa:base" in models
         assert "vjepa2:base" in models
+        assert "dit:base" in models
+        assert "ssm:base" in models
 
     def test_list_models_verbose(self):
         """list_models with verbose returns detailed info."""
@@ -155,6 +157,25 @@ class TestCreateWorldModel:
     def test_create_vjepa2_basic(self):
         model = create_world_model("vjepa2:base", obs_shape=(4,), action_dim=1)
         assert isinstance(model, VJEPA2WorldModel)
+
+    def test_create_with_api_version_v3(self):
+        model = create_world_model("tdmpc2:ci", obs_shape=(4,), action_dim=2, api_version="v3")
+        assert model.config.model_type == "tdmpc2"
+        assert getattr(model, "_wf_api_version", None) == "v3"
+
+    def test_create_with_hybrid_action_rejected_in_v3(self):
+        with pytest.raises(ValueError, match="hybrid"):
+            create_world_model(
+                "tdmpc2:ci",
+                obs_shape=(4,),
+                action_dim=2,
+                api_version="v3",
+                action_spec={"kind": "hybrid", "dim": 2},
+            )
+
+    def test_create_with_invalid_api_version_raises(self):
+        with pytest.raises(ValueError, match="Unsupported api_version"):
+            create_world_model("tdmpc2:ci", obs_shape=(4,), action_dim=2, api_version="vX")
 
 
 class TestModelAliases:

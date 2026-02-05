@@ -44,6 +44,8 @@ Visualization of how different episodes traverse the learned latent space:
 ## Features
 
 - **Unified API**: Common interface across DreamerV3, TD-MPC2, and more
+- **Universal Payload Layer (v0.2)**: `ActionPayload` / `ConditionPayload` for polymorphic conditioning
+- **Planner Contract (v0.2+)**: planners return `ActionPayload` with `extras["wf.planner.horizon"]`
 - **Simple Usage**: One-liner model creation with `create_world_model()`
 - **Training Infrastructure**: Complete training loop with callbacks, checkpointing, and logging
 - **Type Safe**: Full type annotations and mypy compatibility
@@ -52,6 +54,7 @@ Visualization of how different episodes traverse the learned latent space:
 
 - **Reference**: DreamerV3, TD-MPC2 (release baseline)
 - **Experimental**: JEPA, V-JEPA2, Token, Diffusion (API/metrics may evolve)
+- **Experimental Skeletons**: DiT, SSM, Renderer3D, Physics, GAN (contract and integration validation)
 
 ## Extension Policy
 
@@ -154,6 +157,19 @@ model = create_world_model("dreamerv3:size12m")
 
 # TD-MPC2 (state observations)
 model = create_world_model("tdmpc2:5m", obs_shape=(39,), action_dim=6)
+```
+
+### Universal Payload Usage (v0.2)
+
+```python
+from worldflux import ActionPayload, ConditionPayload
+
+state = model.encode(obs)
+next_state = model.transition(
+    state,
+    ActionPayload(kind="continuous", tensor=action),
+    conditions=ConditionPayload(goal=goal_tensor),
+)
 ```
 
 ### Imagination Rollout

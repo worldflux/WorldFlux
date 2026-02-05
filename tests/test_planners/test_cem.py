@@ -5,6 +5,11 @@ import torch
 from worldflux.core.batch import Batch
 from worldflux.core.model import WorldModel
 from worldflux.core.output import LossOutput, ModelOutput
+from worldflux.core.payloads import (
+    PLANNER_HORIZON_KEY,
+    ActionPayload,
+    normalize_planned_action,
+)
 from worldflux.core.spec import Capability
 from worldflux.core.state import State
 from worldflux.planners import CEMPlanner
@@ -38,8 +43,12 @@ def test_cem_planner_returns_actions():
     model = DummyRewardModel(action_dim=3)
     planner = CEMPlanner(horizon=5, action_dim=3, num_samples=32, num_elites=8, iterations=1)
     init_state = model.encode(torch.zeros(1, 4))
-    actions = planner.plan(model, init_state)
-    assert actions.shape == (5, 3)
+    planned = planner.plan(model, init_state)
+    assert isinstance(planned, ActionPayload)
+    assert planned.extras[PLANNER_HORIZON_KEY] == 5
+    seq = normalize_planned_action(planned, api_version="v0.2")
+    assert seq.tensor is not None
+    assert seq.tensor.shape == (5, 1, 3)
 
 
 def test_cem_planner_respects_action_bounds():
@@ -54,6 +63,8 @@ def test_cem_planner_respects_action_bounds():
         action_high=0.1,
     )
     init_state = model.encode(torch.zeros(1, 4))
-    actions = planner.plan(model, init_state)
-    assert torch.all(actions <= 0.10001)
-    assert torch.all(actions >= -0.10001)
+    planned = planner.plan(model, init_state)
+    seq = normalize_planned_action(planned, api_version="v0.2")
+    assert seq.tensor is not None
+    assert torch.all(seq.tensor <= 0.10001)
+    assert torch.all(seq.tensor >= -0.10001)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import warnings
 from abc import ABC, abstractmethod
 
 import torch
@@ -11,7 +12,22 @@ from torch import Tensor
 
 from .batch import Batch
 from .exceptions import CapabilityError, ValidationError
+from .interfaces import (
+    ActionConditioner,
+    Decoder,
+    DynamicsModel,
+    ObservationEncoder,
+    RolloutEngine,
+    RolloutExecutor,
+)
 from .output import LossOutput, ModelOutput
+from .payloads import (
+    ActionPayload,
+    ActionSequence,
+    ConditionPayload,
+    WorldModelInput,
+    normalize_planned_action,
+)
 from .spec import (
     ActionSpec,
     Capability,
@@ -35,6 +51,18 @@ class WorldModel(nn.Module, ABC):
     def __init__(self) -> None:
         super().__init__()
         self.capabilities = set()
+
+        # Universal pluggable components (v0.2).
+        self.observation_encoder: ObservationEncoder | None = None
+        self.action_conditioner: ActionConditioner | None = None
+        self.dynamics_model: DynamicsModel | None = None
+        self.decoder_module: Decoder | None = None
+        self.rollout_executor: RolloutExecutor | None = None
+        # Deprecated compatibility alias retained in v0.2.
+        self.rollout_engine: RolloutEngine | None = None
+
+    def _get_api_version(self) -> str:
+        return str(getattr(self, "_wf_api_version", "v0.2"))
 
     def supports(self, capability: Capability) -> bool:
         """Return True if the model advertises a capability."""
@@ -69,10 +97,24 @@ class WorldModel(nn.Module, ABC):
             return None
 
         root = parts[0]
+
+        # Primary lookup across legacy and v0.2 generic containers.
         if hasattr(batch, root):
             current = getattr(batch, root)
+        elif root == "inputs":
+            current = batch.inputs
+        elif root == "targets":
+            current = batch.targets
+        elif root == "conditions":
+            current = batch.conditions
         elif root == "extras":
             current = batch.extras
+        elif root in batch.inputs:
+            current = batch.inputs.get(root)
+        elif root in batch.targets:
+            current = batch.targets.get(root)
+        elif root in batch.conditions:
+            current = batch.conditions.get(root)
         else:
             current = batch.extras.get(root)
 
@@ -86,6 +128,63 @@ class WorldModel(nn.Module, ABC):
     def has_batch_key(cls, batch: Batch, key: str) -> bool:
         return cls._resolve_batch_key(batch, key) is not None
 
+    @staticmethod
+    def coerce_action_payload(action: ActionPayload | Tensor | None) -> ActionPayload | None:
+        if action is None:
+            return None
+        if isinstance(action, ActionPayload):
+            return action
+        if isinstance(action, Tensor):
+            return ActionPayload(kind="continuous", tensor=action)
+        raise TypeError(f"Unsupported action type: {type(action)}")
+
+    @staticmethod
+    def coerce_condition_payload(
+        conditions: ConditionPayload | dict[str, Tensor] | None,
+    ) -> ConditionPayload:
+        if conditions is None:
+            return ConditionPayload()
+        if isinstance(conditions, ConditionPayload):
+            return conditions
+        if isinstance(conditions, dict):
+            return ConditionPayload(extras=dict(conditions))
+        raise TypeError(f"Unsupported conditions type: {type(conditions)}")
+
+    def _validate_condition_payload(self, conditions: ConditionPayload) -> None:
+        contract = self.io_contract()
+        allowed = set(contract.condition_spec.allowed_extra_keys)
+        api_version = self._get_api_version()
+        strict = api_version == "v3"
+        try:
+            conditions.validate(
+                strict=strict,
+                allowed_extra_keys=allowed if (strict or allowed) else None,
+                api_version=api_version,
+            )
+        except ValueError as e:
+            raise ValidationError(str(e)) from e
+
+    @staticmethod
+    def action_tensor_or_none(action: ActionPayload | Tensor | None) -> Tensor | None:
+        payload = WorldModel.coerce_action_payload(action)
+        if payload is None:
+            return None
+        if payload.tensor is not None:
+            return payload.tensor
+        if payload.tokens is not None:
+            return payload.tokens
+        if payload.latent is not None:
+            return payload.latent
+        return None
+
+    @staticmethod
+    def _coerce_world_input(obs: Tensor | dict[str, Tensor] | WorldModelInput) -> WorldModelInput:
+        if isinstance(obs, WorldModelInput):
+            return obs
+        if isinstance(obs, dict):
+            return WorldModelInput(observations=obs)
+        return WorldModelInput(observations={"obs": obs})
+
     def validate_batch_contract(self, batch: Batch) -> None:
         """Validate batch keys/layouts against model I/O contract."""
         contract = self.io_contract()
@@ -98,6 +197,17 @@ class WorldModel(nn.Module, ABC):
                 f"Batch is missing required batch keys: {missing}. "
                 f"Required: {list(contract.required_batch_keys)}"
             )
+
+        if batch.strict_layout and batch.conditions:
+            declared = set(contract.condition_spec.modalities.keys()) | set(
+                contract.condition_spec.allowed_extra_keys
+            )
+            unknown = [k for k in batch.conditions.keys() if k not in declared]
+            if unknown:
+                raise ValidationError(
+                    "Batch.conditions contains undeclared keys under strict layout mode: "
+                    f"{sorted(unknown)}"
+                )
 
     def validate_state_contract(self, state: State) -> None:
         """Validate state tensor keys/shapes against model I/O contract."""
@@ -153,6 +263,10 @@ class WorldModel(nn.Module, ABC):
 
         return ModelIOContract(
             observation_spec=obs_spec,
+            input_spec=obs_spec,
+            target_spec=ObservationSpec(
+                modalities={"next_obs": ModalitySpec(kind=obs_kind, shape=obs_shape or (1,))}
+            ),
             action_spec=action_spec,
             state_spec=state_spec,
             prediction_spec=PredictionSpec(tensors=prediction_tensors),
@@ -170,34 +284,100 @@ class WorldModel(nn.Module, ABC):
             required_state_keys=(),
         )
 
-    @abstractmethod
-    def encode(self, obs: Tensor | dict[str, Tensor], deterministic: bool = False) -> State:
+    def encode(
+        self,
+        obs: Tensor | dict[str, Tensor] | WorldModelInput,
+        deterministic: bool = False,
+    ) -> State:
         """Encode observation to latent state."""
-        ...
+        if self.observation_encoder is None:
+            raise NotImplementedError(
+                f"{self.__class__.__name__}.encode(...) is not implemented and no observation_encoder is attached"
+            )
+        world_input = self._coerce_world_input(obs)
+        return self.observation_encoder.encode(world_input.observations)
 
-    @abstractmethod
-    def transition(self, state: State, action: Tensor, deterministic: bool = False) -> State:
+    def transition(
+        self,
+        state: State,
+        action: ActionPayload | Tensor | None,
+        conditions: ConditionPayload | None = None,
+        deterministic: bool = False,
+    ) -> State:
         """Predict next state (prior/imagination)."""
-        ...
+        if self.dynamics_model is None:
+            raise NotImplementedError(
+                f"{self.__class__.__name__}.transition(...) is not implemented and no dynamics_model is attached"
+            )
 
-    @abstractmethod
-    def update(self, state: State, action: Tensor, obs: Tensor | dict[str, Tensor]) -> State:
+        action_payload = self.coerce_action_payload(action)
+        if action_payload is not None:
+            action_payload.validate(api_version=self._get_api_version())
+        condition_payload = self.coerce_condition_payload(conditions)
+        self._validate_condition_payload(condition_payload)
+        conditioned: dict[str, Tensor] = {}
+
+        if self.action_conditioner is not None:
+            conditioned.update(
+                self.action_conditioner.condition(state, action_payload, condition_payload)
+            )
+
+        action_tensor = self.action_tensor_or_none(action_payload)
+        if action_tensor is not None and "action" not in conditioned:
+            conditioned["action"] = action_tensor
+
+        return self.dynamics_model.transition(state, conditioned, deterministic=deterministic)
+
+    def update(
+        self,
+        state: State,
+        action: ActionPayload | Tensor | None,
+        obs: Tensor | dict[str, Tensor] | WorldModelInput,
+        conditions: ConditionPayload | None = None,
+    ) -> State:
         """Update state with observation (posterior)."""
-        ...
+        del state, action, conditions
+        warnings.warn(
+            "Calling default WorldModel.update(...). This fallback re-encodes observations and "
+            "should be overridden by stateful posterior models.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.encode(obs)
 
-    @abstractmethod
-    def decode(self, state: State) -> ModelOutput:
+    def decode(self, state: State, conditions: ConditionPayload | None = None) -> ModelOutput:
         """Decode latent state to predictions."""
-        ...
+        condition_payload = self.coerce_condition_payload(conditions)
+        self._validate_condition_payload(condition_payload)
+        if self.decoder_module is None:
+            raise CapabilityError(f"{self.__class__.__name__} does not expose a decoder component")
+        preds = self.decoder_module.decode(state, conditions=condition_payload)
+        return ModelOutput(predictions=preds, state=state)
 
-    def plan_step(self, state: State, action: Tensor, deterministic: bool = False) -> State:
+    def plan_step(
+        self,
+        state: State,
+        action: ActionPayload | Tensor | None,
+        conditions: ConditionPayload | None = None,
+        deterministic: bool = False,
+    ) -> State:
         """Optional planner hook. Default delegates to transition()."""
-        return self.transition(state, action, deterministic=deterministic)
+        try:
+            return self.transition(
+                state,
+                action,
+                conditions=conditions,
+                deterministic=deterministic,
+            )
+        except TypeError:
+            # Backward compatibility for subclasses overriding transition(state, action, deterministic)
+            return self.transition(state, action, deterministic=deterministic)  # type: ignore[misc]
 
     def sample_step(
         self,
         state: State,
-        action: Tensor | None = None,
+        action: ActionPayload | Tensor | None = None,
+        conditions: ConditionPayload | None = None,
         deterministic: bool = False,
     ) -> ModelOutput:
         """
@@ -206,44 +386,137 @@ class WorldModel(nn.Module, ABC):
         If an action is provided, transition first then decode. Otherwise decode state.
         """
         if action is None:
-            return self.decode(state)
-        next_state = self.transition(state, action, deterministic=deterministic)
-        return self.decode(next_state)
+            try:
+                return self.decode(state, conditions=conditions)
+            except TypeError:
+                # Backward compatibility for subclasses overriding decode(state).
+                return self.decode(state)  # type: ignore[misc]
+        next_state = self.transition(
+            state, action, conditions=conditions, deterministic=deterministic
+        )
+        try:
+            return self.decode(next_state, conditions=conditions)
+        except TypeError:
+            # Backward compatibility for subclasses overriding decode(state).
+            return self.decode(next_state)  # type: ignore[misc]
 
     def teacher_forcing_step(
         self,
         state: State,
-        action: Tensor,
-        obs: Tensor | dict[str, Tensor],
+        action: ActionPayload | Tensor | None,
+        obs: Tensor | dict[str, Tensor] | WorldModelInput,
+        conditions: ConditionPayload | None = None,
     ) -> State:
         """Optional training hook. Default delegates to update()."""
-        return self.update(state, action, obs)
+        return self.update(state, action, obs, conditions=conditions)
+
+    @staticmethod
+    def _action_from_sequence(
+        action_sequence: ActionSequence | Tensor | None,
+        step: int,
+    ) -> ActionPayload | Tensor | None:
+        if action_sequence is None:
+            return None
+        if isinstance(action_sequence, Tensor):
+            return action_sequence[step]
+        if action_sequence.tensor is not None:
+            return action_sequence.tensor[step]
+        if action_sequence.payloads is not None:
+            return action_sequence.payloads[step]
+        return None
 
     def rollout(
-        self, initial_state: State, actions: Tensor, deterministic: bool = False
+        self,
+        initial_state: State,
+        action_sequence: ActionSequence | ActionPayload | Tensor | None,
+        conditions: ConditionPayload | None = None,
+        deterministic: bool = False,
+        mode: str = "autoregressive",
     ) -> Trajectory:
         """Default rollout implementation using transition + decode."""
-        horizon = actions.shape[0]
+        api_version = self._get_api_version()
+        if mode != "autoregressive":
+            msg = (
+                "rollout(..., mode=...) is deprecated in v0.2 and will be removed in v0.3. "
+                "Use planner strategies for re-planning/tree-search."
+            )
+            if api_version == "v3":
+                raise ValueError(msg)
+            warnings.warn(msg, DeprecationWarning, stacklevel=2)
+
+        condition_payload = self.coerce_condition_payload(conditions)
+        self._validate_condition_payload(condition_payload)
+
+        if isinstance(action_sequence, ActionPayload):
+            action_sequence = normalize_planned_action(action_sequence, api_version=api_version)
+
+        if self.rollout_executor is not None:
+            return self.rollout_executor.rollout_open_loop(
+                self,
+                initial_state,
+                action_sequence.tensor
+                if isinstance(action_sequence, ActionSequence)
+                else action_sequence,
+                conditions=condition_payload,
+                deterministic=deterministic,
+            )
+        if self.rollout_engine is not None:
+            warnings.warn(
+                "rollout_engine is deprecated in v0.2; attach rollout_executor instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            return self.rollout_engine.rollout(
+                self,
+                initial_state,
+                action_sequence.tensor
+                if isinstance(action_sequence, ActionSequence)
+                else action_sequence,
+                conditions=condition_payload,
+                deterministic=deterministic,
+                mode="autoregressive",
+            )
+
+        if isinstance(action_sequence, Tensor):
+            horizon = int(action_sequence.shape[0])
+            actions_tensor: Tensor | None = action_sequence
+        elif isinstance(action_sequence, ActionSequence) and action_sequence.tensor is not None:
+            horizon = int(action_sequence.tensor.shape[0])
+            actions_tensor = action_sequence.tensor
+        elif isinstance(action_sequence, ActionSequence) and action_sequence.payloads is not None:
+            horizon = len(action_sequence.payloads)
+            actions_tensor = None
+        else:
+            horizon = 0
+            actions_tensor = None
+
         states = [initial_state]
         rewards = []
         continues = []
 
         state = initial_state
         for t in range(horizon):
-            state = self.transition(state, actions[t], deterministic=deterministic)
+            action_t = self._action_from_sequence(action_sequence, t)
+            state = self.transition(
+                state, action_t, conditions=condition_payload, deterministic=deterministic
+            )
             states.append(state)
-            decoded = self.decode(state)
-            if "reward" in decoded.preds:
-                rewards.append(decoded.preds["reward"])
-            if "continue" in decoded.preds:
-                continues.append(decoded.preds["continue"])
+            decoded = self.decode(state, conditions=condition_payload)
+            if "reward" in decoded.predictions:
+                rewards.append(decoded.predictions["reward"])
+            if "continue" in decoded.predictions:
+                continues.append(decoded.predictions["continue"])
 
         rewards_t = torch.stack(rewards, dim=0).squeeze(-1) if rewards else None
         continues_t = torch.stack(continues, dim=0).squeeze(-1) if continues else None
 
+        if actions_tensor is None:
+            batch = initial_state.batch_size
+            actions_tensor = torch.zeros(horizon, batch, 0, device=initial_state.device)
+
         return Trajectory(
             states=states,
-            actions=actions,
+            actions=actions_tensor,
             rewards=rewards_t,
             continues=continues_t,
         )

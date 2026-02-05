@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import warnings
 from dataclasses import asdict, dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -158,9 +159,15 @@ class WorldModelConfig:
                 config_name=self.model_name,
             )
 
-        if self.action_dim <= 0:
+        if self.action_type in {"continuous", "discrete", "token", "latent", "hybrid"}:
+            if self.action_dim <= 0:
+                raise ConfigurationError(
+                    f"action_dim must be positive for action_type={self.action_type!r}, got {self.action_dim}",
+                    config_name=self.model_name,
+                )
+        elif self.action_dim < 0:
             raise ConfigurationError(
-                f"action_dim must be positive, got {self.action_dim}",
+                f"action_dim must be non-negative, got {self.action_dim}",
                 config_name=self.model_name,
             )
 
@@ -182,10 +189,25 @@ class WorldModelConfig:
                 config_name=self.model_name,
             )
 
-        if self.action_type not in ("continuous", "discrete"):
+        valid_action_types = {
+            "none",
+            "continuous",
+            "discrete",
+            "token",
+            "latent",
+            "text",
+            "hybrid",
+        }
+        if self.action_type not in valid_action_types:
             raise ConfigurationError(
-                f"action_type must be 'continuous' or 'discrete', got {self.action_type!r}",
+                f"action_type must be one of {sorted(valid_action_types)}, got {self.action_type!r}",
                 config_name=self.model_name,
+            )
+        if self.action_type == "hybrid":
+            warnings.warn(
+                "action_type='hybrid' is deprecated in v0.2 and will be removed in v0.3.",
+                DeprecationWarning,
+                stacklevel=2,
             )
 
         if self.dtype not in ("float32", "float16", "bfloat16"):
@@ -867,6 +889,7 @@ class DiffusionWorldModelConfig(WorldModelConfig):
     beta_start: float = 1e-4
     beta_end: float = 0.02
     prediction_target: str = "noise"
+    action_conditioner: str = "none"
 
     def _validate(self) -> None:
         super()._validate()
@@ -890,6 +913,11 @@ class DiffusionWorldModelConfig(WorldModelConfig):
                 f"prediction_target must be 'noise' or 'x0', got {self.prediction_target!r}",
                 config_name=self.model_name,
             )
+        if self.action_conditioner not in {"none", "adaln", "adagn"}:
+            raise ConfigurationError(
+                f"action_conditioner must be one of ['none', 'adaln', 'adagn'], got {self.action_conditioner!r}",
+                config_name=self.model_name,
+            )
 
     @classmethod
     def from_size(cls, size: str, **kwargs: Any) -> DiffusionWorldModelConfig:
@@ -897,6 +925,120 @@ class DiffusionWorldModelConfig(WorldModelConfig):
             "ci": {"hidden_dim": 32, "diffusion_steps": 1},
             "tiny": {"hidden_dim": 64, "diffusion_steps": 2},
             "base": {"hidden_dim": 256, "diffusion_steps": 4},
+        }
+        if size not in presets:
+            raise ValueError(f"Unknown size: {size}. Available: {list(presets.keys())}")
+        preset = presets[size]
+        preset.update(kwargs)
+        return cls(model_name=size, **preset)
+
+
+@dataclass
+class DiTSkeletonConfig(WorldModelConfig):
+    """Configuration for DiT skeleton family."""
+
+    model_type: str = "dit"
+    dynamics_type: DynamicsType = DynamicsType.TRANSFORMER
+    patch_size: int = 2
+    num_layers: int = 4
+    num_heads: int = 4
+
+    @classmethod
+    def from_size(cls, size: str, **kwargs: Any) -> DiTSkeletonConfig:
+        presets: dict[str, dict[str, Any]] = {
+            "ci": {"hidden_dim": 32, "num_layers": 1, "num_heads": 1},
+            "tiny": {"hidden_dim": 64, "num_layers": 2, "num_heads": 2},
+            "base": {"hidden_dim": 256, "num_layers": 4, "num_heads": 4},
+        }
+        if size not in presets:
+            raise ValueError(f"Unknown size: {size}. Available: {list(presets.keys())}")
+        preset = presets[size]
+        preset.update(kwargs)
+        return cls(model_name=size, **preset)
+
+
+@dataclass
+class SSMSkeletonConfig(WorldModelConfig):
+    """Configuration for SSM/Mamba skeleton family."""
+
+    model_type: str = "ssm"
+    dynamics_type: DynamicsType = DynamicsType.SSM
+    ssm_state_dim: int = 64
+    num_layers: int = 4
+
+    @classmethod
+    def from_size(cls, size: str, **kwargs: Any) -> SSMSkeletonConfig:
+        presets: dict[str, dict[str, Any]] = {
+            "ci": {"hidden_dim": 32, "ssm_state_dim": 16, "num_layers": 1},
+            "tiny": {"hidden_dim": 64, "ssm_state_dim": 32, "num_layers": 2},
+            "base": {"hidden_dim": 256, "ssm_state_dim": 64, "num_layers": 4},
+        }
+        if size not in presets:
+            raise ValueError(f"Unknown size: {size}. Available: {list(presets.keys())}")
+        preset = presets[size]
+        preset.update(kwargs)
+        return cls(model_name=size, **preset)
+
+
+@dataclass
+class Renderer3DSkeletonConfig(WorldModelConfig):
+    """Configuration for NeRF/3DGS skeleton family."""
+
+    model_type: str = "renderer3d"
+    latent_type: LatentType = LatentType.GAUSSIAN
+    ray_dim: int = 6
+    feature_dim: int = 64
+
+    @classmethod
+    def from_size(cls, size: str, **kwargs: Any) -> Renderer3DSkeletonConfig:
+        presets: dict[str, dict[str, Any]] = {
+            "ci": {"hidden_dim": 32, "feature_dim": 16},
+            "tiny": {"hidden_dim": 64, "feature_dim": 32},
+            "base": {"hidden_dim": 256, "feature_dim": 64},
+        }
+        if size not in presets:
+            raise ValueError(f"Unknown size: {size}. Available: {list(presets.keys())}")
+        preset = presets[size]
+        preset.update(kwargs)
+        return cls(model_name=size, **preset)
+
+
+@dataclass
+class PhysicsSkeletonConfig(WorldModelConfig):
+    """Configuration for physics-simulator skeleton family."""
+
+    model_type: str = "physics"
+    integrator: str = "semi_implicit_euler"
+    state_dim: int = 64
+
+    @classmethod
+    def from_size(cls, size: str, **kwargs: Any) -> PhysicsSkeletonConfig:
+        presets: dict[str, dict[str, Any]] = {
+            "ci": {"hidden_dim": 32, "state_dim": 16},
+            "tiny": {"hidden_dim": 64, "state_dim": 32},
+            "base": {"hidden_dim": 256, "state_dim": 64},
+        }
+        if size not in presets:
+            raise ValueError(f"Unknown size: {size}. Available: {list(presets.keys())}")
+        preset = presets[size]
+        preset.update(kwargs)
+        return cls(model_name=size, **preset)
+
+
+@dataclass
+class GANSkeletonConfig(WorldModelConfig):
+    """Configuration for GAN-style skeleton family."""
+
+    model_type: str = "gan"
+    generator_dim: int = 128
+    discriminator_dim: int = 128
+
+    @classmethod
+    def from_size(cls, size: str, **kwargs: Any) -> GANSkeletonConfig:
+        presets: dict[str, dict[str, Any]] = {
+            "ci": {"hidden_dim": 32, "generator_dim": 32, "discriminator_dim": 32},
+            "tiny": {"hidden_dim": 64, "generator_dim": 64, "discriminator_dim": 64},
+            "base": {"hidden_dim": 256, "generator_dim": 128, "discriminator_dim": 128},
         }
         if size not in presets:
             raise ValueError(f"Unknown size: {size}. Available: {list(presets.keys())}")

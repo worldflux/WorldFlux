@@ -18,6 +18,7 @@ All PRs must pass:
   - `python examples/train_diffusion_model.py --steps 5 --batch-size 4 --obs-dim 4 --action-dim 2`
   - `python examples/plan_cem.py --horizon 3 --action-dim 2`
 - **Docs build**: `mkdocs build`
+- **Planner boundary tests**: verify planner/dynamics decoupling invariants
 
 ## Reproducibility Gates (Nightly / Release)
 
@@ -49,6 +50,14 @@ All PRs must pass:
 - **V-JEPA2 family**:
   - representation prediction loss trend
   - finite context/target/mask pipelines
+- **Skeleton families** (DiT/SSM/Renderer3D/Physics/GAN):
+  - contract validation pass
+  - trainer 1-step smoke pass
+  - no core modifications required when adding additional family variants
+
+- **Planner boundary gates**:
+  - planner returns `ActionPayload` with `extras["wf.planner.horizon"]`
+  - dynamics family swap does not require planner code changes
 
 ## Recommended Threshold Defaults
 
@@ -56,6 +65,7 @@ These can be tightened over time:
 
 - Loss decrease: **≥10%** within **2,000 steps** on bundled datasets.
 - Seed variance: **≤10%** on main loss components.
+- Extensibility gate: new category integrations should be additive to `src/worldflux/models/` only.
 
 ## Output Schema (Summary)
 

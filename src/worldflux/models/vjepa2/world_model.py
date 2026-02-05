@@ -11,6 +11,7 @@ from ...core.batch import Batch
 from ...core.config import VJEPA2Config
 from ...core.model import WorldModel
 from ...core.output import LossOutput, ModelOutput
+from ...core.payloads import ActionPayload, ConditionPayload, WorldModelInput
 from ...core.registry import WorldModelRegistry
 from ...core.spec import (
     ActionSpec,
@@ -54,6 +55,8 @@ class VJEPA2WorldModel(WorldModel):
             nn.Linear(config.encoder_dim, config.projection_dim),
             nn.GELU(),
         )
+        self.action_predictor = nn.Linear(max(1, config.action_dim), config.projection_dim)
+        self.action_conditioner_mode = "none"
 
     def io_contract(self) -> ModelIOContract:
         obs_kind = ModalityKind.IMAGE if len(self.config.obs_shape) == 3 else ModalityKind.VECTOR
@@ -147,7 +150,14 @@ class VJEPA2WorldModel(WorldModel):
             flat = mask.reshape(-1, 1)
         return flat.to(dtype=torch.float32)
 
-    def encode(self, obs: Tensor | dict[str, Tensor], deterministic: bool = False) -> State:
+    def encode(
+        self,
+        obs: Tensor | dict[str, Tensor] | WorldModelInput,
+        deterministic: bool = False,
+    ) -> State:
+        del deterministic
+        if isinstance(obs, WorldModelInput):
+            obs = obs.observations
         obs_tensor = self._extract_tensor(obs, keys=("obs", "context"), error_label="obs")
         flat, _ = self._flatten_observation(obs_tensor)
         rep = self.encoder(flat)
@@ -162,23 +172,77 @@ class VJEPA2WorldModel(WorldModel):
         for param in self.encoder.parameters():
             param.requires_grad = trainable
 
-    def transition(self, state: State, action: Tensor, deterministic: bool = False) -> State:
+    def set_action_conditioner(self, mode: str) -> None:
+        """Switch action conditioning mode for representation prediction."""
+        if mode not in {"none", "latent"}:
+            raise ValueError(f"Unsupported action conditioner mode: {mode}")
+        self.action_conditioner_mode = mode
+
+    def transition(
+        self,
+        state: State,
+        action: ActionPayload | Tensor | None,
+        conditions: ConditionPayload | None = None,
+        deterministic: bool = False,
+    ) -> State:
         # Action-conditioned transitions are intentionally deferred for this experimental release.
+        del action, conditions, deterministic
         return state
 
-    def update(self, state: State, action: Tensor, obs: Tensor | dict[str, Tensor]) -> State:
+    def update(
+        self,
+        state: State,
+        action: ActionPayload | Tensor | None,
+        obs: Tensor | dict[str, Tensor] | WorldModelInput,
+        conditions: ConditionPayload | None = None,
+    ) -> State:
+        del state, action, conditions
         return self.encode(obs)
 
-    def decode(self, state: State) -> ModelOutput:
+    def decode(self, state: State, conditions: ConditionPayload | None = None) -> ModelOutput:
+        del conditions
         rep = state.tensors.get("rep")
         if rep is None:
             raise ValueError("V-JEPA2 state requires 'rep'")
         projected = self.projector(rep)
-        return ModelOutput(preds={"representation": projected})
+        return ModelOutput(predictions={"representation": projected})
+
+    @staticmethod
+    def _flatten_action_like(action: Tensor, lead_shape: tuple[int, ...]) -> Tensor:
+        if tuple(action.shape[: len(lead_shape)]) != lead_shape:
+            raise ValueError(
+                f"latent action lead-shape mismatch: expected {lead_shape}, got {tuple(action.shape)}"
+            )
+        tail = action.shape[len(lead_shape) :]
+        if not tail:
+            return action.reshape(-1, 1).to(dtype=torch.float32)
+        feat_dim = int(torch.prod(torch.tensor(tail)).item())
+        return action.reshape(-1, feat_dim).to(dtype=torch.float32)
+
+    def _match_action_features(self, action: Tensor) -> Tensor:
+        in_features = self.action_predictor.in_features
+        last_dim = action.shape[-1]
+        if last_dim == in_features:
+            return action
+        if last_dim > in_features:
+            return action[..., :in_features]
+        pad_shape = (*action.shape[:-1], in_features - last_dim)
+        pad = torch.zeros(pad_shape, device=action.device, dtype=action.dtype)
+        return torch.cat([action, pad], dim=-1)
 
     def loss(self, batch: Batch) -> LossOutput:
         context_raw = batch.context if batch.context is not None else batch.obs
-        target_raw = batch.target if batch.target is not None else batch.next_obs or batch.obs
+        if context_raw is None:
+            raise ValueError("V-JEPA2 loss requires context or obs")
+
+        if batch.target is not None:
+            target_raw = batch.target
+        elif batch.next_obs is not None:
+            target_raw = batch.next_obs
+        elif batch.obs is not None:
+            target_raw = batch.obs
+        else:
+            raise ValueError("V-JEPA2 loss requires target, next_obs, or obs")
 
         context_tensor = self._extract_tensor(
             context_raw,
@@ -202,6 +266,20 @@ class VJEPA2WorldModel(WorldModel):
 
         with torch.no_grad():
             target_rep = self.projector(self.encoder(target_flat))
+
+        if self.action_conditioner_mode == "latent":
+            latent_action = None
+            if batch.actions is not None:
+                latent_action = batch.actions
+            elif "latent_action" in batch.conditions and isinstance(
+                batch.conditions["latent_action"], Tensor
+            ):
+                latent_action = batch.conditions["latent_action"]
+            if latent_action is not None:
+                action_flat = self._flatten_action_like(latent_action, context_lead).to(
+                    device=pred.device
+                )
+                pred = pred + self.action_predictor(self._match_action_features(action_flat))
 
         if batch.mask is not None:
             mask = self._mask_to_flat(batch.mask, context_lead, pred.shape[1]).to(

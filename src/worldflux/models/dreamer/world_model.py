@@ -6,8 +6,10 @@ from torch import Tensor
 
 from ...core.batch import Batch
 from ...core.config import DreamerV3Config
+from ...core.interfaces import ActionConditioner, Decoder, DynamicsModel, ObservationEncoder
 from ...core.model import WorldModel
 from ...core.output import LossOutput, ModelOutput
+from ...core.payloads import ActionPayload, ConditionPayload, WorldModelInput
 from ...core.registry import WorldModelRegistry
 from ...core.spec import (
     ActionSpec,
@@ -25,6 +27,65 @@ from .decoder import CNNDecoder, MLPDecoder
 from .encoder import CNNEncoder, MLPEncoder
 from .heads import ContinueHead, RewardHead, symlog
 from .rssm import RSSM
+
+
+class _DreamerObservationEncoder(ObservationEncoder):
+    def __init__(self, model: "DreamerV3WorldModel"):
+        self.model = model
+
+    def encode(self, observations: dict[str, Tensor]) -> State:
+        obs = observations.get("obs")
+        if obs is None:
+            raise ValueError("DreamerV3 encoder requires 'obs'")
+        return self.model._encode_tensor(obs)
+
+
+class _DreamerActionConditioner(ActionConditioner):
+    def __init__(self, action_dim: int):
+        self.action_dim = action_dim
+
+    def condition(
+        self,
+        state: State,
+        action: ActionPayload | None,
+        conditions: ConditionPayload | None = None,
+    ) -> dict[str, Tensor]:
+        del state, conditions
+        if action is None:
+            return {}
+        if action.tensor is not None:
+            return {"action": action.tensor}
+        return {}
+
+
+class _DreamerDynamics(DynamicsModel):
+    def __init__(self, model: "DreamerV3WorldModel"):
+        self.model = model
+
+    def transition(
+        self, state: State, conditioned: dict[str, Tensor], deterministic: bool = False
+    ) -> State:
+        action = conditioned.get("action")
+        if action is None:
+            deter = state.tensors.get("deter")
+            if deter is None:
+                raise ValueError("DreamerV3 state missing 'deter'")
+            action = torch.zeros(deter.shape[0], self.model.config.action_dim, device=deter.device)
+        return self.model.rssm.prior_step(state, action, deterministic=deterministic)
+
+
+class _DreamerDecoder(Decoder):
+    def __init__(self, model: "DreamerV3WorldModel"):
+        self.model = model
+
+    def decode(self, state: State, conditions: ConditionPayload | None = None) -> dict[str, Tensor]:
+        del conditions
+        features = self.model._features(state)
+        return {
+            "obs": self.model.decoder(features),
+            "reward": self.model.reward_head(features),
+            "continue": self.model.continue_head(features),
+        }
 
 
 @WorldModelRegistry.register("dreamer", DreamerV3Config)
@@ -111,6 +172,12 @@ class DreamerV3WorldModel(WorldModel):
 
         self.register_buffer("_device_tracker", torch.empty(0))
 
+        # Universal component graph (v0.2).
+        self.observation_encoder = _DreamerObservationEncoder(self)
+        self.action_conditioner = _DreamerActionConditioner(config.action_dim)
+        self.dynamics_model = _DreamerDynamics(self)
+        self.decoder_module = _DreamerDecoder(self)
+
     @property
     def device(self) -> torch.device:
         device = self._device_tracker.device
@@ -161,35 +228,67 @@ class DreamerV3WorldModel(WorldModel):
             required_state_keys=("deter", "stoch"),
         )
 
-    def encode(self, obs: Tensor | dict[str, Tensor], deterministic: bool = False) -> State:
-        """Encode observation to latent state."""
-        if isinstance(obs, dict):
-            if "obs" in obs:
-                obs = obs["obs"]
-            else:
-                raise ValueError("DreamerV3 expects observation tensor or dict with 'obs' key")
+    def _encode_tensor(self, obs: Tensor) -> State:
         embed = self.encoder(obs)
-
         batch_size = obs.shape[0]
         initial = self.rssm.initial_state(batch_size, obs.device)
         zero_action = torch.zeros(batch_size, self.config.action_dim, device=obs.device)
+        return self.rssm.posterior_step(initial, zero_action, embed)
 
-        state = self.rssm.posterior_step(initial, zero_action, embed)
-        return state
-
-    def transition(self, state: State, action: Tensor, deterministic: bool = False) -> State:
-        """Predict next state (prior, for imagination)."""
-        return self.rssm.prior_step(state, action, deterministic=deterministic)
-
-    def update(self, state: State, action: Tensor, obs: Tensor | dict[str, Tensor]) -> State:
-        """Update state with observation (posterior)."""
+    def encode(
+        self,
+        obs: Tensor | dict[str, Tensor] | WorldModelInput,
+        deterministic: bool = False,
+    ) -> State:
+        """Encode observation to latent state."""
+        del deterministic
+        if isinstance(obs, WorldModelInput):
+            return super().encode(obs)
         if isinstance(obs, dict):
             if "obs" in obs:
                 obs = obs["obs"]
             else:
                 raise ValueError("DreamerV3 expects observation tensor or dict with 'obs' key")
+        return self._encode_tensor(obs)
+
+    def transition(
+        self,
+        state: State,
+        action: ActionPayload | Tensor | None,
+        conditions: ConditionPayload | None = None,
+        deterministic: bool = False,
+    ) -> State:
+        """Predict next state (prior, for imagination)."""
+        del conditions
+        action_tensor = self.action_tensor_or_none(action)
+        if action_tensor is None:
+            deter = state.tensors.get("deter")
+            if deter is None:
+                raise ValueError("DreamerV3 state must contain 'deter' for default action")
+            action_tensor = torch.zeros(deter.shape[0], self.config.action_dim, device=deter.device)
+        return self.rssm.prior_step(state, action_tensor, deterministic=deterministic)
+
+    def update(
+        self,
+        state: State,
+        action: ActionPayload | Tensor | None,
+        obs: Tensor | dict[str, Tensor] | WorldModelInput,
+        conditions: ConditionPayload | None = None,
+    ) -> State:
+        """Update state with observation (posterior)."""
+        del conditions
+        if isinstance(obs, WorldModelInput):
+            obs = obs.observations
+        if isinstance(obs, dict):
+            if "obs" in obs:
+                obs = obs["obs"]
+            else:
+                raise ValueError("DreamerV3 expects observation tensor or dict with 'obs' key")
+        action_tensor = self.action_tensor_or_none(action)
+        if action_tensor is None:
+            action_tensor = torch.zeros(obs.shape[0], self.config.action_dim, device=obs.device)
         embed = self.encoder(obs)
-        return self.rssm.posterior_step(state, action, embed)
+        return self.rssm.posterior_step(state, action_tensor, embed)
 
     def _features(self, state: State) -> Tensor:
         deter = state.tensors.get("deter")
@@ -200,17 +299,10 @@ class DreamerV3WorldModel(WorldModel):
             stoch = stoch.flatten(start_dim=1)
         return torch.cat([deter, stoch], dim=-1)
 
-    def decode(self, state: State) -> ModelOutput:
+    def decode(self, state: State, conditions: ConditionPayload | None = None) -> ModelOutput:
         """Decode latent state to predictions."""
-        features = self._features(state)
-
-        return ModelOutput(
-            preds={
-                "obs": self.decoder(features),
-                "reward": self.reward_head(features),
-                "continue": self.continue_head(features),
-            }
-        )
+        del conditions
+        return super().decode(state)
 
     def initial_state(self, batch_size: int, device: torch.device | None = None) -> State:
         """Create initial state."""
