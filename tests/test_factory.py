@@ -87,6 +87,8 @@ class TestGetConfig:
         config = get_config("tdmpc2:5m", obs_shape=(100,), action_dim=8)
         assert config.obs_shape == (100,)
         assert config.action_dim == 8
+        assert config.observation_modalities["obs"]["shape"] == (100,)
+        assert config.action_spec["dim"] == 8
 
     def test_get_config_alias(self):
         """Get config using alias."""
