@@ -181,7 +181,6 @@ To add a new world model implementation:
 
 5. **Update documentation**
    - Add to README.md
-   - Add to CLAUDE.md
 
 ## Reporting Issues
 
