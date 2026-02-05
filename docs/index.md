@@ -148,7 +148,7 @@ graph LR
 ```bash
 git clone https://github.com/worldflux/Worldflux.git
 cd worldflux
-pip install -e ".[training]"
+uv sync --extra training
 ```
 
 ## Try It Now

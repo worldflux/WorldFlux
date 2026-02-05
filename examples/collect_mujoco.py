@@ -7,16 +7,16 @@ for testing TD-MPC2 world model training on continuous control tasks.
 
 Usage:
     # Basic collection (HalfCheetah)
-    python examples/collect_mujoco.py
+    uv run python examples/collect_mujoco.py
 
     # Different environment
-    python examples/collect_mujoco.py --env Hopper-v5 --episodes 100
+    uv run python examples/collect_mujoco.py --env Hopper-v5 --episodes 100
 
     # List available environments
-    python examples/collect_mujoco.py --list-envs
+    uv run python examples/collect_mujoco.py --list-envs
 
 Requirements:
-    pip install "gymnasium[mujoco]"
+    uv sync --extra mujoco
 """
 
 import argparse
@@ -28,7 +28,7 @@ import numpy as np
 try:
     import gymnasium as gym
 except ImportError:
-    raise ImportError("gymnasium not installed. Install with: pip install 'gymnasium[mujoco]'")
+    raise ImportError("gymnasium not installed. Install with: uv sync --extra mujoco")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -94,7 +94,7 @@ def collect_mujoco_data(
     except Exception as e:
         raise RuntimeError(
             f"Failed to create environment '{env_name}'. "
-            f"Make sure MuJoCo is installed: pip install 'gymnasium[mujoco]'\n"
+            f"Make sure MuJoCo is installed: uv sync --extra mujoco\n"
             f"Error: {e}"
         )
 
