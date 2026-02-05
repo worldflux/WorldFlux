@@ -49,3 +49,30 @@ def test_diffusion_io_contract():
     contract = model.io_contract()
     assert contract.required_state_keys == ("obs",)
     assert contract.prediction_spec.tensors["obs"].shape == (4,)
+
+
+def test_diffusion_accepts_prediction_target_config():
+    config = DiffusionWorldModelConfig(
+        obs_shape=(4,),
+        action_dim=2,
+        hidden_dim=16,
+        diffusion_steps=2,
+        prediction_target="x0",
+    )
+    model = DiffusionWorldModel(config)
+    assert model.scheduler.prediction_target == "x0"
+
+
+def test_diffusion_transition_populates_timestep_meta():
+    config = DiffusionWorldModelConfig(
+        obs_shape=(4,),
+        action_dim=2,
+        hidden_dim=16,
+        diffusion_steps=2,
+    )
+    model = DiffusionWorldModel(config)
+    obs = torch.randn(2, 4)
+    state = model.encode(obs)
+    next_state = model.transition(state, torch.randn(2, 2))
+    assert "timestep" in next_state.meta
+    assert next_state.meta["timestep"].shape == (2,)

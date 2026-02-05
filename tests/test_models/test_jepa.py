@@ -72,3 +72,11 @@ class TestJEPABaseWorldModel:
         contract = model.io_contract()
         assert contract.required_state_keys == ("rep",)
         assert "representation" in contract.prediction_spec.tensors
+
+    def test_loss_rejects_mask_shape_mismatch(self, model):
+        context = torch.randn(3, 4)
+        target = torch.randn(3, 4)
+        bad_mask = torch.ones(3, 2)
+        batch = Batch(obs=context, context=context, target=target, mask=bad_mask)
+        with pytest.raises(ValueError, match="mask shape"):
+            model.loss(batch)
