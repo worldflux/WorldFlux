@@ -40,6 +40,8 @@ class Batch:
     context: Tensor | dict[str, Tensor] | None = None
     target: Tensor | dict[str, Tensor] | None = None
     extras: dict[str, Any] = field(default_factory=dict)
+    layouts: dict[str, str] = field(default_factory=dict)
+    strict_layout: bool = False
 
     def to(self, device: torch.device | str) -> Batch:
         device_obj = torch.device(device) if isinstance(device, str) else device
@@ -67,6 +69,8 @@ class Batch:
             if self.target is not None
             else None,
             extras=self.extras,
+            layouts=dict(self.layouts),
+            strict_layout=self.strict_layout,
         )
 
     def detach(self) -> Batch:
@@ -92,6 +96,8 @@ class Batch:
             if self.target is not None
             else None,
             extras=self.extras,
+            layouts=dict(self.layouts),
+            strict_layout=self.strict_layout,
         )
 
     def clone(self) -> Batch:
@@ -117,6 +123,8 @@ class Batch:
             if self.target is not None
             else None,
             extras=dict(self.extras),
+            layouts=dict(self.layouts),
+            strict_layout=self.strict_layout,
         )
 
     @property
@@ -142,7 +150,73 @@ class Batch:
             "context": self.context,
             "target": self.target,
             "extras": self.extras,
+            "layouts": self.layouts,
+            "strict_layout": self.strict_layout,
         }
+
+    def with_layouts(self, layouts: dict[str, str], *, strict: bool | None = None) -> Batch:
+        """Return a shallow copy with merged explicit axis layouts."""
+        merged = dict(self.layouts)
+        merged.update(layouts)
+        return Batch(
+            obs=self.obs,
+            actions=self.actions,
+            next_obs=self.next_obs,
+            rewards=self.rewards,
+            terminations=self.terminations,
+            mask=self.mask,
+            context=self.context,
+            target=self.target,
+            extras=self.extras,
+            layouts=merged,
+            strict_layout=self.strict_layout if strict is None else strict,
+        )
+
+    def _layout_for(self, field: str, subkey: str | None = None) -> str | None:
+        candidates = []
+        if subkey:
+            candidates.extend([f"{field}.{subkey}", f"{field}:{subkey}"])
+        candidates.append(field)
+        for key in candidates:
+            layout = self.layouts.get(key)
+            if layout is not None:
+                return layout
+        return None
+
+    @staticmethod
+    def _axis_from_layout(layout: str, axis: str) -> int | None:
+        pos = layout.find(axis)
+        return None if pos < 0 else pos
+
+    def _time_axis_for(self, field: str, tensor: Tensor, subkey: str | None = None) -> int | None:
+        layout = self._layout_for(field, subkey=subkey)
+        if layout is not None:
+            axis = self._axis_from_layout(layout, "T")
+            if axis is not None and axis >= tensor.dim():
+                raise ShapeMismatchError(
+                    f"{field} layout '{layout}' has invalid time axis for tensor rank {tensor.dim()}",
+                    expected=(axis + 1,),
+                    got=(tensor.dim(),),
+                )
+            return axis
+
+        if self.strict_layout:
+            return None
+
+        # Backward-compatible fallback heuristic.
+        if field == "obs":
+            return 1 if tensor.dim() >= 3 else None
+        return 1 if tensor.dim() >= 2 else None
+
+    @staticmethod
+    def _iter_named(value: Any, prefix: str = ""):
+        if isinstance(value, Tensor):
+            yield prefix, value
+            return
+        if isinstance(value, dict):
+            for key, child in value.items():
+                child_prefix = f"{prefix}.{key}" if prefix else str(key)
+                yield from Batch._iter_named(child, child_prefix)
 
     def validate(self, *, strict_time: bool = True) -> None:
         """Validate batch shapes and consistency.
@@ -151,42 +225,51 @@ class Batch:
             strict_time: Enforce time dimension consistency when present.
         """
         # Infer batch/time from obs
-        obs_tensors = list(_iter_tensors(self.obs))
-        if not obs_tensors:
+        obs_entries = list(self._iter_named(self.obs))
+        if not obs_entries:
             raise ShapeMismatchError("Cannot validate batch with empty obs dict")
-        batch_size = obs_tensors[0].shape[0]
-        time_dim: int | None = obs_tensors[0].shape[1] if obs_tensors[0].dim() >= 3 else None
+        batch_size = obs_entries[0][1].shape[0]
+        obs_time_dim: int | None = None
 
-        for tensor in obs_tensors[1:]:
+        for subkey, tensor in obs_entries:
             if tensor.shape[0] != batch_size:
                 raise ShapeMismatchError(
                     "Observation batch size mismatch",
                     expected=(batch_size,),
                     got=(tensor.shape[0],),
                 )
-            if strict_time and time_dim is not None and tensor.dim() >= 2:
-                if tensor.shape[1] != time_dim:
-                    raise ShapeMismatchError(
-                        "Observation time dimension mismatch",
-                        expected=(time_dim,),
-                        got=(tensor.shape[1],),
-                    )
+            time_axis = self._time_axis_for("obs", tensor, subkey=subkey or None)
+            if not strict_time or time_axis is None:
+                continue
+            t_size = tensor.shape[time_axis]
+            if obs_time_dim is None:
+                obs_time_dim = t_size
+            elif t_size != obs_time_dim:
+                raise ShapeMismatchError(
+                    "Observation time dimension mismatch",
+                    expected=(obs_time_dim,),
+                    got=(t_size,),
+                )
 
         def _check(name: str, value: Any) -> None:
-            for tensor in _iter_tensors(value):
+            for subkey, tensor in self._iter_named(value):
                 if tensor.shape[0] != batch_size:
                     raise ShapeMismatchError(
                         f"{name} batch size mismatch",
                         expected=(batch_size,),
                         got=(tensor.shape[0],),
                     )
-                if strict_time and time_dim is not None and tensor.dim() >= 2:
-                    if tensor.shape[1] != time_dim:
-                        raise ShapeMismatchError(
-                            f"{name} time dimension mismatch",
-                            expected=(time_dim,),
-                            got=(tensor.shape[1],),
-                        )
+                if not strict_time or obs_time_dim is None:
+                    continue
+                time_axis = self._time_axis_for(name, tensor, subkey=subkey or None)
+                if time_axis is None:
+                    continue
+                if tensor.shape[time_axis] != obs_time_dim:
+                    raise ShapeMismatchError(
+                        f"{name} time dimension mismatch",
+                        expected=(obs_time_dim,),
+                        got=(tensor.shape[time_axis],),
+                    )
 
         if self.actions is not None:
             _check("actions", self.actions)
@@ -213,3 +296,21 @@ class BatchProvider(Protocol):
         seq_len: int | None = None,
         device: torch.device | str = "cpu",
     ) -> Batch: ...
+
+
+class TransitionProvider(BatchProvider, Protocol):
+    """Provider for transition-style batches."""
+
+
+class SequenceProvider(BatchProvider, Protocol):
+    """Provider for sequence batches. May expose explicit layouts."""
+
+    def batch_layout(self) -> dict[str, str]: ...
+
+
+class TokenProvider(SequenceProvider, Protocol):
+    """Provider for token sequence batches."""
+
+
+class VideoProvider(SequenceProvider, Protocol):
+    """Provider for video sequence batches."""

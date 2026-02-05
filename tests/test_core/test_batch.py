@@ -84,3 +84,29 @@ class TestBatch:
         )
         with pytest.raises(Exception, match="time dimension mismatch"):
             batch.validate(strict_time=True)
+
+    def test_validate_with_explicit_layout_for_tokens(self):
+        batch = Batch(
+            obs=torch.randint(0, 100, (3, 5)),
+            target=torch.randint(0, 100, (3, 5)),
+            layouts={"obs": "BT", "target": "BT"},
+            strict_layout=True,
+        )
+        batch.validate(strict_time=True)
+
+    def test_validate_layout_mismatch_raises(self):
+        batch = Batch(
+            obs=torch.randint(0, 100, (3, 5)),
+            target=torch.randint(0, 100, (3, 4)),
+            layouts={"obs": "BT", "target": "BT"},
+            strict_layout=True,
+        )
+        with pytest.raises(Exception, match="time dimension mismatch"):
+            batch.validate(strict_time=True)
+
+    def test_with_layouts_merges_keys(self):
+        batch = Batch(obs=torch.randn(2, 3, 4), layouts={"obs": "BT..."})
+        updated = batch.with_layouts({"actions": "BT..."}, strict=True)
+        assert updated.layouts["obs"] == "BT..."
+        assert updated.layouts["actions"] == "BT..."
+        assert updated.strict_layout is True

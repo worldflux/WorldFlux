@@ -15,11 +15,11 @@ from torch.optim.lr_scheduler import LRScheduler
 
 from worldflux.core.batch import Batch, BatchProvider
 from worldflux.core.exceptions import CheckpointError, ConfigurationError, TrainingError
+from worldflux.core.spec import ModelIOContract
 from worldflux.utils import set_seed
 
 from .callbacks import Callback, CallbackList, CheckpointCallback, LoggingCallback
 from .config import TrainingConfig
-from .data import ReplayBuffer
 
 if TYPE_CHECKING:
     pass
@@ -127,6 +127,33 @@ class Trainer:
         # Data iterator cache (for iterable datasets)
         self._data_iter: Iterator[Any] | None = None
 
+        # Optional model I/O contract for runtime validation.
+        contract_fn = getattr(self.model, "io_contract", None)
+        self.io_contract: ModelIOContract | None = contract_fn() if callable(contract_fn) else None
+
+    def _apply_contract_to_batch(self, batch: Batch, data: BatchProvider | Any) -> Batch:
+        if hasattr(data, "batch_layout"):
+            try:
+                layout = data.batch_layout()  # type: ignore[attr-defined]
+            except Exception:
+                layout = None
+            if isinstance(layout, dict) and layout:
+                batch = batch.with_layouts(layout, strict=True)
+
+        if self.io_contract is not None:
+            if not batch.layouts and self.io_contract.sequence_layout.axes_by_field:
+                batch = batch.with_layouts(
+                    self.io_contract.sequence_layout.axes_by_field, strict=True
+                )
+
+            missing = []
+            for key in self.io_contract.required_batch_keys:
+                if getattr(batch, key, None) is None:
+                    missing.append(key)
+            if missing:
+                raise TrainingError(f"Batch is missing required keys for model contract: {missing}")
+        return batch
+
     def _next_batch(self, data: BatchProvider | Any) -> Batch:
         """Fetch the next batch from a provider or iterator."""
         if hasattr(data, "sample"):
@@ -135,6 +162,15 @@ class Trainer:
                 seq_len=self.config.sequence_length,
                 device=self.device,
             )
+            if isinstance(batch, dict):
+                batch = Batch.from_dict(batch)
+            if not isinstance(batch, Batch):
+                raise TrainingError(
+                    f"BatchProvider.sample() must return Batch or dict, got {type(batch).__name__}"
+                )
+            batch = batch.to(self.device)
+            batch = self._apply_contract_to_batch(batch, data)
+            batch.validate(strict_time=True)
             return batch
 
         if self._data_iter is None:
@@ -156,6 +192,7 @@ class Trainer:
                 f"BatchProvider must yield Batch or dict, got {type(batch).__name__}"
             )
         batch = batch.to(self.device)
+        batch = self._apply_contract_to_batch(batch, data)
         batch.validate(strict_time=True)
         return batch
 
@@ -394,7 +431,7 @@ class Trainer:
 
     def evaluate(
         self,
-        data: ReplayBuffer,
+        data: BatchProvider | Any,
         num_batches: int = 10,
     ) -> dict[str, float]:
         """

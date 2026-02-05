@@ -6,7 +6,7 @@ from worldflux.core.batch import Batch
 from worldflux.core.config import DiffusionWorldModelConfig, TokenWorldModelConfig
 from worldflux.models.diffusion import DiffusionWorldModel
 from worldflux.models.token import TokenWorldModel
-from worldflux.training import Trainer, TrainingConfig
+from worldflux.training import TokenSequenceProvider, Trainer, TrainingConfig
 
 
 class RandomTokenProvider:
@@ -59,4 +59,20 @@ def test_diffusion_training_short():
     model = DiffusionWorldModel(config)
     trainer = Trainer(model, TrainingConfig(total_steps=3, batch_size=4, sequence_length=1))
     provider = RandomDiffusionProvider(4, 2)
+    trainer.train(provider)
+
+
+def test_token_training_with_token_sequence_provider():
+    config = TokenWorldModelConfig(
+        obs_shape=(16,),
+        action_dim=1,
+        vocab_size=64,
+        token_dim=32,
+        num_layers=1,
+        num_heads=1,
+    )
+    model = TokenWorldModel(config)
+    trainer = Trainer(model, TrainingConfig(total_steps=3, batch_size=4, sequence_length=8))
+    tokens = torch.randint(0, 64, (10, 16)).cpu().numpy()
+    provider = TokenSequenceProvider(tokens)
     trainer.train(provider)

@@ -21,6 +21,7 @@ from worldflux.training import (
     CheckpointCallback,
     LoggingCallback,
     ReplayBuffer,
+    TokenSequenceProvider,
     Trainer,
     TrainingConfig,
     TrajectoryDataset,
@@ -206,6 +207,8 @@ class TestReplayBuffer:
 
         batch = buffer.sample(batch_size=8, seq_len=5, device="cpu")
         assert batch.obs.device == torch.device("cpu")
+        assert batch.strict_layout is True
+        assert batch.layouts["obs"] == "BT..."
 
     def test_save_load(self):
         buffer = create_random_buffer(
@@ -583,6 +586,30 @@ class TestTrainer:
             trainer.train(Provider())
             assert trainer.state.should_stop is True
 
+    def test_contract_missing_required_batch_keys_raises(self):
+        model = create_world_model(
+            "dreamerv3:size12m",
+            obs_shape=(4,),
+            action_dim=2,
+            encoder_type="mlp",
+            decoder_type="mlp",
+            deter_dim=32,
+            stoch_discrete=4,
+            stoch_classes=4,
+            hidden_dim=32,
+            cnn_depth=8,
+        )
+        config = TrainingConfig(total_steps=1, batch_size=2, sequence_length=3, device="cpu")
+        trainer = Trainer(model, config, callbacks=[])
+
+        class IncompleteProvider:
+            def sample(self, batch_size, seq_len=None, device="cpu"):
+                obs = torch.randn(batch_size, seq_len, 4, device=device)
+                return Batch(obs=obs, layouts={"obs": "BT..."}, strict_layout=True)
+
+        with pytest.raises(TrainingError, match="missing required keys"):
+            trainer._next_batch(IncompleteProvider())
+
 
 class TestTrainFunction:
     """Tests for convenience train() function."""
@@ -712,3 +739,13 @@ class TestCreateRandomBuffer:
 
         # Note: Sampling is random, so we just check buffer sizes match
         assert len(buffer1) == len(buffer2)
+
+
+class TestTokenSequenceProvider:
+    def test_sample(self):
+        tokens = np.random.randint(0, 32, size=(12, 20), dtype=np.int64)
+        provider = TokenSequenceProvider(tokens)
+        batch = provider.sample(batch_size=4, seq_len=8, device="cpu")
+        assert batch.obs.shape == (4, 8)
+        assert batch.target.shape == (4, 8)
+        assert batch.layouts["obs"] == "BT"

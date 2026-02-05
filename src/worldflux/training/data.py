@@ -292,7 +292,18 @@ class ReplayBuffer:
             actions=torch.from_numpy(actions).to(device),
             rewards=torch.from_numpy(rewards).to(device),
             terminations=torch.from_numpy(dones).to(device),
+            layouts=self.batch_layout(),
+            strict_layout=True,
         )
+
+    def batch_layout(self) -> dict[str, str]:
+        """Return explicit axis layout for sampled batches."""
+        return {
+            "obs": "BT...",
+            "actions": "BT...",
+            "rewards": "BT",
+            "terminations": "BT",
+        }
 
     def _sample_valid_indices(self, batch_size: int, seq_len: int) -> list[int]:
         """Sample valid starting indices that don't cross episode boundaries."""
@@ -468,6 +479,8 @@ class TrajectoryDataset(Dataset):
             context=None,
             target=None,
             extras=batch.extras,
+            layouts=batch.layouts,
+            strict_layout=batch.strict_layout,
         )
 
 
@@ -509,3 +522,51 @@ def create_random_buffer(
         buffer.add_episode(obs, actions, rewards, dones)
 
     return buffer
+
+
+class TokenSequenceProvider:
+    """
+    Lightweight sequence provider for token-model training.
+
+    This provider demonstrates non-ReplayBuffer data feeding while preserving
+    the same unified trainer entrypoint.
+    """
+
+    def __init__(self, tokens: np.ndarray):
+        if tokens.ndim != 2:
+            raise ConfigurationError(
+                f"tokens must be rank-2 [num_sequences, seq_len], got shape={tokens.shape}"
+            )
+        self.tokens = tokens.astype(np.int64, copy=False)
+        self.num_sequences, self.seq_len = self.tokens.shape
+
+    def batch_layout(self) -> dict[str, str]:
+        return {"obs": "BT", "target": "BT"}
+
+    def sample(
+        self,
+        batch_size: int,
+        seq_len: int | None = None,
+        device: str | torch.device = "cpu",
+    ) -> Batch:
+        if batch_size <= 0:
+            raise ConfigurationError(f"batch_size must be positive, got {batch_size}")
+        length = self.seq_len if seq_len is None else seq_len
+        if length <= 0 or length > self.seq_len:
+            raise ConfigurationError(f"seq_len must be in [1, {self.seq_len}], got {length}")
+
+        seq_indices = np.random.randint(0, self.num_sequences, size=batch_size)
+        start_max = self.seq_len - length
+        starts = np.random.randint(0, start_max + 1, size=batch_size)
+
+        obs = np.zeros((batch_size, length), dtype=np.int64)
+        for i, (seq_i, start) in enumerate(zip(seq_indices, starts, strict=True)):
+            obs[i] = self.tokens[seq_i, start : start + length]
+
+        target = np.roll(obs, shift=-1, axis=1)
+        return Batch(
+            obs=torch.from_numpy(obs).to(device),
+            target=torch.from_numpy(target).to(device),
+            layouts=self.batch_layout(),
+            strict_layout=True,
+        )

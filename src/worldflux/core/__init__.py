@@ -1,6 +1,13 @@
 """Core components for world models."""
 
-from .batch import Batch, BatchProvider
+from .batch import (
+    Batch,
+    BatchProvider,
+    SequenceProvider,
+    TokenProvider,
+    TransitionProvider,
+    VideoProvider,
+)
 from .config import (
     DiffusionWorldModelConfig,
     DreamerV3Config,
@@ -37,7 +44,11 @@ from .spec import (
     Capability,
     ModalityKind,
     ModalitySpec,
+    ModelIOContract,
+    ModelMaturity,
     ObservationSpec,
+    PredictionSpec,
+    SequenceLayout,
     StateSpec,
     TokenSpec,
 )
@@ -50,6 +61,10 @@ __all__ = [
     "Trajectory",
     "Batch",
     "BatchProvider",
+    "TransitionProvider",
+    "SequenceProvider",
+    "TokenProvider",
+    "VideoProvider",
     "ModelOutput",
     "LossOutput",
     # Specs
@@ -59,7 +74,11 @@ __all__ = [
     "ActionSpec",
     "StateSpec",
     "TokenSpec",
+    "PredictionSpec",
+    "SequenceLayout",
+    "ModelIOContract",
     "Capability",
+    "ModelMaturity",
     # Config
     "LatentType",
     "DynamicsType",
