@@ -24,6 +24,7 @@ All PRs must pass:
 - **Seed stability**: same seed produces key losses/metrics within ±5–10%.
 - **Save/Load parity**: outputs after `save_pretrained` and reload differ only within tolerance.
 - **Seed success rate**: at least **80%** of seeds pass family-specific success criteria.
+- **Confidence interval reporting**: report bootstrap CI for success rate on every run.
 
 ## Benchmark Gates (Release Only)
 
@@ -52,6 +53,20 @@ These can be tightened over time:
 
 - Loss decrease: **≥10%** within **2,000 steps** on bundled datasets.
 - Seed variance: **≤10%** on main loss components.
+
+## Output Schema (Summary)
+
+`scripts/measure_quality_gates.py` writes summary fields including:
+
+- `success_rate`
+- `gates.common.ci_low`
+- `gates.common.ci_high`
+- `gates.family_pass`
+
+Interpretation:
+
+- `gates.common.pass` checks finite metrics + success rate threshold (default 80%).
+- `gates.family_pass` is true only if both common gates and family-specific gates pass.
 
 ## Measurement Commands
 

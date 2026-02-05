@@ -118,6 +118,25 @@ def _tolerance(mean_val: float, std_val: float) -> float:
     return max(2.0 * std_val, abs(mean_val) * 0.10)
 
 
+def _bootstrap_ci_binary(
+    values: list[bool], *, n_bootstrap: int = 2000, alpha: float = 0.05
+) -> tuple[float, float]:
+    if not values:
+        return 0.0, 0.0
+    arr = np.array([1.0 if v else 0.0 for v in values], dtype=np.float64)
+    if arr.size == 1:
+        v = float(arr[0])
+        return v, v
+    rng = np.random.default_rng(0)
+    samples = np.empty(n_bootstrap, dtype=np.float64)
+    for i in range(n_bootstrap):
+        sampled = rng.choice(arr, size=arr.size, replace=True)
+        samples[i] = sampled.mean()
+    lo = float(np.quantile(samples, alpha / 2.0))
+    hi = float(np.quantile(samples, 1.0 - alpha / 2.0))
+    return lo, hi
+
+
 def _summary(runs: list[dict[str, Any]]) -> dict[str, Any]:
     by_model: dict[str, list[dict[str, Any]]] = {}
     for run in runs:
@@ -136,6 +155,7 @@ def _summary(runs: list[dict[str, Any]]) -> dict[str, Any]:
         success_rate = (
             mean([1.0 if flag else 0.0 for flag in success_flags]) if success_flags else 0.0
         )
+        ci_low, ci_high = _bootstrap_ci_binary(success_flags)
         common_pass = all(finite_flags) and success_rate >= 0.80
         family = model.split(":")[0]
         family_gates: dict[str, Any] = {}
@@ -149,6 +169,11 @@ def _summary(runs: list[dict[str, Any]]) -> dict[str, Any]:
             family_gates["token_ce_finite"] = {"pass": all(finite_flags)}
         elif family == "diffusion":
             family_gates["denoise_error_finite"] = {"pass": all(finite_flags)}
+        elif family == "jepa":
+            family_gates["representation_loss_finite"] = {"pass": all(finite_flags)}
+        family_pass = (
+            all(gate.get("pass", False) for gate in family_gates.values()) if family_gates else True
+        )
         summary[model] = {
             "seeds": [item["seed"] for item in items],
             "steps": items[0]["steps"] if items else 0,
@@ -168,9 +193,13 @@ def _summary(runs: list[dict[str, Any]]) -> dict[str, Any]:
                 "common": {
                     "finite": all(finite_flags),
                     "success_rate_threshold": 0.80,
+                    "success_rate": success_rate,
+                    "ci_low": ci_low,
+                    "ci_high": ci_high,
                     "pass": common_pass,
                 },
                 "family": family_gates,
+                "family_pass": bool(common_pass and family_pass),
             },
         }
     return summary
