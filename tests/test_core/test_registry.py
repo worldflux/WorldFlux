@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from worldflux.core.config import DreamerV3Config, TDMPC2Config, WorldModelConfig
+from worldflux.core.config import DreamerV3Config, TDMPC2Config, VJEPA2Config, WorldModelConfig
 from worldflux.core.exceptions import ConfigurationError
 from worldflux.core.registry import AutoConfig, AutoWorldModel, ConfigRegistry, WorldModelRegistry
 
@@ -31,6 +31,11 @@ class TestWorldModelRegistryAliases:
         """'tdmpc:5m' resolves correctly."""
         model = WorldModelRegistry.from_pretrained("tdmpc:5m")
         assert model.config.model_type == "tdmpc2"
+
+    def test_vjepa2_alias(self):
+        """'vjepa2:base' resolves correctly."""
+        model = WorldModelRegistry.from_pretrained("vjepa2:base")
+        assert model.config.model_type == "vjepa2"
 
     def test_case_insensitive(self):
         """Aliases are case insensitive."""
@@ -76,6 +81,11 @@ class TestAutoConfigAliases:
         config = AutoConfig.from_pretrained("tdmpc:5m")
         assert isinstance(config, TDMPC2Config)
         assert config.model_type == "tdmpc2"
+
+    def test_vjepa2_config(self):
+        config = AutoConfig.from_pretrained("vjepa2:base")
+        assert isinstance(config, VJEPA2Config)
+        assert config.model_type == "vjepa2"
 
     def test_case_insensitive(self):
         """Aliases are case insensitive."""

@@ -100,6 +100,11 @@ class TestAutoConfig:
         assert config.model_type == "tdmpc2"
         assert config.model_name == "5m"
 
+    def test_vjepa2_config(self):
+        config = AutoConfig.from_pretrained("vjepa2:base")
+        assert config.model_type == "vjepa2"
+        assert config.model_name == "base"
+
 
 class TestSaveLoad:
     """Test model save/load functionality."""
@@ -138,3 +143,18 @@ class TestSaveLoad:
 
         assert loaded.config.model_type == model.config.model_type
         assert loaded.config.latent_dim == model.config.latent_dim
+
+    def test_vjepa2_save_load(self, tmp_path):
+        model = AutoWorldModel.from_pretrained(
+            "vjepa2:base",
+            obs_shape=(4,),
+            action_dim=1,
+        )
+
+        save_path = str(tmp_path / "vjepa2_test")
+        model.save_pretrained(save_path)
+
+        loaded = AutoWorldModel.from_pretrained(save_path)
+
+        assert loaded.config.model_type == model.config.model_type
+        assert loaded.config.encoder_dim == model.config.encoder_dim

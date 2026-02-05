@@ -61,6 +61,28 @@ class _ContractModel(WorldModel):
         )
 
 
+class _ExtendedContractModel(_ContractModel):
+    def io_contract(self) -> ModelIOContract:
+        base = super().io_contract()
+        return ModelIOContract(
+            observation_spec=base.observation_spec,
+            action_spec=base.action_spec,
+            state_spec=base.state_spec,
+            prediction_spec=base.prediction_spec,
+            sequence_layout=SequenceLayout(
+                axes_by_field={
+                    **base.sequence_layout.axes_by_field,
+                    "extras.goal": "BT...",
+                }
+            ),
+            required_batch_keys=("obs", "actions", "extras.goal"),
+            required_state_keys=base.required_state_keys,
+            additional_batch_fields={
+                "extras.goal": ModalitySpec(kind=ModalityKind.VECTOR, shape=(2,))
+            },
+        )
+
+
 def test_model_io_contract_validate_passes_on_valid_contract():
     contract = _ContractModel().io_contract()
     contract.validate()
@@ -95,3 +117,23 @@ def test_validate_state_contract_raises_for_missing_required_tensor():
     state = State(tensors={"other": torch.randn(2, 8)})
     with pytest.raises(ValidationError, match="missing required state tensors"):
         model.validate_state_contract(state)
+
+
+def test_validate_batch_contract_supports_additional_batch_fields():
+    model = _ExtendedContractModel()
+    batch = Batch(
+        obs=torch.randn(2, 3, 4),
+        actions=torch.randn(2, 3, 2),
+        extras={"goal": torch.randn(2, 3, 2)},
+    )
+    model.validate_batch_contract(batch)
+
+
+def test_validate_batch_contract_rejects_missing_additional_batch_field():
+    model = _ExtendedContractModel()
+    batch = Batch(
+        obs=torch.randn(2, 3, 4),
+        actions=torch.randn(2, 3, 2),
+    )
+    with pytest.raises(ValidationError, match="missing required batch keys"):
+        model.validate_batch_contract(batch)

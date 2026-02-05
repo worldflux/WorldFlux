@@ -80,3 +80,10 @@ class TestJEPABaseWorldModel:
         batch = Batch(obs=context, context=context, target=target, mask=bad_mask)
         with pytest.raises(ValueError, match="mask shape"):
             model.loss(batch)
+
+    def test_jepa_save_pretrained_and_load(self, tmp_path):
+        model = AutoWorldModel.from_pretrained("jepa:base", obs_shape=(4,), action_dim=2)
+        save_path = str(tmp_path / "jepa_model")
+        model.save_pretrained(save_path)
+        loaded = AutoWorldModel.from_pretrained(save_path)
+        assert isinstance(loaded, JEPABaseWorldModel)

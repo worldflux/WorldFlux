@@ -16,6 +16,7 @@ from .config import (
     LatentType,
     TDMPC2Config,
     TokenWorldModelConfig,
+    VJEPA2Config,
     WorldModelConfig,
 )
 from .exceptions import (
@@ -86,6 +87,7 @@ __all__ = [
     "DreamerV3Config",
     "TDMPC2Config",
     "JEPABaseConfig",
+    "VJEPA2Config",
     "TokenWorldModelConfig",
     "DiffusionWorldModelConfig",
     # Protocol and Registry
