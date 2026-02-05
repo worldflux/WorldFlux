@@ -22,27 +22,20 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Cache pip dependencies
-        uses: actions/cache@v4
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
         with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('pyproject.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-${{ matrix.python-version }}-
-            ${{ runner.os }}-pip-
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+        run: uv sync --extra dev
 
       - name: Run tests
-        run: |
-          pytest tests/ -v --tb=short
+        run: uv run pytest tests/ -v --tb=short
 
       - name: Run tests with coverage
-        run: |
-          pytest tests/ --cov=worldflux --cov-report=xml --cov-report=term-missing
+        run: uv run pytest tests/ --cov=worldflux --cov-report=xml --cov-report=term-missing
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
@@ -62,18 +55,17 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install ruff
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
 
       - name: Run ruff linter
-        run: |
-          ruff check src/ tests/ examples/
+        run: uvx ruff check src/ tests/ examples/
 
       - name: Run ruff formatter check
-        run: |
-          ruff format --check src/ tests/ examples/
+        run: uvx ruff format --check src/ tests/ examples/
 
   typecheck:
     runs-on: ubuntu-latest
@@ -85,14 +77,17 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
+
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+        run: uv sync --extra dev
 
       - name: Run mypy
-        run: |
-          mypy src/worldflux/
+        run: uv run mypy src/worldflux/
 
   test-examples:
     runs-on: ubuntu-latest
@@ -104,28 +99,32 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
+
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev,training]"
+        run: uv sync --extra dev --extra training
 
       - name: Test DreamerV3 example
-        run: python examples/train_dreamer.py --test
+        run: uv run python examples/train_dreamer.py --test
 
       - name: Test TD-MPC2 example
-        run: python examples/train_tdmpc2.py --test
+        run: uv run python examples/train_tdmpc2.py --test
 
       - name: Test JEPA example
-        run: python examples/train_jepa.py --steps 5 --batch-size 4 --obs-dim 8
+        run: uv run python examples/train_jepa.py --steps 5 --batch-size 4 --obs-dim 8
 
       - name: Test token example
-        run: python examples/train_token_model.py --steps 5 --batch-size 4 --seq-len 8 --vocab-size 32
+        run: uv run python examples/train_token_model.py --steps 5 --batch-size 4 --seq-len 8 --vocab-size 32
 
       - name: Test diffusion example
-        run: python examples/train_diffusion_model.py --steps 5 --batch-size 4 --obs-dim 4 --action-dim 2
+        run: uv run python examples/train_diffusion_model.py --steps 5 --batch-size 4 --obs-dim 4 --action-dim 2
 
       - name: Test CEM planner example
-        run: python examples/plan_cem.py --horizon 3 --action-dim 2
+        run: uv run python examples/plan_cem.py --horizon 3 --action-dim 2
 
   security:
     runs-on: ubuntu-latest
@@ -137,19 +136,20 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install security tools
-        run: |
-          python -m pip install --upgrade pip
-          pip install bandit pip-audit
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
+
+      - name: Install project dependencies
+        run: uv sync
 
       - name: Run bandit security linter
-        run: |
-          bandit -r src/worldflux/ -ll
+        run: uv run --with bandit bandit -r src/worldflux/ -ll
 
       - name: Check dependencies for vulnerabilities
-        run: |
-          pip install -e .
-          pip-audit
+        run: uv run --with pip-audit pip-audit
 
   api-v2:
     runs-on: ubuntu-latest
@@ -161,14 +161,17 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
+
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+        run: uv sync --extra dev
 
       - name: Run v0.2 API core tests
-        run: |
-          pytest -q tests/test_core/test_payloads.py tests/test_core/test_interfaces.py tests/test_core/test_contract_v2.py
+        run: uv run pytest -q tests/test_core/test_payloads.py tests/test_core/test_interfaces.py tests/test_core/test_contract_v2.py
 
   legacy-bridge:
     runs-on: ubuntu-latest
@@ -180,14 +183,17 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
+
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev,training]"
+        run: uv sync --extra dev --extra training
 
       - name: Run legacy bridge tests
-        run: |
-          pytest -q tests/test_integration/test_legacy_bridge_v02.py
+        run: uv run pytest -q tests/test_integration/test_legacy_bridge_v02.py
 
   planner-boundary:
     runs-on: ubuntu-latest
@@ -199,14 +205,17 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
+
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+        run: uv sync --extra dev
 
       - name: Run planner boundary tests
-        run: |
-          pytest -q tests/test_planners/test_cem.py tests/test_integration/test_planner_dynamics_decoupling.py
+        run: uv run pytest -q tests/test_planners/test_cem.py tests/test_integration/test_planner_dynamics_decoupling.py
 
   v3-migration:
     runs-on: ubuntu-latest
@@ -218,14 +227,18 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
+
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+        run: uv sync --extra dev
 
       - name: Run v3 migration checks
         run: |
-          pytest -q \
+          uv run pytest -q \
             tests/test_core/test_payloads.py::test_normalize_planned_action_missing_horizon_errors_in_v3 \
             tests/test_core/test_payloads.py::test_normalize_planned_action_legacy_sequence_key_errors_in_v3 \
             tests/test_integration/test_legacy_bridge_v02.py::test_planner_horizon_is_required_in_v3 \
@@ -243,18 +256,17 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install build dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install build twine
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
 
       - name: Build package
-        run: |
-          python -m build
+        run: uv run --with build python -m build
 
       - name: Check package
-        run: |
-          twine check dist/*
+        run: uv run --with twine twine check dist/*
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
