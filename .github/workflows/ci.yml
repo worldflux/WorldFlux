@@ -151,9 +151,90 @@ jobs:
           pip install -e .
           pip-audit
 
+  api-v2:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run v0.2 API core tests
+        run: |
+          pytest -q tests/test_core/test_payloads.py tests/test_core/test_interfaces.py tests/test_core/test_contract_v2.py
+
+  legacy-bridge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,training]"
+
+      - name: Run legacy bridge tests
+        run: |
+          pytest -q tests/test_integration/test_legacy_bridge_v02.py
+
+  planner-boundary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run planner boundary tests
+        run: |
+          pytest -q tests/test_planners/test_cem.py tests/test_integration/test_planner_dynamics_decoupling.py
+
+  v3-migration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run v3 migration checks
+        run: |
+          pytest -q \
+            tests/test_core/test_payloads.py::test_normalize_planned_action_missing_horizon_errors_in_v3 \
+            tests/test_core/test_payloads.py::test_normalize_planned_action_legacy_sequence_key_errors_in_v3 \
+            tests/test_integration/test_legacy_bridge_v02.py::test_planner_horizon_is_required_in_v3 \
+            tests/test_integration/test_legacy_bridge_v02.py::test_planner_sequence_field_errors_in_v3 \
+            tests/test_factory.py::TestCreateWorldModel::test_create_with_hybrid_action_rejected_in_v3
+
   build:
     runs-on: ubuntu-latest
-    needs: [test, lint, typecheck, test-examples, security]
+    needs: [test, lint, typecheck, test-examples, security, api-v2, legacy-bridge, planner-boundary, v3-migration]
     steps:
       - uses: actions/checkout@v4
 

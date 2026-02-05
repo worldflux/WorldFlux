@@ -9,6 +9,7 @@ import logging
 import torch
 
 from worldflux import create_world_model
+from worldflux.core.payloads import normalize_planned_action
 from worldflux.planners import CEMPlanner
 
 logging.basicConfig(
@@ -37,8 +38,11 @@ def main() -> None:
     planner = CEMPlanner(
         horizon=args.horizon, action_dim=args.action_dim, num_samples=64, num_elites=8
     )
-    action_seq = planner.plan(model, state)
-    logger.info("Planned action sequence shape: %s", action_seq.shape)
+    planned = planner.plan(model, state)
+    action_seq = normalize_planned_action(planned, api_version="v0.2")
+    if action_seq.tensor is None:
+        raise RuntimeError("Planner returned payload without tensor sequence")
+    logger.info("Planned action sequence shape: %s", tuple(action_seq.tensor.shape))
 
 
 if __name__ == "__main__":
