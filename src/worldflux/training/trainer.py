@@ -14,7 +14,12 @@ from torch.optim import AdamW, Optimizer
 from torch.optim.lr_scheduler import LRScheduler
 
 from worldflux.core.batch import Batch, BatchProvider
-from worldflux.core.exceptions import CheckpointError, ConfigurationError, TrainingError
+from worldflux.core.exceptions import (
+    CheckpointError,
+    ConfigurationError,
+    TrainingError,
+    ValidationError,
+)
 from worldflux.core.spec import ModelIOContract
 from worldflux.utils import set_seed
 
@@ -129,7 +134,21 @@ class Trainer:
 
         # Optional model I/O contract for runtime validation.
         contract_fn = getattr(self.model, "io_contract", None)
-        self.io_contract: ModelIOContract | None = contract_fn() if callable(contract_fn) else None
+        self.io_contract: ModelIOContract | None = None
+        if callable(contract_fn):
+            try:
+                maybe_contract = contract_fn()
+            except Exception as e:
+                raise TrainingError(f"Failed to build model I/O contract: {e}") from e
+            if not isinstance(maybe_contract, ModelIOContract):
+                raise TrainingError(
+                    "Invalid model I/O contract: io_contract() must return ModelIOContract"
+                )
+            try:
+                maybe_contract.validate()
+            except ValidationError as e:
+                raise TrainingError(f"Invalid model I/O contract: {e}") from e
+            self.io_contract = maybe_contract
 
     def _apply_contract_to_batch(self, batch: Batch, data: BatchProvider | Any) -> Batch:
         if hasattr(data, "batch_layout"):
@@ -152,6 +171,12 @@ class Trainer:
                     missing.append(key)
             if missing:
                 raise TrainingError(f"Batch is missing required keys for model contract: {missing}")
+            validate_batch_contract = getattr(self.model, "validate_batch_contract", None)
+            if callable(validate_batch_contract):
+                try:
+                    validate_batch_contract(batch)
+                except ValidationError as e:
+                    raise TrainingError(f"Batch violates model I/O contract: {e}") from e
         return batch
 
     def _next_batch(self, data: BatchProvider | Any) -> Batch:
