@@ -178,6 +178,13 @@ class DreamerV3WorldModel(WorldModel):
         self.action_conditioner = _DreamerActionConditioner(config.action_dim)
         self.dynamics_model = _DreamerDynamics(self)
         self.decoder_module = _DreamerDecoder(self)
+        self.composable_support = {
+            "observation_encoder",
+            "action_conditioner",
+            "dynamics_model",
+            "decoder",
+            "rollout_executor",
+        }
 
     @property
     def device(self) -> torch.device:
@@ -261,14 +268,12 @@ class DreamerV3WorldModel(WorldModel):
         deterministic: bool = False,
     ) -> State:
         """Predict next state (prior, for imagination)."""
-        self._validate_condition_payload(self.coerce_condition_payload(conditions))
-        action_tensor = self.action_tensor_or_none(action)
-        if action_tensor is None:
-            deter = state.tensors.get("deter")
-            if deter is None:
-                raise ValueError("DreamerV3 state must contain 'deter' for default action")
-            action_tensor = torch.zeros(deter.shape[0], self.config.action_dim, device=deter.device)
-        return self.rssm.prior_step(state, action_tensor, deterministic=deterministic)
+        return super().transition(
+            state,
+            action,
+            conditions=conditions,
+            deterministic=deterministic,
+        )
 
     def update(
         self,
@@ -303,8 +308,7 @@ class DreamerV3WorldModel(WorldModel):
 
     def decode(self, state: State, conditions: ConditionPayload | None = None) -> ModelOutput:
         """Decode latent state to predictions."""
-        del conditions
-        return super().decode(state)
+        return super().decode(state, conditions=conditions)
 
     def initial_state(self, batch_size: int, device: torch.device | None = None) -> State:
         """Create initial state."""

@@ -58,7 +58,15 @@ Planner payload metadata:
 Condition extras in strict mode:
 
 - keys must be namespaced (`wf.<domain>.<name>`)
-- keys must be declared by each model's `io_contract().condition_spec.allowed_extra_keys`
+- keys must be declared by each model's
+  `io_contract().condition_spec.allowed_extra_keys` or
+  `io_contract().condition_extras_schema`
+- declared schema entries are validated for dtype/shape in strict mode
+
+Action contract in strict mode:
+
+- `io_contract().action_union_spec` may declare multiple valid action variants
+- payloads must match at least one declared action variant
 
 ## ModelOutput
 
@@ -95,9 +103,14 @@ batch = Batch(
     inputs={...},
     targets={...},
     conditions={...},
+    lengths={...},  # optional per-field variable lengths
+    masks={...},    # optional per-field variable masks
     extras={...},
 )
 ```
+
+Variable-length validation can be declared in contract via
+`io_contract().sequence_field_spec`.
 
 ## Trajectory
 

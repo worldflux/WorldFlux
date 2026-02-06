@@ -6,6 +6,7 @@ import inspect
 import json
 import os
 import warnings
+from dataclasses import dataclass
 from importlib import metadata as importlib_metadata
 from typing import Any
 
@@ -15,6 +16,20 @@ from .config import WorldModelConfig
 from .exceptions import ConfigurationError
 from .interfaces import ComponentSpec
 from .model import WorldModel
+
+
+@dataclass(frozen=True)
+class PluginManifest:
+    """
+    Plugin compatibility manifest.
+
+    Plugin APIs are experimental in the current public policy.
+    """
+
+    plugin_api_version: str = "0.x-experimental"
+    worldflux_version_range: str = ">=0.1.0,<0.2.0"
+    capabilities: tuple[str, ...] = ()
+    experimental: bool = True
 
 
 def _validate_config_json(config_path: str) -> dict[str, Any]:
@@ -96,6 +111,7 @@ class WorldModelRegistry:
     _aliases: dict[str, str] = {}
     _catalog: dict[str, dict[str, Any]] = {}
     _component_registry: dict[str, tuple[ComponentSpec, type]] = {}
+    _plugin_manifests: dict[str, PluginManifest] = {}
     _plugins_loaded: bool = False
     _component_slots: dict[str, tuple[str, str]] = {
         "observation_encoder": ("observation_encoder", "observation_encoder"),
@@ -150,6 +166,91 @@ class WorldModelRegistry:
         was_registered = model_type in cls._model_registry
         cls._model_registry.pop(model_type, None)
         return was_registered
+
+    @classmethod
+    def register_plugin_manifest(
+        cls,
+        plugin_name: str,
+        manifest: PluginManifest | dict[str, Any],
+    ) -> None:
+        if not plugin_name:
+            raise ConfigurationError("plugin_name must not be empty")
+        normalized = cls._normalize_plugin_manifest(manifest)
+        cls._validate_plugin_manifest(plugin_name, normalized)
+        cls._plugin_manifests[plugin_name] = normalized
+
+    @classmethod
+    def unregister_plugin_manifest(cls, plugin_name: str) -> bool:
+        return cls._plugin_manifests.pop(plugin_name, None) is not None
+
+    @classmethod
+    def list_plugin_manifests(cls) -> dict[str, PluginManifest]:
+        return dict(cls._plugin_manifests)
+
+    @staticmethod
+    def _normalize_plugin_manifest(manifest: PluginManifest | dict[str, Any]) -> PluginManifest:
+        if isinstance(manifest, PluginManifest):
+            return manifest
+        if not isinstance(manifest, dict):
+            raise ConfigurationError(
+                f"Plugin manifest must be PluginManifest or dict, got {type(manifest)!r}"
+            )
+        capabilities = manifest.get("capabilities", ())
+        if isinstance(capabilities, list):
+            capabilities = tuple(str(item) for item in capabilities)
+        elif isinstance(capabilities, tuple):
+            capabilities = tuple(str(item) for item in capabilities)
+        else:
+            raise ConfigurationError("Plugin manifest 'capabilities' must be list/tuple of strings")
+
+        return PluginManifest(
+            plugin_api_version=str(manifest.get("plugin_api_version", "0.x-experimental")),
+            worldflux_version_range=str(manifest.get("worldflux_version_range", ">=0.1.0,<0.2.0")),
+            capabilities=capabilities,
+            experimental=bool(manifest.get("experimental", True)),
+        )
+
+    @classmethod
+    def _validate_plugin_manifest(cls, plugin_name: str, manifest: PluginManifest) -> None:
+        if not manifest.experimental:
+            raise ConfigurationError(
+                f"Plugin '{plugin_name}' declares experimental=false, but plugin API is experimental-only."
+            )
+        if not manifest.plugin_api_version.strip():
+            raise ConfigurationError(
+                f"Plugin '{plugin_name}' must declare non-empty plugin_api_version."
+            )
+        if not cls._worldflux_version_matches(manifest.worldflux_version_range):
+            raise ConfigurationError(
+                f"[EXPERIMENTAL_PLUGIN_INCOMPATIBLE] Plugin '{plugin_name}' requires "
+                f"worldflux{manifest.worldflux_version_range!r}, incompatible with current runtime."
+            )
+
+    @staticmethod
+    def _worldflux_version_matches(specifier: str) -> bool:
+        try:
+            from importlib.metadata import PackageNotFoundError, version
+
+            from packaging.specifiers import InvalidSpecifier, SpecifierSet
+            from packaging.version import Version
+
+            try:
+                current = version("worldflux")
+            except PackageNotFoundError:
+                current = "0.1.0.dev0"
+
+            try:
+                spec = SpecifierSet(specifier)
+            except InvalidSpecifier as e:
+                raise ConfigurationError(
+                    f"Invalid plugin worldflux_version_range: {specifier!r}"
+                ) from e
+            return Version(current) in spec
+        except ConfigurationError:
+            raise
+        except Exception:
+            # Conservative fallback: only accept default experimental range.
+            return specifier.strip() == ">=0.1.0,<0.2.0"
 
     @classmethod
     def resolve_alias(cls, name: str) -> str:
@@ -313,8 +414,28 @@ class WorldModelRegistry:
         for entry_point in cls._iter_entry_points(group):
             try:
                 loaded = entry_point.load()
+                manifest_from_loader: PluginManifest | dict[str, Any] | None = None
                 if callable(loaded):
-                    loaded()
+                    maybe_manifest = loaded()
+                    if isinstance(maybe_manifest, PluginManifest | dict):
+                        manifest_from_loader = maybe_manifest
+
+                if (
+                    manifest_from_loader is not None
+                    and entry_point.name not in cls._plugin_manifests
+                ):
+                    cls.register_plugin_manifest(entry_point.name, manifest_from_loader)
+
+                if entry_point.name not in cls._plugin_manifests:
+                    cls.register_plugin_manifest(
+                        entry_point.name,
+                        PluginManifest(capabilities=("legacy-no-manifest",)),
+                    )
+                cls._validate_plugin_manifest(
+                    entry_point.name, cls._plugin_manifests[entry_point.name]
+                )
+            except ConfigurationError:
+                raise
             except Exception as exc:
                 warnings.warn(
                     f"Failed to load entry point '{entry_point.name}' from group '{group}': {exc}",
@@ -396,6 +517,7 @@ class WorldModelRegistry:
                     f"Unknown component slot '{slot}'. "
                     f"Available: {sorted(cls._component_slots.keys())}"
                 )
+            cls._assert_component_override_supported(model, slot)
             attr_name, expected_type = slot_meta
             built_component = cls.build_component(
                 override,
@@ -406,6 +528,27 @@ class WorldModelRegistry:
             if slot == "rollout_engine":
                 # Keep deprecated alias and new slot in sync.
                 setattr(model, "rollout_executor", built_component)
+
+    @classmethod
+    def _canonical_component_slot(cls, slot: str) -> str:
+        if slot in {"decoder_module", "decoder"}:
+            return "decoder"
+        if slot in {"rollout_engine", "rollout_executor"}:
+            return "rollout_executor"
+        return slot
+
+    @classmethod
+    def _assert_component_override_supported(cls, model: WorldModel, slot: str) -> None:
+        declared = getattr(model, "composable_support", None)
+        if declared is None:
+            return
+        canonical = cls._canonical_component_slot(slot)
+        if slot in declared or canonical in declared:
+            return
+        raise ConfigurationError(
+            f"Component override for slot '{slot}' is not supported by model "
+            f"'{model.__class__.__name__}'. Declared composable_support={sorted(declared)}"
+        )
 
 
 class AutoWorldModel:

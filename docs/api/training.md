@@ -37,7 +37,7 @@ trained_model = train(
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `model` | `WorldModel` | required | Model to train |
-| `buffer` | `ReplayBuffer` or `BatchProvider` | required | Training data |
+| `buffer` | `ReplayBuffer` or provider | required | Training data |
 | `total_steps` | `int` | `100_000` | Training steps |
 | `batch_size` | `int` | `16` | Batch size |
 | `sequence_length` | `int` | `50` | Sequence length |
@@ -105,6 +105,11 @@ trainer = Trainer(model, config)
 
 trained_model = trainer.train(buffer)
 ```
+
+Provider protocols:
+
+- Legacy: `sample(batch_size, seq_len=None, device="cpu") -> Batch`
+- V2: `sample(BatchRequest(batch_size, seq_len, device)) -> Batch`
 
 ### Methods
 

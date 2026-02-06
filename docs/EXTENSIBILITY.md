@@ -160,6 +160,16 @@ create_world_model(..., component_overrides={"action_conditioner": "my.plugin.co
 
 `component_overrides` accepts registry ids, classes, or prebuilt instances.
 
+#### Composable Support Contract
+
+`component_overrides` is now gated by each family's `composable_support` declaration:
+
+- If a slot is declared, overrides are guaranteed to be effective on runtime paths.
+- If a slot is not declared, override attempts fail fast with a configuration error.
+
+This prevents "silent no-op" overrides on families that implement custom monolithic
+`transition`/`decode` paths.
+
 ### Planner Metadata Contract
 
 Planner outputs must set:
@@ -184,6 +194,15 @@ Third-party packages can register plugin hooks through:
 - `worldflux.components`
 
 At load time, WorldFlux resolves entry points and executes callable registration hooks.
+
+Plugin API status:
+
+- **experimental** (public policy)
+- plugins should provide a manifest with:
+  - `plugin_api_version`
+  - `worldflux_version_range`
+  - `capabilities`
+- incompatible manifests are rejected at load time with explicit compatibility errors
 
 ### Required Components by Family
 
@@ -456,7 +475,7 @@ These changes require careful migration:
 | Custom config | Inherit `WorldModelConfig` |
 | Custom latent space | Inherit `LatentSpace` ABC |
 | Custom trainer callback | Implement `Callback` interface |
-| Custom data loader | Implement `ReplayBuffer` interface |
+| Custom data loader | Implement `BatchProvider` / `BatchProviderV2` protocol |
 
 ---
 

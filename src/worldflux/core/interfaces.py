@@ -7,7 +7,7 @@ from typing import Any, Protocol, runtime_checkable
 
 from torch import Tensor
 
-from .payloads import ActionPayload, ConditionPayload
+from .payloads import ActionPayload, ActionSequence, ConditionPayload
 from .state import State
 
 
@@ -69,7 +69,7 @@ class RolloutExecutor(Protocol):
         self,
         model: Any,
         initial_state: State,
-        action_sequence: Tensor | None,
+        action_sequence: ActionSequence | Tensor | None,
         conditions: ConditionPayload | None = None,
         deterministic: bool = False,
     ): ...
