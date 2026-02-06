@@ -155,6 +155,53 @@ class WorldModelRegistry:
     def resolve_alias(cls, name: str) -> str:
         return cls._aliases.get(name.lower(), name)
 
+    @staticmethod
+    def _load_saved_metadata(path: str) -> dict[str, Any] | None:
+        meta_path = os.path.join(path, "worldflux_meta.json")
+        if not os.path.exists(meta_path):
+            return None
+        with open(meta_path, encoding="utf-8") as f:
+            loaded = json.load(f)
+        if not isinstance(loaded, dict):
+            raise ConfigurationError(
+                "worldflux_meta.json must contain a JSON object.",
+                config_name=meta_path,
+            )
+        return loaded
+
+    @staticmethod
+    def _validate_saved_metadata(meta: dict[str, Any], model: WorldModel, path: str) -> None:
+        save_format_version = meta.get("save_format_version")
+        if save_format_version not in (None, 1, "1"):
+            raise ConfigurationError(
+                f"Unsupported save_format_version in worldflux_meta.json: {save_format_version!r}",
+                config_name=path,
+            )
+
+        expected_model_type = str(getattr(getattr(model, "config", None), "model_type", ""))
+        saved_model_type = str(meta.get("model_type", ""))
+        if expected_model_type and saved_model_type and expected_model_type != saved_model_type:
+            raise ConfigurationError(
+                "Saved metadata model_type mismatch: "
+                f"expected {expected_model_type!r}, got {saved_model_type!r}.",
+                config_name=path,
+            )
+
+        saved_fingerprint = meta.get("contract_fingerprint")
+        if saved_fingerprint is not None:
+            if not hasattr(model, "contract_fingerprint"):
+                raise ConfigurationError(
+                    "Model does not expose contract_fingerprint() required for compatibility check.",
+                    config_name=path,
+                )
+            current_fingerprint = str(model.contract_fingerprint())  # type: ignore[attr-defined]
+            if str(saved_fingerprint) != current_fingerprint:
+                raise ConfigurationError(
+                    "Saved metadata contract_fingerprint does not match current model contract. "
+                    "This artifact is not compatible with the current runtime.",
+                    config_name=path,
+                )
+
     @classmethod
     def from_pretrained(cls, name_or_path: str, **kwargs) -> WorldModel:
         cls.load_entrypoint_plugins()
@@ -173,6 +220,12 @@ class WorldModelRegistry:
                 )
             model_class = cls._model_registry[config.model_type]
             model = model_class(config)
+            metadata = cls._load_saved_metadata(name_or_path)
+            if metadata is not None:
+                cls._validate_saved_metadata(metadata, model, name_or_path)
+                saved_api_version = metadata.get("api_version")
+                if saved_api_version is not None:
+                    setattr(model, "_wf_api_version", str(saved_api_version))
             weights_path = os.path.join(name_or_path, "model.pt")
             if os.path.exists(weights_path):
                 model.load_state_dict(torch.load(weights_path, weights_only=True))
