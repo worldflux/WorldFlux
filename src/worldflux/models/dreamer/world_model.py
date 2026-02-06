@@ -419,8 +419,4 @@ class DreamerV3WorldModel(WorldModel):
         return LossOutput(loss=total, components=components, metrics=metrics)
 
     def save_pretrained(self, path: str) -> None:
-        import os
-
-        os.makedirs(path, exist_ok=True)
-        self.config.save(os.path.join(path, "config.json"))
-        torch.save(self.state_dict(), os.path.join(path, "model.pt"))
+        super().save_pretrained(path)

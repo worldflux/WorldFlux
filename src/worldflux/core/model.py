@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import warnings
 from abc import ABC, abstractmethod
+from dataclasses import asdict, is_dataclass
+from datetime import datetime, timezone
+from enum import Enum
 from typing import cast
 
 import torch
@@ -573,6 +578,51 @@ class WorldModel(nn.Module, ABC):
             )
         config.save(os.path.join(path, "config.json"))
         torch.save(self.state_dict(), os.path.join(path, "model.pt"))
+        metadata = {
+            "save_format_version": 1,
+            "worldflux_version": self._resolve_worldflux_version(),
+            "api_version": self._get_api_version(),
+            "model_type": str(getattr(config, "model_type", self.__class__.__name__)),
+            "contract_fingerprint": self.contract_fingerprint(),
+            "created_at_utc": datetime.now(timezone.utc)
+            .replace(microsecond=0)
+            .isoformat()
+            .replace("+00:00", "Z"),
+        }
+        with open(os.path.join(path, "worldflux_meta.json"), "w", encoding="utf-8") as f:
+            json.dump(metadata, f, indent=2, sort_keys=True)
+            f.write("\n")
+
+    @staticmethod
+    def _normalize_contract_value(value):
+        if isinstance(value, Enum):
+            return value.value
+        if is_dataclass(value):
+            return {k: WorldModel._normalize_contract_value(v) for k, v in asdict(value).items()}
+        if isinstance(value, dict):
+            return {str(k): WorldModel._normalize_contract_value(v) for k, v in value.items()}
+        if isinstance(value, tuple):
+            return [WorldModel._normalize_contract_value(v) for v in value]
+        if isinstance(value, list):
+            return [WorldModel._normalize_contract_value(v) for v in value]
+        return value
+
+    @staticmethod
+    def _resolve_worldflux_version() -> str:
+        try:
+            from importlib.metadata import PackageNotFoundError, version
+
+            return version("worldflux")
+        except PackageNotFoundError:
+            return "0.1.0.dev0"
+        except Exception:
+            return "0.1.0.dev0"
+
+    def contract_fingerprint(self) -> str:
+        """Return a stable fingerprint for this model's declared IO contract."""
+        contract = self._normalize_contract_value(self.io_contract())
+        serialized = json.dumps(contract, sort_keys=True, separators=(",", ":"), default=str)
+        return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
     @classmethod
     def from_pretrained(cls, name_or_path: str, **kwargs) -> WorldModel:
