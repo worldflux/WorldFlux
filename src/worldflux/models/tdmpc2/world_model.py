@@ -16,6 +16,7 @@ from ...core.registry import WorldModelRegistry
 from ...core.spec import (
     ActionSpec,
     Capability,
+    ConditionSpec,
     ModalityKind,
     ModalitySpec,
     ModelIOContract,
@@ -230,6 +231,7 @@ class TDMPC2WorldModel(WorldModel):
                     ),
                 }
             ),
+            condition_spec=ConditionSpec(allowed_extra_keys=()),
             sequence_layout=SequenceLayout(
                 axes_by_field={
                     "obs": "BT...",
@@ -274,7 +276,7 @@ class TDMPC2WorldModel(WorldModel):
         task_id: Tensor | None = None,
     ) -> State:
         """Predict next state."""
-        del conditions
+        self._validate_condition_payload(self.coerce_condition_payload(conditions))
         z = state.tensors.get("latent")
         if z is None:
             raise ValueError("TD-MPC2 requires 'latent' in State")

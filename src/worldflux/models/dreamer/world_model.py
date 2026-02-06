@@ -14,6 +14,7 @@ from ...core.registry import WorldModelRegistry
 from ...core.spec import (
     ActionSpec,
     Capability,
+    ConditionSpec,
     ModalityKind,
     ModalitySpec,
     ModelIOContract,
@@ -215,6 +216,7 @@ class DreamerV3WorldModel(WorldModel):
                     "continue": ModalitySpec(kind=ModalityKind.VECTOR, shape=(1,)),
                 }
             ),
+            condition_spec=ConditionSpec(allowed_extra_keys=()),
             sequence_layout=SequenceLayout(
                 axes_by_field={
                     "obs": "BT...",
@@ -259,7 +261,7 @@ class DreamerV3WorldModel(WorldModel):
         deterministic: bool = False,
     ) -> State:
         """Predict next state (prior, for imagination)."""
-        del conditions
+        self._validate_condition_payload(self.coerce_condition_payload(conditions))
         action_tensor = self.action_tensor_or_none(action)
         if action_tensor is None:
             deter = state.tensors.get("deter")
