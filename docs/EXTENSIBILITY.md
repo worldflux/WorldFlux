@@ -73,24 +73,25 @@ class DreamerV3WorldModel(nn.Module): ...
 
 ## Extensibility Assessment
 
-### Overall Score: **7.5/10**
+### Overall Score: **9.0/10**
 
 | Category | Score | Description |
 |----------|-------|-------------|
-| **Model Addition** | 9/10 | Registry pattern + base class = easy integration |
+| **Model Addition** | 9/10 | Registry pattern + base class + entry-point plugins |
 | **Latent Space** | 8/10 | ABC extensible; may need new `State.tensors` keys |
 | **Training** | 8/10 | Trainer abstracted; custom losses supported |
 | **State Representation** | 7/10 | Universal container; VQ/flow may need new tensor keys |
-| **Decoder Patterns** | 6/10 | Implicit models supported; diffusion decoders need work |
+| **Decoder Patterns** | 7/10 | Optional decoder path is explicit in contract |
 | **Temporal Modeling** | 6/10 | Autoregressive/video models need new patterns |
 
 ### Strengths
 
-1. **Zero Existing Code Changes**: New models register without modifying existing implementations
+1. **Zero Existing Code Changes**: New families can be added without modifying existing family code
 2. **Type Safety**: Base class + shared types (`Batch`, `State`, `ModelOutput`)
 3. **HuggingFace Compatibility**: `from_pretrained`/`save_pretrained` patterns
 4. **Flexible State**: `State.meta` for architecture-specific data
 5. **Consistent Training**: Single `Trainer` class works across all models
+6. **Plugin Discovery**: external model/component registration via entry-point groups
 
 ### Areas for Enhancement
 
@@ -109,11 +110,11 @@ WorldFlux now classifies model families by maturity tier in the model catalog:
 - **experimental**: Functional but evolving APIs/metrics (not yet release-grade parity).
 - **skeleton**: Interface stubs intended for design exploration only.
 
-Current default policy:
+Current default policy (v3-first):
 
 - **reference**: DreamerV3, TD-MPC2
 - **experimental**: JEPA, V-JEPA2, Token, Diffusion
-- **experimental (skeleton families)**: DiT, SSM, Renderer3D, Physics, GAN
+- **skeleton**: DiT, SSM, Renderer3D, Physics, GAN
 
 Promotion rule (experimental -> reference):
 
@@ -151,6 +152,14 @@ Planning strategies (`CEM`, future `MPPI`/tree-search) are defined separately th
 
 New families should be assembled from these components instead of hard-coding monolithic model classes.
 
+Factory-level overrides are supported:
+
+```python
+create_world_model(..., component_overrides={"action_conditioner": "my.plugin.component"})
+```
+
+`component_overrides` accepts registry ids, classes, or prebuilt instances.
+
 ### Planner Metadata Contract
 
 Planner outputs must set:
@@ -165,6 +174,16 @@ Compatibility in `v0.2`:
 Condition extras must be namespaced:
 
 - format: `wf.<domain>.<name>`
+- strict `v3` mode rejects undeclared extras
+
+### External Plugin Hooks
+
+Third-party packages can register plugin hooks through:
+
+- `worldflux.models`
+- `worldflux.components`
+
+At load time, WorldFlux resolves entry points and executes callable registration hooks.
 
 ### Required Components by Family
 
