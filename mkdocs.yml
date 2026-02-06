@@ -66,4 +66,5 @@ nav:
     - Configuration: reference/config.md
     - Extensibility: EXTENSIBILITY.md
     - OSS Quality Gates: reference/quality-gates.md
+    - OSS Release Checklist: reference/release-checklist.md
     - Troubleshooting: reference/troubleshooting.md
