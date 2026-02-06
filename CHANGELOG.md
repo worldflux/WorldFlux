@@ -10,6 +10,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Community files (CODE_OF_CONDUCT, CHANGELOG, Issue templates)
 - Public roadmap
+- `create_world_model()` defaults to `api_version="v3"` (v0.2 explicit bridge only)
+- `ModelMaturity.SKELETON` catalog support and `list_models(maturity="skeleton")`
+- Action contract enforcement (`ActionPayload` vs `io_contract().action_spec`) in transition/rollout paths
+- Strict v3 condition-extra validation across reference/experimental families
+- `component_overrides` in factory with operational component registry wiring
+- External plugin discovery via entry-point groups: `worldflux.models`, `worldflux.components`
+- Serialization metadata file `worldflux_meta.json` with compatibility checks on load
+- CI docs gate: `uv run mkdocs build --strict`
+
+### Changed
+- Quality-gate documentation updated to `uv` command path
+- `save_pretrained()` standardized across families with metadata emission
 
 ## [0.1.0] - 2026-01-26
 

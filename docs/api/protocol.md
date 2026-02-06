@@ -2,7 +2,7 @@
 
 All world models implement the `WorldModel` base class.
 
-## Interface (v0.2)
+## Interface (v3 default)
 
 ```python
 class WorldModel(nn.Module, ABC):
@@ -38,6 +38,9 @@ Legacy calls (`encode(obs)`, `transition(state, action_tensor)`) still work in `
 `rollout(..., mode=...)` is deprecated in `v0.2` and removed in `v0.3`.
 Use planner strategies (`worldflux.planners`) for re-planning and tree-search behaviors.
 
+`create_world_model()` now defaults to `api_version="v3"`. Use `api_version="v0.2"` only for
+explicit migration bridging.
+
 ## Key Payload Types
 
 ```python
@@ -51,6 +54,11 @@ Planner payload metadata:
 - canonical key: `extras["wf.planner.horizon"]` (`int >= 1`)
 - legacy key: `extras["wf.planner.sequence"]` (deprecated in v0.2, removed in v0.3)
 - helper APIs: `normalize_planned_action(...)`, `first_action(...)`
+
+Condition extras in strict mode:
+
+- keys must be namespaced (`wf.<domain>.<name>`)
+- keys must be declared by each model's `io_contract().condition_spec.allowed_extra_keys`
 
 ## ModelOutput
 
@@ -98,3 +106,20 @@ trajectory.states    # list[State]
 trajectory.rewards   # Tensor[T, B] | None
 trajectory.continues # Tensor[T, B] | None
 ```
+
+## Serialization Contract
+
+`save_pretrained(path)` writes:
+
+- `config.json`
+- `model.pt`
+- `worldflux_meta.json`
+
+`worldflux_meta.json` includes compatibility fields:
+
+- `save_format_version`
+- `worldflux_version`
+- `api_version`
+- `model_type`
+- `contract_fingerprint`
+- `created_at_utc`
