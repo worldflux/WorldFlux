@@ -7,7 +7,13 @@ import pytest
 from worldflux.core.config import DreamerV3Config, TDMPC2Config, VJEPA2Config, WorldModelConfig
 from worldflux.core.exceptions import ConfigurationError
 from worldflux.core.interfaces import ComponentSpec
-from worldflux.core.registry import AutoConfig, AutoWorldModel, ConfigRegistry, WorldModelRegistry
+from worldflux.core.registry import (
+    AutoConfig,
+    AutoWorldModel,
+    ConfigRegistry,
+    PluginManifest,
+    WorldModelRegistry,
+)
 
 
 class TestWorldModelRegistryAliases:
@@ -175,6 +181,11 @@ class TestComponentOverrides:
         finally:
             WorldModelRegistry.unregister_component(component_id)
 
+    def test_apply_component_overrides_rejects_non_composable_family(self):
+        model = WorldModelRegistry.from_pretrained("jepa:base", obs_shape=(4,), action_dim=2)
+        with pytest.raises(ConfigurationError, match="not supported by model"):
+            WorldModelRegistry.apply_component_overrides(model, {"action_conditioner": object()})
+
 
 class _FakeEntryPoint:
     def __init__(self, name: str, group: str, loader):
@@ -250,7 +261,33 @@ class TestPluginDiscovery:
             assert component_id in WorldModelRegistry.list_components()
             assert WorldModelRegistry.resolve_alias(alias) == model_id
         finally:
+            WorldModelRegistry.unregister_plugin_manifest("extplugin_models")
+            WorldModelRegistry.unregister_plugin_manifest("extplugin_components")
             WorldModelRegistry.unregister_component(component_id)
             WorldModelRegistry.unregister_alias(alias)
             WorldModelRegistry.unregister_catalog_entry(model_id)
             WorldModelRegistry.unregister(model_type)
+
+    def test_register_plugin_manifest_rejects_incompatible_worldflux_range(self):
+        with pytest.raises(ConfigurationError, match="EXPERIMENTAL_PLUGIN_INCOMPATIBLE"):
+            WorldModelRegistry.register_plugin_manifest(
+                "tests.incompatible",
+                PluginManifest(worldflux_version_range="<0.0.1"),
+            )
+
+    def test_load_entrypoint_plugins_rejects_incompatible_manifest(self, monkeypatch):
+        def _register_with_bad_manifest():
+            return PluginManifest(worldflux_version_range="<0.0.1")
+
+        fake_eps = _FakeEntryPoints(
+            [_FakeEntryPoint("extplugin_bad", "worldflux.models", _register_with_bad_manifest)]
+        )
+        monkeypatch.setattr(
+            "worldflux.core.registry.importlib_metadata.entry_points",
+            lambda: fake_eps,
+        )
+
+        with pytest.raises(ConfigurationError, match="EXPERIMENTAL_PLUGIN_INCOMPATIBLE"):
+            WorldModelRegistry.load_entrypoint_plugins(force=True)
+
+        WorldModelRegistry.unregister_plugin_manifest("extplugin_bad")

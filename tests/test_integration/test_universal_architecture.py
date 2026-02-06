@@ -7,7 +7,7 @@ import torch
 
 from worldflux import create_world_model
 from worldflux.core.batch import Batch
-from worldflux.core.exceptions import ValidationError
+from worldflux.core.exceptions import ConfigurationError, ValidationError
 from worldflux.core.interfaces import ComponentSpec
 from worldflux.core.payloads import ConditionPayload
 from worldflux.core.registry import WorldModelRegistry
@@ -179,5 +179,99 @@ def test_factory_component_overrides_support_one_step_training(tmp_path):
         trainer = Trainer(model, cfg)
         trained = trainer.train(provider, num_steps=1)
         assert trained is model
+    finally:
+        WorldModelRegistry.unregister_component(component_id)
+
+
+@pytest.mark.parametrize(
+    "model_id,kwargs,state_key",
+    [
+        (
+            "dreamerv3:size12m",
+            {
+                "obs_shape": (4,),
+                "action_dim": 2,
+                "encoder_type": "mlp",
+                "decoder_type": "mlp",
+                "hidden_dim": 64,
+                "deter_dim": 64,
+                "stoch_discrete": 4,
+                "stoch_classes": 4,
+            },
+            "deter",
+        ),
+        (
+            "tdmpc2:5m",
+            {"obs_shape": (4,), "action_dim": 2, "hidden_dim": 64, "latent_dim": 32},
+            "latent",
+        ),
+    ],
+)
+def test_component_overrides_change_transition_dynamics(
+    model_id: str,
+    kwargs: dict[str, object],
+    state_key: str,
+):
+    class _ZeroActionConditioner:
+        def condition(self, state, action, conditions=None):
+            del state, conditions
+            if action is None or action.tensor is None:
+                return {}
+            return {"action": torch.zeros_like(action.tensor)}
+
+    component_id = "tests.override.transition.zero_action_conditioner"
+    WorldModelRegistry.register_component(
+        component_id,
+        _ZeroActionConditioner,
+        ComponentSpec(name="Zero Action Conditioner", component_type="action_conditioner"),
+    )
+
+    try:
+        torch.manual_seed(0)
+        base_model = create_world_model(model_id, api_version="v3", **kwargs)
+        override_model = create_world_model(
+            model_id,
+            api_version="v3",
+            component_overrides={"action_conditioner": component_id},
+            **kwargs,
+        )
+        override_model.load_state_dict(base_model.state_dict())
+
+        obs = torch.randn(2, 4)
+        action = torch.randn(2, 2)
+        base_state = base_model.encode(obs)
+        override_state = override_model.encode(obs)
+
+        base_next = base_model.transition(base_state, action, deterministic=True)
+        override_next = override_model.transition(override_state, action, deterministic=True)
+
+        assert state_key in base_next.tensors
+        assert state_key in override_next.tensors
+        assert not torch.allclose(base_next.tensors[state_key], override_next.tensors[state_key])
+    finally:
+        WorldModelRegistry.unregister_component(component_id)
+
+
+def test_component_overrides_fail_for_non_composable_family():
+    class _NoOpConditioner:
+        def condition(self, state, action, conditions=None):
+            del state, action, conditions
+            return {}
+
+    component_id = "tests.override.non_composable.noop"
+    WorldModelRegistry.register_component(
+        component_id,
+        _NoOpConditioner,
+        ComponentSpec(name="No-op Conditioner", component_type="action_conditioner"),
+    )
+    try:
+        with pytest.raises(ConfigurationError, match="not supported by model"):
+            create_world_model(
+                "jepa:base",
+                obs_shape=(4,),
+                action_dim=2,
+                api_version="v3",
+                component_overrides={"action_conditioner": component_id},
+            )
     finally:
         WorldModelRegistry.unregister_component(component_id)
