@@ -16,7 +16,9 @@ from worldflux.core.payloads import (
     first_action,
     is_namespaced_extra_key,
     normalize_planned_action,
+    validate_action_payload_against_spec,
 )
+from worldflux.core.spec import ActionSpec
 
 
 def test_action_payload_primary_prefers_tensor_then_tokens_then_latent():
@@ -138,3 +140,29 @@ def test_namespaced_extra_key_helper_and_reserved_action_components_key():
     assert is_namespaced_extra_key("wf.planner.horizon")
     assert not is_namespaced_extra_key("planner.horizon")
     assert ACTION_COMPONENTS_KEY == "wf.action.components"
+
+
+def test_validate_action_payload_against_spec_accepts_matching_continuous_payload():
+    payload = ActionPayload(kind="continuous", tensor=torch.randn(2, 3))
+    spec = ActionSpec(kind="continuous", dim=3)
+    validate_action_payload_against_spec(payload, spec, api_version="v3")
+
+
+def test_validate_action_payload_against_spec_rejects_kind_mismatch():
+    payload = ActionPayload(kind="token", tokens=torch.randint(0, 10, (2, 4)))
+    spec = ActionSpec(kind="continuous", dim=4)
+    with pytest.raises(ValueError, match="incompatible"):
+        validate_action_payload_against_spec(payload, spec, api_version="v3")
+
+
+def test_validate_action_payload_against_spec_rejects_dim_mismatch():
+    payload = ActionPayload(kind="continuous", tensor=torch.randn(2, 2))
+    spec = ActionSpec(kind="continuous", dim=3)
+    with pytest.raises(ValueError, match="feature dim mismatch"):
+        validate_action_payload_against_spec(payload, spec, api_version="v3")
+
+
+def test_validate_action_payload_against_spec_accepts_discrete_indices():
+    payload = ActionPayload(kind="discrete", tensor=torch.tensor([0, 1, 2], dtype=torch.int64))
+    spec = ActionSpec(kind="discrete", dim=4, discrete=True, num_actions=4)
+    validate_action_payload_against_spec(payload, spec, api_version="v3")
