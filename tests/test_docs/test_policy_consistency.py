@@ -39,3 +39,19 @@ def test_extension_docs_emphasize_contract_first_policy():
     ext = _read("docs/EXTENSIBILITY.md")
     assert "contract-first" in readme.lower()
     assert "contract-first" in ext.lower()
+
+
+def test_ci_includes_strict_docs_gate():
+    ci = _read(".github/workflows/ci.yml")
+    assert "docs:" in ci
+    assert "uv sync --extra docs" in ci
+    assert "uv run mkdocs build --strict" in ci
+
+
+def test_quality_gates_doc_matches_uv_ci_commands():
+    gates = _read("docs/reference/quality-gates.md")
+    assert "uv run ruff check src/ tests/ examples/" in gates
+    assert "uv run ruff format --check src/ tests/ examples/" in gates
+    assert "uv run mypy src/worldflux/" in gates
+    assert "uv run pytest tests/" in gates
+    assert "uv run mkdocs build --strict" in gates
