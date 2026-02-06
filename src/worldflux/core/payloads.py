@@ -96,6 +96,7 @@ class ConditionPayload:
         *,
         strict: bool = False,
         allowed_extra_keys: set[str] | None = None,
+        extra_schema: dict[str, dict[str, Any]] | None = None,
         api_version: str = "v0.2",
     ) -> None:
         """Validate condition extras naming and optional allow-list contract."""
@@ -116,6 +117,20 @@ class ConditionPayload:
                 if strict or api_version == "v3":
                     raise ValueError(msg)
                 warnings.warn(msg, DeprecationWarning, stacklevel=2)
+
+        if extra_schema:
+            for key, schema in extra_schema.items():
+                if key not in self.extras:
+                    continue
+                value = self.extras[key]
+                if not isinstance(value, Tensor):
+                    continue
+                _validate_condition_extra_tensor(
+                    key,
+                    value,
+                    schema,
+                    strict=strict or api_version == "v3",
+                )
 
 
 @dataclass
@@ -229,6 +244,88 @@ def validate_action_payload_against_spec(
             raise ValueError(
                 f"Discrete action dim mismatch: expected trailing dim {num_actions}, got {got_dim}"
             )
+
+
+def validate_action_payload_against_union(
+    payload: ActionPayload,
+    action_specs: list[ActionSpecLike] | tuple[ActionSpecLike, ...],
+    *,
+    api_version: str = "v0.2",
+) -> None:
+    """Validate payload against at least one action spec in a union."""
+    if not action_specs:
+        raise ValueError("action union spec must contain at least one ActionSpec")
+
+    errors: list[str] = []
+    for idx, action_spec in enumerate(action_specs):
+        try:
+            validate_action_payload_against_spec(
+                payload,
+                action_spec,
+                api_version=api_version,
+            )
+            return
+        except ValueError as e:
+            errors.append(f"[{idx}] {e}")
+    raise ValueError("Action payload did not match any action union variants: " + "; ".join(errors))
+
+
+def _validate_condition_extra_tensor(
+    key: str,
+    tensor: Tensor,
+    schema: dict[str, Any],
+    *,
+    strict: bool,
+) -> None:
+    dtype_name = schema.get("dtype")
+    if dtype_name is not None:
+        expected_dtype = _torch_dtype_from_name(str(dtype_name))
+        if expected_dtype is not None and tensor.dtype != expected_dtype:
+            msg = (
+                f"Condition extra '{key}' dtype mismatch: expected {expected_dtype}, "
+                f"got {tensor.dtype}"
+            )
+            if strict:
+                raise ValueError(msg)
+            warnings.warn(msg, DeprecationWarning, stacklevel=2)
+
+    shape_value = schema.get("shape")
+    if shape_value is None:
+        return
+    expected_shape = tuple(int(dim) for dim in shape_value)
+    if not expected_shape:
+        return
+    if tensor.dim() < len(expected_shape):
+        msg = (
+            f"Condition extra '{key}' rank mismatch: expected at least {len(expected_shape)}, "
+            f"got rank {tensor.dim()}"
+        )
+        if strict:
+            raise ValueError(msg)
+        warnings.warn(msg, DeprecationWarning, stacklevel=2)
+        return
+    got_tail = tuple(int(dim) for dim in tensor.shape[-len(expected_shape) :])
+    if got_tail != expected_shape:
+        msg = f"Condition extra '{key}' shape mismatch: expected trailing {expected_shape}, got {got_tail}"
+        if strict:
+            raise ValueError(msg)
+        warnings.warn(msg, DeprecationWarning, stacklevel=2)
+
+
+def _torch_dtype_from_name(name: str) -> torch.dtype | None:
+    name_to_dtype: dict[str, torch.dtype] = {
+        "float16": torch.float16,
+        "float32": torch.float32,
+        "float64": torch.float64,
+        "bfloat16": torch.bfloat16,
+        "int8": torch.int8,
+        "int16": torch.int16,
+        "int32": torch.int32,
+        "int64": torch.int64,
+        "uint8": torch.uint8,
+        "bool": torch.bool,
+    }
+    return name_to_dtype.get(name)
 
 
 def _infer_horizon_from_tensor(tensor: Tensor) -> int:
