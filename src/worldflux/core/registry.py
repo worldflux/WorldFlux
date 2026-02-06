@@ -5,6 +5,8 @@ from __future__ import annotations
 import inspect
 import json
 import os
+import warnings
+from importlib import metadata as importlib_metadata
 from typing import Any
 
 import torch
@@ -94,6 +96,7 @@ class WorldModelRegistry:
     _aliases: dict[str, str] = {}
     _catalog: dict[str, dict[str, Any]] = {}
     _component_registry: dict[str, tuple[ComponentSpec, type]] = {}
+    _plugins_loaded: bool = False
     _component_slots: dict[str, tuple[str, str]] = {
         "observation_encoder": ("observation_encoder", "observation_encoder"),
         "action_conditioner": ("action_conditioner", "action_conditioner"),
@@ -154,6 +157,7 @@ class WorldModelRegistry:
 
     @classmethod
     def from_pretrained(cls, name_or_path: str, **kwargs) -> WorldModel:
+        cls.load_entrypoint_plugins()
         if not cls._model_registry:
             try:
                 import worldflux.models  # noqa: F401
@@ -194,6 +198,7 @@ class WorldModelRegistry:
 
     @classmethod
     def list_models(cls) -> dict[str, type]:
+        cls.load_entrypoint_plugins()
         if not cls._model_registry:
             try:
                 import worldflux.models  # noqa: F401
@@ -226,6 +231,7 @@ class WorldModelRegistry:
 
     @classmethod
     def get_component(cls, component_id: str) -> tuple[ComponentSpec, type]:
+        cls.load_entrypoint_plugins()
         if component_id not in cls._component_registry:
             raise ConfigurationError(
                 f"Unknown component id '{component_id}'. "
@@ -235,7 +241,42 @@ class WorldModelRegistry:
 
     @classmethod
     def list_components(cls) -> dict[str, ComponentSpec]:
+        cls.load_entrypoint_plugins()
         return {component_id: spec for component_id, (spec, _) in cls._component_registry.items()}
+
+    @staticmethod
+    def _iter_entry_points(group: str) -> list[Any]:
+        try:
+            entries = importlib_metadata.entry_points()
+        except Exception:
+            return []
+        if hasattr(entries, "select"):
+            return list(entries.select(group=group))
+        group_entries: Any = entries.get(group, [])  # pragma: no cover - legacy importlib API
+        return list(group_entries)
+
+    @classmethod
+    def _load_entrypoint_group(cls, group: str) -> None:
+        for entry_point in cls._iter_entry_points(group):
+            try:
+                loaded = entry_point.load()
+                if callable(loaded):
+                    loaded()
+            except Exception as exc:
+                warnings.warn(
+                    f"Failed to load entry point '{entry_point.name}' from group '{group}': {exc}",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+
+    @classmethod
+    def load_entrypoint_plugins(cls, *, force: bool = False) -> None:
+        """Load external plugin registration hooks from package entry points."""
+        if cls._plugins_loaded and not force:
+            return
+        cls._load_entrypoint_group("worldflux.models")
+        cls._load_entrypoint_group("worldflux.components")
+        cls._plugins_loaded = True
 
     @staticmethod
     def _instantiate_component(component_class: type, model: WorldModel) -> Any:
