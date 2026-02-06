@@ -174,3 +174,83 @@ class TestComponentOverrides:
                 )
         finally:
             WorldModelRegistry.unregister_component(component_id)
+
+
+class _FakeEntryPoint:
+    def __init__(self, name: str, group: str, loader):
+        self.name = name
+        self.group = group
+        self._loader = loader
+
+    def load(self):
+        return self._loader
+
+
+class _FakeEntryPoints(list):
+    def select(self, *, group: str):
+        return [entry for entry in self if entry.group == group]
+
+
+class TestPluginDiscovery:
+    def test_load_entrypoint_plugins_registers_model_and_component_hooks(self, monkeypatch):
+        model_type = "extplugin_model"
+        model_id = "extplugin:demo"
+        alias = "extplugin"
+        component_id = "extplugin.zero_action"
+
+        class _PluginConfig(WorldModelConfig):
+            pass
+
+        def _register_models():
+            @WorldModelRegistry.register(model_type, _PluginConfig)
+            class _PluginModel:
+                def __init__(self, config):
+                    self.config = config
+
+            WorldModelRegistry.register_alias(alias, model_id)
+            WorldModelRegistry.register_catalog_entry(
+                model_id,
+                {
+                    "description": "External plugin demo model",
+                    "params": "~0M",
+                    "type": model_type,
+                    "default_obs": "vector",
+                    "maturity": "experimental",
+                },
+            )
+
+        def _register_components():
+            class _PluginActionConditioner:
+                def condition(self, state, action, conditions=None):
+                    del state, action, conditions
+                    return {}
+
+            WorldModelRegistry.register_component(
+                component_id,
+                _PluginActionConditioner,
+                ComponentSpec(name="Plugin Zero Action", component_type="action_conditioner"),
+            )
+
+        fake_eps = _FakeEntryPoints(
+            [
+                _FakeEntryPoint("extplugin_models", "worldflux.models", _register_models),
+                _FakeEntryPoint(
+                    "extplugin_components", "worldflux.components", _register_components
+                ),
+            ]
+        )
+        monkeypatch.setattr(
+            "worldflux.core.registry.importlib_metadata.entry_points",
+            lambda: fake_eps,
+        )
+
+        WorldModelRegistry.load_entrypoint_plugins(force=True)
+        try:
+            assert model_type in WorldModelRegistry.list_models()
+            assert component_id in WorldModelRegistry.list_components()
+            assert WorldModelRegistry.resolve_alias(alias) == model_id
+        finally:
+            WorldModelRegistry.unregister_component(component_id)
+            WorldModelRegistry.unregister_alias(alias)
+            WorldModelRegistry.unregister_catalog_entry(model_id)
+            WorldModelRegistry.unregister(model_type)
