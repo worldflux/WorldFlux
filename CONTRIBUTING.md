@@ -171,6 +171,7 @@ To add a new world model implementation:
    - Create `__init__.py` with exports
    - Create `world_model.py` implementing the `WorldModel` protocol
    - Register with `@WorldModelRegistry.register("newmodel", NewModelConfig)`
+   - If component overrides should be effective, declare `self.composable_support` slots explicitly
 
 3. **Add tests** in `tests/test_models/test_newmodel.py`
    - Test all protocol methods
@@ -183,6 +184,12 @@ To add a new world model implementation:
 
 5. **Update documentation**
    - Add to README.md
+
+### External Plugin Note
+
+Entry-point plugins are currently treated as experimental API. External plugins should
+register a compatibility manifest (`plugin_api_version`, `worldflux_version_range`,
+`capabilities`) via `WorldModelRegistry.register_plugin_manifest(...)`.
 
 ## Reporting Issues
 

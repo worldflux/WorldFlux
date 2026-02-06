@@ -3,6 +3,8 @@
 from .batch import (
     Batch,
     BatchProvider,
+    BatchProviderV2,
+    BatchRequest,
     SequenceProvider,
     TokenProvider,
     TransitionProvider,
@@ -65,7 +67,7 @@ from .payloads import (
     is_namespaced_extra_key,
     normalize_planned_action,
 )
-from .registry import AutoConfig, AutoWorldModel, WorldModelRegistry
+from .registry import AutoConfig, AutoWorldModel, PluginManifest, WorldModelRegistry
 from .spec import (
     ActionSpec,
     Capability,
@@ -76,6 +78,7 @@ from .spec import (
     ModelMaturity,
     ObservationSpec,
     PredictionSpec,
+    SequenceFieldSpec,
     SequenceLayout,
     StateSpec,
     TokenSpec,
@@ -88,7 +91,9 @@ __all__ = [
     "State",
     "Trajectory",
     "Batch",
+    "BatchRequest",
     "BatchProvider",
+    "BatchProviderV2",
     "TransitionProvider",
     "SequenceProvider",
     "TokenProvider",
@@ -122,6 +127,7 @@ __all__ = [
     "StateSpec",
     "TokenSpec",
     "PredictionSpec",
+    "SequenceFieldSpec",
     "SequenceLayout",
     "ModelIOContract",
     "Capability",
@@ -146,6 +152,7 @@ __all__ = [
     "WorldModelRegistry",
     "AutoWorldModel",
     "AutoConfig",
+    "PluginManifest",
     # Latent Spaces
     "LatentSpace",
     "GaussianLatentSpace",
