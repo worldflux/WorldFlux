@@ -31,16 +31,16 @@ v3-first policy:
 ## 9/10 Readiness Minimum TODOs (MVP)
 
 ### P0 (must-have)
-- [ ] **Reproduction guide**: document shortest real-data steps for Dreamer/TD-MPC2
-- [ ] **Reproducibility criteria**: define seed variance bounds (e.g., ±5–10%)
-- [ ] **Benchmark floor**: minimal loss decrease threshold within N steps
-- [ ] **Dataset schema check**: document required `.npz` keys and shapes
-- [ ] **Example stability**: headless execution verified in docs
+- [x] **Reproduction guide**: shortest real-data steps documented for Dreamer/TD-MPC2 (ref: `docs/tutorials/reproduce-dreamer-tdmpc2.md`)
+- [x] **Reproducibility criteria**: seed variance/success-rate bounds documented (ref: `docs/reference/quality-gates.md`)
+- [x] **Benchmark floor**: minimal loss-decrease threshold documented (ref: `docs/reference/quality-gates.md`)
+- [x] **Dataset schema check**: required `.npz` keys/shapes documented (ref: `docs/api/training.md`)
+- [x] **Example stability**: CI enforces example smoke tests + strict docs build (ref: `.github/workflows/ci.yml`)
 
 ### P1 (stabilization)
-- [ ] **Model family requirements**: table of required components per model family
-- [ ] **CI gates definition**: explicit list of required CI checks
-- [ ] **OSS release checklist**: minimum criteria before tagging release
+- [x] **Model family requirements**: required-component table documented by family (ref: `docs/EXTENSIBILITY.md`)
+- [x] **CI gates definition**: explicit CI/release gate list documented (ref: `docs/reference/quality-gates.md`)
+- [x] **OSS release checklist**: minimum pre-tag checklist documented (ref: `docs/reference/release-checklist.md`)
 
 ---
 
