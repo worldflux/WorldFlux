@@ -1,5 +1,7 @@
 """Tests for the simple factory API."""
 
+import warnings
+
 import pytest
 import torch
 
@@ -158,10 +160,26 @@ class TestCreateWorldModel:
         model = create_world_model("vjepa2:base", obs_shape=(4,), action_dim=1)
         assert isinstance(model, VJEPA2WorldModel)
 
+    def test_create_defaults_to_api_version_v3_without_warning(self):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            model = create_world_model("tdmpc2:ci", obs_shape=(4,), action_dim=2)
+        assert model.config.model_type == "tdmpc2"
+        assert getattr(model, "_wf_api_version", None) == "v3"
+        assert not any(issubclass(w.category, DeprecationWarning) for w in caught)
+
     def test_create_with_api_version_v3(self):
         model = create_world_model("tdmpc2:ci", obs_shape=(4,), action_dim=2, api_version="v3")
         assert model.config.model_type == "tdmpc2"
         assert getattr(model, "_wf_api_version", None) == "v3"
+
+    def test_create_with_api_version_v02_warns(self):
+        with pytest.warns(DeprecationWarning, match="api_version='v0.2'"):
+            model = create_world_model(
+                "tdmpc2:ci", obs_shape=(4,), action_dim=2, api_version="v0.2"
+            )
+        assert model.config.model_type == "tdmpc2"
+        assert getattr(model, "_wf_api_version", None) == "v0.2"
 
     def test_create_with_hybrid_action_rejected_in_v3(self):
         with pytest.raises(ValueError, match="hybrid"):

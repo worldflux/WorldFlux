@@ -229,7 +229,7 @@ def create_world_model(
     observation_modalities: dict[str, dict[str, Any]] | None = None,
     action_spec: dict[str, Any] | None = None,
     device: str = "cpu",
-    api_version: str = "v0.2",
+    api_version: str = "v3",
     **kwargs: Any,
 ) -> WorldModel:
     """
