@@ -5,8 +5,9 @@ from __future__ import annotations
 import re
 import warnings
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any, Literal, Protocol
 
+import torch
 from torch import Tensor
 
 ActionKind = Literal["none", "continuous", "discrete", "token", "latent", "text", "hybrid"]
@@ -15,6 +16,22 @@ PLANNER_SEQUENCE_KEY = "wf.planner.sequence"
 ACTION_COMPONENTS_KEY = "wf.action.components"
 
 _NAMESPACED_KEY_PATTERN = re.compile(r"^wf\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_.-]+$")
+
+
+class ActionSpecLike(Protocol):
+    """Structural protocol for action contract checks."""
+
+    @property
+    def kind(self) -> str: ...
+
+    @property
+    def dim(self) -> int: ...
+
+    @property
+    def discrete(self) -> bool: ...
+
+    @property
+    def num_actions(self) -> int | None: ...
 
 
 def is_namespaced_extra_key(key: str) -> bool:
@@ -138,6 +155,80 @@ class WorldModelOutput:
     action_logits: Tensor | None = None
     uncertainty: Tensor | None = None
     auxiliary: dict[str, Tensor] = field(default_factory=dict)
+
+
+def _infer_feature_dim(tensor: Tensor) -> int:
+    if tensor.dim() == 0:
+        raise ValueError("Action tensors must have rank >= 1")
+    if tensor.dim() == 1:
+        return int(tensor.shape[0])
+    return int(tensor.shape[-1])
+
+
+def validate_action_payload_against_spec(
+    payload: ActionPayload,
+    action_spec: ActionSpecLike,
+    *,
+    api_version: str = "v0.2",
+) -> None:
+    """Validate payload against model action contract."""
+    payload.validate(api_version=api_version)
+
+    spec_kind = str(action_spec.kind)
+    if spec_kind == "hybrid":
+        msg = "ActionSpec.kind='hybrid' is deprecated in v0.2 and removed in v0.3."
+        if api_version == "v3":
+            raise ValueError(msg)
+        warnings.warn(msg, DeprecationWarning, stacklevel=2)
+
+    if payload.kind == "none":
+        if spec_kind not in {"none", "hybrid"}:
+            raise ValueError(
+                f"Action payload kind 'none' is incompatible with action_spec.kind={spec_kind!r}"
+            )
+        return
+
+    if spec_kind not in {"hybrid", payload.kind}:
+        raise ValueError(
+            f"Action payload kind {payload.kind!r} is incompatible with action_spec.kind={spec_kind!r}"
+        )
+
+    if payload.kind in {"continuous", "discrete"} and payload.tensor is None:
+        raise ValueError(f"Action payload kind {payload.kind!r} requires tensor field")
+    if payload.kind == "token" and payload.tokens is None and payload.tensor is None:
+        raise ValueError("Action payload kind 'token' requires tokens or tensor field")
+    if payload.kind == "latent" and payload.latent is None and payload.tensor is None:
+        raise ValueError("Action payload kind 'latent' requires latent or tensor field")
+    if payload.kind == "text" and not payload.text:
+        raise ValueError("Action payload kind 'text' requires non-empty text field")
+
+    expected_dim = int(action_spec.dim)
+    if expected_dim <= 0:
+        return
+
+    if payload.kind in {"continuous", "token", "latent"}:
+        primary = payload.primary()
+        if primary is None:
+            return
+        got_dim = _infer_feature_dim(primary)
+        if got_dim != expected_dim:
+            raise ValueError(
+                f"Action feature dim mismatch for kind={payload.kind!r}: "
+                f"expected {expected_dim}, got {got_dim}"
+            )
+        return
+
+    if payload.kind == "discrete" and payload.tensor is not None:
+        tensor = payload.tensor
+        num_actions = int(action_spec.num_actions or expected_dim)
+        if not tensor.dtype.is_floating_point and tensor.dtype != torch.bool:
+            # Integer-like tensors are treated as class indices.
+            return
+        got_dim = _infer_feature_dim(tensor)
+        if got_dim != num_actions:
+            raise ValueError(
+                f"Discrete action dim mismatch: expected trailing dim {num_actions}, got {got_dim}"
+            )
 
 
 def _infer_horizon_from_tensor(tensor: Tensor) -> int:

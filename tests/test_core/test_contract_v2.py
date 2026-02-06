@@ -8,7 +8,7 @@ import torch
 from worldflux.core.exceptions import CapabilityError, ContractValidationError, ValidationError
 from worldflux.core.model import WorldModel
 from worldflux.core.output import LossOutput, ModelOutput
-from worldflux.core.payloads import ConditionPayload
+from worldflux.core.payloads import ActionPayload, ConditionPayload
 from worldflux.core.spec import (
     ActionSpec,
     ConditionSpec,
@@ -46,6 +46,50 @@ class _ConditionAwareModel(WorldModel):
     def decode(self, state, conditions=None):
         del conditions
         return ModelOutput(predictions={"latent": state.tensors["latent"]})
+
+    def io_contract(self) -> ModelIOContract:
+        return ModelIOContract(
+            observation_spec=ObservationSpec(
+                modalities={"obs": ModalitySpec(kind=ModalityKind.VECTOR, shape=(2,))}
+            ),
+            action_spec=ActionSpec(kind="continuous", dim=2),
+            state_spec=StateSpec(
+                tensors={"latent": ModalitySpec(kind=ModalityKind.VECTOR, shape=(2,))}
+            ),
+            prediction_spec=PredictionSpec(
+                tensors={"latent": ModalitySpec(kind=ModalityKind.VECTOR, shape=(2,))}
+            ),
+            condition_spec=ConditionSpec(allowed_extra_keys=("wf.planner.horizon",)),
+            required_state_keys=("latent",),
+        )
+
+    def loss(self, batch):
+        del batch
+        return LossOutput(loss=torch.tensor(0.0))
+
+
+class _EchoDynamics:
+    def transition(self, state, conditioned, deterministic: bool = False):
+        del conditioned, deterministic
+        return state
+
+
+class _ContractAwareModel(WorldModel):
+    def __init__(self):
+        super().__init__()
+        self.dynamics_model = _EchoDynamics()
+
+    def encode(self, obs, deterministic: bool = False):
+        del obs, deterministic
+        return State(tensors={"latent": torch.zeros(1, 2)})
+
+    def update(self, state, action, obs, conditions=None):
+        del action, obs, conditions
+        return state
+
+    def decode(self, state, conditions=None):
+        del conditions
+        return ModelOutput(predictions={"latent": state.tensors["latent"]}, state=state)
 
     def io_contract(self) -> ModelIOContract:
         return ModelIOContract(
@@ -180,4 +224,28 @@ def test_condition_payload_undeclared_extra_fails_in_v3():
             state,
             torch.randn(1, 2),
             conditions=ConditionPayload(extras={"wf.custom.goal": torch.randn(1, 1)}),
+        )
+
+
+def test_transition_rejects_action_payload_kind_mismatch_in_v3():
+    model = _ContractAwareModel()
+    model._wf_api_version = "v3"
+    state = model.encode(torch.randn(1, 2))
+    with pytest.raises(ValidationError, match="incompatible"):
+        model.transition(
+            state,
+            ActionPayload(kind="token", tokens=torch.randint(0, 10, (1, 2))),
+            conditions=ConditionPayload(extras={"wf.planner.horizon": 1}),
+        )
+
+
+def test_transition_rejects_action_payload_dim_mismatch_in_v3():
+    model = _ContractAwareModel()
+    model._wf_api_version = "v3"
+    state = model.encode(torch.randn(1, 2))
+    with pytest.raises(ValidationError, match="feature dim mismatch"):
+        model.transition(
+            state,
+            ActionPayload(kind="continuous", tensor=torch.randn(1, 3)),
+            conditions=ConditionPayload(extras={"wf.planner.horizon": 1}),
         )
