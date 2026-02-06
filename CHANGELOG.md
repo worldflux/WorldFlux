@@ -18,10 +18,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - External plugin discovery via entry-point groups: `worldflux.models`, `worldflux.components`
 - Serialization metadata file `worldflux_meta.json` with compatibility checks on load
 - CI docs gate: `uv run mkdocs build --strict`
+- Training API docs now define required `ReplayBuffer.load()` `.npz` schema
+- OSS release checklist reference doc (`docs/reference/release-checklist.md`)
 
 ### Changed
 - Quality-gate documentation updated to `uv` command path
 - `save_pretrained()` standardized across families with metadata emission
+- Packaging metadata now uses SPDX license expression (`Apache-2.0`)
+- Security reporting contact now explicitly points to `yhyoda@worldflux.ai`
 
 ## [0.1.0] - 2026-01-26
 
