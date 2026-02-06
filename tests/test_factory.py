@@ -44,9 +44,17 @@ class TestListModels:
     def test_list_models_with_maturity_filter(self):
         ref_models = list_models(maturity="reference")
         exp_models = list_models(maturity="experimental")
+        skeleton_models = list_models(maturity="skeleton")
         assert "dreamerv3:size12m" in ref_models
         assert "jepa:base" in exp_models
         assert "vjepa2:base" in exp_models
+        assert "dit:base" in skeleton_models
+        assert "ssm:base" in skeleton_models
+        assert "renderer3d:base" in skeleton_models
+        assert "physics:base" in skeleton_models
+        assert "gan:base" in skeleton_models
+        assert "dit:base" not in exp_models
+        assert "ssm:base" not in exp_models
 
 
 class TestGetModelInfo:
