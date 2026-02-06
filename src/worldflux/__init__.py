@@ -36,6 +36,8 @@ from .core import (
     AutoWorldModel,
     Batch,
     BatchProvider,
+    BatchProviderV2,
+    BatchRequest,
     Capability,
     CategoricalLatentSpace,
     ComponentSpec,
@@ -60,10 +62,12 @@ from .core import (
     ModelOutput,
     ObservationSpec,
     PhysicsSkeletonConfig,
+    PluginManifest,
     PredictionSpec,
     Renderer3DSkeletonConfig,
     RolloutEngine,
     RolloutExecutor,
+    SequenceFieldSpec,
     SequenceLayout,
     SequenceProvider,
     SimNormLatentSpace,
@@ -108,7 +112,7 @@ from .models import (
     TokenWorldModel,
     VJEPA2WorldModel,
 )
-from .planners import Planner
+from .planners import Planner, PlannerObjective, RewardObjective
 from .utils import set_seed
 
 
@@ -140,7 +144,9 @@ __all__ = [
     "State",
     "Trajectory",
     "Batch",
+    "BatchRequest",
     "BatchProvider",
+    "BatchProviderV2",
     "TransitionProvider",
     "SequenceProvider",
     "TokenProvider",
@@ -165,6 +171,8 @@ __all__ = [
     "RolloutExecutor",
     "RolloutEngine",
     "Planner",
+    "PlannerObjective",
+    "RewardObjective",
     # Specs
     "ModalityKind",
     "ModalitySpec",
@@ -174,6 +182,7 @@ __all__ = [
     "StateSpec",
     "TokenSpec",
     "PredictionSpec",
+    "SequenceFieldSpec",
     "SequenceLayout",
     "ModelIOContract",
     "Capability",
@@ -194,6 +203,7 @@ __all__ = [
     "GANSkeletonConfig",
     "WorldModel",
     "WorldModelRegistry",
+    "PluginManifest",
     "AutoWorldModel",
     "AutoConfig",
     # Latent spaces

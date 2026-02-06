@@ -9,7 +9,7 @@ from ..core.exceptions import CapabilityError
 from ..core.model import WorldModel
 from ..core.payloads import PLANNER_HORIZON_KEY, ActionPayload, ConditionPayload
 from ..core.state import State
-from .interfaces import Planner
+from .interfaces import Planner, PlannerObjective, RewardObjective
 
 
 class CEMPlanner(Planner):
@@ -24,6 +24,7 @@ class CEMPlanner(Planner):
         iterations: int = 1,
         action_low: float | Tensor | None = None,
         action_high: float | Tensor | None = None,
+        objective: PlannerObjective | None = None,
     ):
         self.horizon = horizon
         self.action_dim = action_dim
@@ -32,6 +33,7 @@ class CEMPlanner(Planner):
         self.iterations = iterations
         self.action_low = action_low
         self.action_high = action_high
+        self.objective = objective or RewardObjective()
 
     def _apply_action_bounds(self, actions: Tensor) -> Tensor:
         if self.action_low is not None:
@@ -51,8 +53,8 @@ class CEMPlanner(Planner):
         conditions: ConditionPayload | None = None,
         device: torch.device | None = None,
     ) -> ActionPayload:
-        if not model.supports_reward:
-            raise CapabilityError("Planner requires reward prediction capability")
+        if self.objective.requires_reward and not model.supports_reward:
+            raise CapabilityError("Planner objective requires reward prediction capability")
         contract_fn = getattr(model, "io_contract", None)
         contract = contract_fn() if callable(contract_fn) else None
 
@@ -95,17 +97,18 @@ class CEMPlanner(Planner):
                             f"State is missing required keys for planner contract: {missing_state}"
                         )
 
-            rewards = []
+            step_scores = []
             step_state = rollout_state
             for t in range(self.horizon):
                 step_state = model.plan_step(step_state, actions[t], conditions=conditions)
                 step_output = model.sample_step(step_state, conditions=conditions)
-                reward_t = step_output.preds.get("reward")
-                if reward_t is None:
-                    raise CapabilityError("Planner requires reward prediction from sample_step")
-                rewards.append(reward_t.squeeze(-1))
+                try:
+                    score_t = self.objective.score_step(model, step_output, step_state, t)
+                except ValueError as e:
+                    raise CapabilityError(str(e)) from e
+                step_scores.append(score_t)
 
-            scores = torch.stack(rewards, dim=0).sum(dim=0)
+            scores = torch.stack(step_scores, dim=0).sum(dim=0)
             elite_idx = scores.topk(self.num_elites).indices
             elite = actions[:, elite_idx]
             mean = elite.mean(dim=1)
