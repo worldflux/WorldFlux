@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import logging
 import math
 import os
@@ -14,7 +15,7 @@ import torch.nn as nn
 from torch.optim import AdamW, Optimizer
 from torch.optim.lr_scheduler import LRScheduler
 
-from worldflux.core.batch import Batch, BatchProvider
+from worldflux.core.batch import Batch, BatchProvider, BatchProviderV2, BatchRequest
 from worldflux.core.exceptions import (
     BufferError,
     CheckpointError,
@@ -207,11 +208,12 @@ class Trainer:
     def _next_batch(self, data: BatchProvider | Any) -> Batch:
         """Fetch the next batch from a provider or iterator."""
         if hasattr(data, "sample"):
-            batch = data.sample(
+            request = BatchRequest(
                 batch_size=self.config.batch_size,
                 seq_len=self.config.sequence_length,
                 device=self.device,
             )
+            batch = self._sample_from_provider(cast(BatchProvider | BatchProviderV2, data), request)
             if isinstance(batch, dict):
                 batch = Batch.from_dict(batch)
             if not isinstance(batch, Batch):
@@ -221,7 +223,12 @@ class Trainer:
             batch = batch.to(self.device)
             batch = self._apply_contract_to_batch(batch, data)
             try:
-                batch.validate(strict_time=True)
+                sequence_spec = (
+                    self.io_contract.effective_sequence_field_spec
+                    if self.io_contract is not None
+                    else None
+                )
+                batch.validate(strict_time=True, sequence_field_spec=sequence_spec)
             except (ShapeMismatchError, ValidationError, BufferError) as e:
                 raise TrainingError(f"Invalid batch for training: {e}") from e
             return batch
@@ -247,10 +254,41 @@ class Trainer:
         batch = batch.to(self.device)
         batch = self._apply_contract_to_batch(batch, data)
         try:
-            batch.validate(strict_time=True)
+            sequence_spec = (
+                self.io_contract.effective_sequence_field_spec
+                if self.io_contract is not None
+                else None
+            )
+            batch.validate(strict_time=True, sequence_field_spec=sequence_spec)
         except (ShapeMismatchError, ValidationError, BufferError) as e:
             raise TrainingError(f"Invalid batch for training: {e}") from e
         return batch
+
+    @staticmethod
+    def _sample_from_provider(
+        data: BatchProvider | BatchProviderV2,
+        request: BatchRequest,
+    ) -> Batch | dict[str, Any]:
+        sample_fn = getattr(data, "sample")
+        try:
+            sig = inspect.signature(sample_fn)
+        except (TypeError, ValueError):
+            sig = None
+
+        if sig is not None:
+            params = list(sig.parameters.values())
+            if len(params) == 1 and params[0].kind in (
+                inspect.Parameter.POSITIONAL_ONLY,
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                inspect.Parameter.KEYWORD_ONLY,
+            ):
+                return sample_fn(request)
+
+        return sample_fn(
+            batch_size=request.batch_size,
+            seq_len=request.seq_len,
+            device=request.device,
+        )
 
     def _create_optimizer(self) -> Optimizer:
         """Create optimizer based on config."""
