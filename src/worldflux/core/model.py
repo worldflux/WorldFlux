@@ -34,7 +34,7 @@ from .payloads import (
     ConditionPayload,
     WorldModelInput,
     normalize_planned_action,
-    validate_action_payload_against_spec,
+    validate_action_payload_against_union,
 )
 from .spec import (
     ActionSpec,
@@ -68,6 +68,8 @@ class WorldModel(nn.Module, ABC):
         self.rollout_executor: RolloutExecutor | None = None
         # Deprecated compatibility alias retained in v0.2.
         self.rollout_engine: RolloutEngine | None = None
+        # Slots where component overrides are effective in runtime execution paths.
+        self.composable_support: set[str] = set()
 
     def _get_api_version(self) -> str:
         return str(getattr(self, "_wf_api_version", "v0.2"))
@@ -168,14 +170,27 @@ class WorldModel(nn.Module, ABC):
 
     def _validate_condition_payload(self, conditions: ConditionPayload) -> None:
         contract = self.io_contract()
-        allowed = set(contract.condition_spec.allowed_extra_keys)
+        allowed = set(contract.effective_condition_extra_keys)
+        extras_schema = contract.condition_extras_schema_dict()
         api_version = self._get_api_version()
         strict = api_version == "v3"
         try:
             conditions.validate(
                 strict=strict,
                 allowed_extra_keys=allowed if (strict or allowed) else None,
+                extra_schema=extras_schema if extras_schema else None,
                 api_version=api_version,
+            )
+        except ValueError as e:
+            raise ValidationError(str(e)) from e
+
+    def _validate_action_payload(self, payload: ActionPayload) -> None:
+        contract = self.io_contract()
+        try:
+            validate_action_payload_against_union(
+                payload,
+                contract.effective_action_specs,
+                api_version=self._get_api_version(),
             )
         except ValueError as e:
             raise ValidationError(str(e)) from e
@@ -186,18 +201,12 @@ class WorldModel(nn.Module, ABC):
         *,
         validate_contract: bool = True,
     ) -> Tensor | None:
+        contract = self.io_contract()
         if validate_contract:
-            action_spec = self.io_contract().action_spec
+            action_spec = contract.action_spec
             payload = self.coerce_action_payload(action, kind=action_spec.kind)
             if payload is not None:
-                try:
-                    validate_action_payload_against_spec(
-                        payload,
-                        action_spec,
-                        api_version=self._get_api_version(),
-                    )
-                except ValueError as e:
-                    raise ValidationError(str(e)) from e
+                self._validate_action_payload(payload)
         else:
             payload = self.coerce_action_payload(action)
         if payload is None:
@@ -343,17 +352,11 @@ class WorldModel(nn.Module, ABC):
                 f"{self.__class__.__name__}.transition(...) is not implemented and no dynamics_model is attached"
             )
 
-        action_spec = self.io_contract().action_spec
+        contract = self.io_contract()
+        action_spec = contract.action_spec
         action_payload = self.coerce_action_payload(action, kind=action_spec.kind)
         if action_payload is not None:
-            try:
-                validate_action_payload_against_spec(
-                    action_payload,
-                    action_spec,
-                    api_version=self._get_api_version(),
-                )
-            except ValueError as e:
-                raise ValidationError(str(e)) from e
+            self._validate_action_payload(action_payload)
         condition_payload = self.coerce_condition_payload(conditions)
         self._validate_condition_payload(condition_payload)
         conditioned: dict[str, Tensor] = {}
@@ -495,9 +498,7 @@ class WorldModel(nn.Module, ABC):
             return self.rollout_executor.rollout_open_loop(
                 self,
                 initial_state,
-                action_sequence.tensor
-                if isinstance(action_sequence, ActionSequence)
-                else action_sequence,
+                action_sequence,
                 conditions=condition_payload,
                 deterministic=deterministic,
             )

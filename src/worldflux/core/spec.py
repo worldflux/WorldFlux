@@ -6,6 +6,7 @@ import warnings
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Any
 
 from .exceptions import ContractValidationError
 from .payloads import is_namespaced_extra_key
@@ -144,6 +145,20 @@ class SequenceLayout:
 
 
 @dataclass(frozen=True)
+class SequenceFieldSpec:
+    """
+    Per-field sequence validation contract.
+
+    This augments ``SequenceLayout`` with variable-length and axis constraints.
+    """
+
+    layout: str | None = None
+    variable_length: bool = False
+    required_axes: tuple[str, ...] = ("B",)
+    allow_multiple_time_axes: bool = False
+
+
+@dataclass(frozen=True)
 class ModelIOContract:
     """Runtime I/O contract for unified validation across model families."""
 
@@ -161,6 +176,10 @@ class ModelIOContract:
     input_spec: ObservationSpec | None = None
     target_spec: ObservationSpec = field(default_factory=ObservationSpec)
     condition_spec: ConditionSpec = field(default_factory=ConditionSpec)
+    # v3.1 additive fields.
+    action_union_spec: tuple[ActionSpec, ...] = ()
+    condition_extras_schema: dict[str, ModalitySpec] = field(default_factory=dict)
+    sequence_field_spec: dict[str, SequenceFieldSpec] = field(default_factory=dict)
 
     @staticmethod
     def _root_name(key: str) -> str:
@@ -170,11 +189,52 @@ class ModelIOContract:
     def effective_input_spec(self) -> ObservationSpec:
         return self.input_spec or self.observation_spec
 
+    @property
+    def effective_action_specs(self) -> tuple[ActionSpec, ...]:
+        # v3 compatibility: if action_union_spec is omitted, fall back to singleton action_spec.
+        return self.action_union_spec or (self.action_spec,)
+
+    @property
+    def effective_condition_extra_keys(self) -> tuple[str, ...]:
+        # v3 compatibility: schema-only keys are treated as allowed extras automatically.
+        merged = dict.fromkeys(
+            tuple(self.condition_spec.allowed_extra_keys)
+            + tuple(self.condition_extras_schema.keys())
+        )
+        return tuple(merged.keys())
+
+    @property
+    def effective_sequence_field_spec(self) -> dict[str, SequenceFieldSpec]:
+        # v3 compatibility: sequence_layout entries are auto-upconverted into field specs.
+        merged: dict[str, SequenceFieldSpec] = {
+            field_name: SequenceFieldSpec(layout=layout)
+            for field_name, layout in self.sequence_layout.axes_by_field.items()
+        }
+        for field_name, spec in self.sequence_field_spec.items():
+            if field_name in merged and spec.layout is None:
+                merged[field_name] = SequenceFieldSpec(
+                    layout=merged[field_name].layout,
+                    variable_length=spec.variable_length,
+                    required_axes=spec.required_axes,
+                    allow_multiple_time_axes=spec.allow_multiple_time_axes,
+                )
+            else:
+                merged[field_name] = spec
+        return merged
+
+    def condition_extras_schema_dict(self) -> dict[str, dict[str, Any]]:
+        return {
+            key: {"dtype": spec.dtype, "shape": spec.shape}
+            for key, spec in self.condition_extras_schema.items()
+        }
+
     def validate(self) -> None:
         """Validate contract consistency."""
+        self._validate_action_union_spec()
         self._validate_batch_key_requirements()
         self._validate_state_key_requirements()
         self._validate_sequence_layout()
+        self._validate_sequence_field_spec()
         self._validate_condition_spec()
 
     def _declared_fields(self) -> set[str]:
@@ -182,7 +242,8 @@ class ModelIOContract:
         fields.update(self.effective_input_spec.modalities.keys())
         fields.update(self.target_spec.modalities.keys())
         fields.update(self.condition_spec.modalities.keys())
-        fields.update(self._root_name(k) for k in self.condition_spec.allowed_extra_keys)
+        fields.update(self._root_name(k) for k in self.effective_condition_extra_keys)
+        fields.update(self._root_name(k) for k in self.condition_extras_schema.keys())
         fields.update(self._root_name(k) for k in self.additional_batch_fields.keys())
         return fields
 
@@ -223,7 +284,12 @@ class ModelIOContract:
 
     def _validate_sequence_layout(self) -> None:
         valid_fields = self._allowed_batch_roots()
-        for field_name, layout in self.sequence_layout.axes_by_field.items():
+        merged_layouts = dict(self.sequence_layout.axes_by_field)
+        for field_name, spec in self.sequence_field_spec.items():
+            if spec.layout is not None:
+                merged_layouts[field_name] = spec.layout
+
+        for field_name, layout in merged_layouts.items():
             root = self._root_name(field_name)
             if root not in valid_fields:
                 raise ContractValidationError(
@@ -239,8 +305,55 @@ class ModelIOContract:
                     f"Sequence layout for '{field_name}' must include batch axis 'B', got '{layout}'"
                 )
 
+    def _validate_sequence_field_spec(self) -> None:
+        valid_fields = self._allowed_batch_roots()
+        for field_name, spec in self.effective_sequence_field_spec.items():
+            root = self._root_name(field_name)
+            if root not in valid_fields:
+                raise ContractValidationError(
+                    f"Unknown sequence field spec '{field_name}'. "
+                    f"Expected root field in {sorted(valid_fields)}"
+                )
+            layout = spec.layout
+            if layout is None:
+                if spec.variable_length:
+                    raise ContractValidationError(
+                        f"sequence_field_spec['{field_name}'] has variable_length=True but no layout"
+                    )
+                continue
+
+            for axis in spec.required_axes:
+                if axis not in layout:
+                    raise ContractValidationError(
+                        f"sequence_field_spec['{field_name}'] requires axis '{axis}' in layout '{layout}'"
+                    )
+            if spec.variable_length and "T" not in layout:
+                raise ContractValidationError(
+                    f"sequence_field_spec['{field_name}'] has variable_length=True but layout '{layout}' has no 'T' axis"
+                )
+            if not spec.allow_multiple_time_axes and layout.count("T") > 1:
+                raise ContractValidationError(
+                    f"sequence_field_spec['{field_name}'] layout '{layout}' contains multiple 'T' axes"
+                )
+
     def _validate_condition_spec(self) -> None:
-        self._validate_extra_keys(self.condition_spec.allowed_extra_keys, source="condition_spec")
+        self._validate_extra_keys(self.effective_condition_extra_keys, source="condition_spec")
+        self._validate_extra_keys(
+            self.condition_extras_schema.keys(), source="condition_extras_schema"
+        )
+
+    def _validate_action_union_spec(self) -> None:
+        union = self.action_union_spec
+        if not union:
+            return
+        if len({spec.kind for spec in union}) != len(union):
+            raise ContractValidationError(
+                "action_union_spec must not contain duplicate action kinds"
+            )
+        if self.action_spec.kind not in {spec.kind for spec in union}:
+            raise ContractValidationError(
+                "action_spec.kind must be represented in action_union_spec for compatibility"
+            )
 
     @staticmethod
     def _validate_extra_keys(keys: Iterable[str], *, source: str) -> None:

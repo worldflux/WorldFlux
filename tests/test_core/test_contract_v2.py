@@ -17,6 +17,7 @@ from worldflux.core.spec import (
     ModelIOContract,
     ObservationSpec,
     PredictionSpec,
+    SequenceFieldSpec,
     SequenceLayout,
     StateSpec,
 )
@@ -112,6 +113,47 @@ class _ContractAwareModel(WorldModel):
         return LossOutput(loss=torch.tensor(0.0))
 
 
+class _UnionActionModel(WorldModel):
+    def __init__(self):
+        super().__init__()
+        self.dynamics_model = _EchoDynamics()
+
+    def encode(self, obs, deterministic: bool = False):
+        del obs, deterministic
+        return State(tensors={"latent": torch.zeros(1, 2)})
+
+    def update(self, state, action, obs, conditions=None):
+        del action, obs, conditions
+        return state
+
+    def decode(self, state, conditions=None):
+        del conditions
+        return ModelOutput(predictions={"latent": state.tensors["latent"]}, state=state)
+
+    def io_contract(self) -> ModelIOContract:
+        return ModelIOContract(
+            observation_spec=ObservationSpec(
+                modalities={"obs": ModalitySpec(kind=ModalityKind.VECTOR, shape=(2,))}
+            ),
+            action_spec=ActionSpec(kind="continuous", dim=2),
+            action_union_spec=(
+                ActionSpec(kind="continuous", dim=2),
+                ActionSpec(kind="token", dim=2),
+            ),
+            state_spec=StateSpec(
+                tensors={"latent": ModalitySpec(kind=ModalityKind.VECTOR, shape=(2,))}
+            ),
+            prediction_spec=PredictionSpec(
+                tensors={"latent": ModalitySpec(kind=ModalityKind.VECTOR, shape=(2,))}
+            ),
+            required_state_keys=("latent",),
+        )
+
+    def loss(self, batch):
+        del batch
+        return LossOutput(loss=torch.tensor(0.0))
+
+
 def test_action_spec_accepts_extended_kinds():
     for kind in ("none", "continuous", "discrete", "token", "latent", "text"):
         spec = ActionSpec(
@@ -161,6 +203,55 @@ def test_model_io_contract_v2_fields_validate():
         required_state_keys=("latent",),
     )
     contract.validate()
+
+
+def test_model_io_contract_auto_upconverts_v3_contract_fields():
+    contract = ModelIOContract(
+        observation_spec=ObservationSpec(
+            modalities={"obs": ModalitySpec(kind=ModalityKind.VECTOR, shape=(4,))}
+        ),
+        condition_spec=ConditionSpec(allowed_extra_keys=("wf.planner.horizon",)),
+        action_spec=ActionSpec(kind="continuous", dim=2),
+        state_spec=StateSpec(
+            tensors={"latent": ModalitySpec(kind=ModalityKind.VECTOR, shape=(4,))}
+        ),
+        sequence_layout=SequenceLayout(axes_by_field={"obs": "BT...", "actions": "BT..."}),
+        required_state_keys=("latent",),
+    )
+    contract.validate()
+    assert len(contract.effective_action_specs) == 1
+    assert contract.effective_action_specs[0].kind == "continuous"
+    assert "wf.planner.horizon" in contract.effective_condition_extra_keys
+    assert "obs" in contract.effective_sequence_field_spec
+
+
+def test_model_io_contract_sequence_field_spec_variable_length_requires_time_axis():
+    valid = ModelIOContract(
+        observation_spec=ObservationSpec(
+            modalities={"obs": ModalitySpec(kind=ModalityKind.VECTOR, shape=(4,))}
+        ),
+        action_spec=ActionSpec(kind="continuous", dim=2),
+        state_spec=StateSpec(
+            tensors={"latent": ModalitySpec(kind=ModalityKind.VECTOR, shape=(4,))}
+        ),
+        sequence_field_spec={"obs": SequenceFieldSpec(layout="BT...", variable_length=True)},
+        required_state_keys=("latent",),
+    )
+    valid.validate()
+
+    invalid = ModelIOContract(
+        observation_spec=ObservationSpec(
+            modalities={"obs": ModalitySpec(kind=ModalityKind.VECTOR, shape=(4,))}
+        ),
+        action_spec=ActionSpec(kind="continuous", dim=2),
+        state_spec=StateSpec(
+            tensors={"latent": ModalitySpec(kind=ModalityKind.VECTOR, shape=(4,))}
+        ),
+        sequence_field_spec={"obs": SequenceFieldSpec(layout="B...", variable_length=True)},
+        required_state_keys=("latent",),
+    )
+    with pytest.raises(ContractValidationError, match="variable_length"):
+        invalid.validate()
 
 
 def test_model_io_contract_rejects_invalid_condition_extra_key():
@@ -248,4 +339,51 @@ def test_transition_rejects_action_payload_dim_mismatch_in_v3():
             state,
             ActionPayload(kind="continuous", tensor=torch.randn(1, 3)),
             conditions=ConditionPayload(extras={"wf.planner.horizon": 1}),
+        )
+
+
+def test_transition_accepts_action_payload_matching_union_variant_in_v3():
+    model = _UnionActionModel()
+    model._wf_api_version = "v3"
+    state = model.encode(torch.randn(1, 2))
+    transitioned = model.transition(
+        state,
+        ActionPayload(kind="token", tokens=torch.randint(0, 8, (1, 2))),
+    )
+    assert "latent" in transitioned.tensors
+
+
+def test_condition_payload_schema_validation_fails_in_v3():
+    model = _ConditionAwareModel()
+    model._wf_api_version = "v3"
+
+    def _io_contract():
+        return ModelIOContract(
+            observation_spec=ObservationSpec(
+                modalities={"obs": ModalitySpec(kind=ModalityKind.VECTOR, shape=(2,))}
+            ),
+            action_spec=ActionSpec(kind="continuous", dim=2),
+            state_spec=StateSpec(
+                tensors={"latent": ModalitySpec(kind=ModalityKind.VECTOR, shape=(2,))}
+            ),
+            prediction_spec=PredictionSpec(
+                tensors={"latent": ModalitySpec(kind=ModalityKind.VECTOR, shape=(2,))}
+            ),
+            condition_extras_schema={
+                "wf.custom.goal": ModalitySpec(
+                    kind=ModalityKind.VECTOR, shape=(1,), dtype="float32"
+                )
+            },
+            required_state_keys=("latent",),
+        )
+
+    model.io_contract = _io_contract  # type: ignore[assignment]
+    state = model.encode(torch.randn(1, 2))
+    with pytest.raises(ValidationError, match="dtype mismatch|shape mismatch"):
+        model.transition(
+            state,
+            torch.randn(1, 2),
+            conditions=ConditionPayload(
+                extras={"wf.custom.goal": torch.ones(1, 2, dtype=torch.int64)}
+            ),
         )
