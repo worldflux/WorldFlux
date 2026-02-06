@@ -4,6 +4,7 @@ import pytest
 import torch
 
 from worldflux.core.batch import Batch
+from worldflux.core.spec import SequenceFieldSpec
 
 
 class TestBatch:
@@ -118,4 +119,42 @@ class TestBatch:
             strict_layout=True,
         )
         with pytest.raises(Exception, match="Unknown layout field"):
+            batch.validate(strict_time=True)
+
+    def test_validate_allows_variable_length_when_lengths_present(self):
+        batch = Batch(
+            obs=torch.randn(3, 5, 4),
+            actions=torch.randn(3, 4, 2),
+            lengths={"actions": torch.tensor([4, 4, 4])},
+        )
+        batch.validate(strict_time=True)
+
+    def test_validate_allows_variable_length_from_sequence_field_spec(self):
+        batch = Batch(
+            obs=torch.randn(3, 5, 4),
+            actions=torch.randn(3, 4, 2),
+            layouts={"obs": "BT...", "actions": "BT..."},
+            strict_layout=True,
+        )
+        batch.validate(
+            strict_time=True,
+            sequence_field_spec={
+                "actions": SequenceFieldSpec(layout="BT...", variable_length=True)
+            },
+        )
+
+    def test_validate_rejects_invalid_lengths_batch_dimension(self):
+        batch = Batch(
+            obs=torch.randn(3, 5, 4),
+            lengths={"obs": torch.tensor([5, 5])},
+        )
+        with pytest.raises(Exception, match="lengths\\['obs'\\] batch size mismatch"):
+            batch.validate(strict_time=True)
+
+    def test_validate_rejects_invalid_masks_batch_dimension(self):
+        batch = Batch(
+            obs=torch.randn(3, 5, 4),
+            masks={"obs": torch.ones(2, 5)},
+        )
+        with pytest.raises(Exception, match="masks\\['obs'\\] batch size mismatch"):
             batch.validate(strict_time=True)

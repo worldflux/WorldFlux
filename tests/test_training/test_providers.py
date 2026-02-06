@@ -75,3 +75,28 @@ def test_trainer_rejects_provider_with_unknown_layout_field():
     )
     with pytest.raises(TrainingError, match="Unknown layout field"):
         trainer._next_batch(BadLayoutProvider())
+
+
+def test_trainer_accepts_batch_provider_v2_request_shape():
+    class RequestProvider:
+        def sample(self, request) -> Batch:
+            seq = 4 if request.seq_len is None else request.seq_len
+            lengths = torch.full(
+                (request.batch_size,), seq, device=request.device, dtype=torch.int64
+            )
+            return Batch(
+                obs=torch.randn(request.batch_size, seq, 4, device=request.device),
+                lengths={"obs": lengths},
+                layouts={"obs": "BT..."},
+                strict_layout=True,
+            )
+
+    model = _MiniModel()
+    trainer = Trainer(
+        model,
+        TrainingConfig(total_steps=1, batch_size=2, sequence_length=4, device="cpu"),
+        callbacks=[],
+    )
+    batch = trainer._next_batch(RequestProvider())
+    assert isinstance(batch, Batch)
+    assert batch.obs is not None

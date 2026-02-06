@@ -9,6 +9,7 @@ import torch
 from torch import Tensor
 
 from .exceptions import ShapeMismatchError
+from .spec import SequenceFieldSpec
 
 
 def _map_tensors(value: Any, fn) -> Any:
@@ -67,6 +68,8 @@ class Batch:
     inputs: dict[str, Any] = field(default_factory=dict)
     targets: dict[str, Any] = field(default_factory=dict)
     conditions: dict[str, Any] = field(default_factory=dict)
+    lengths: dict[str, Tensor] = field(default_factory=dict)
+    masks: dict[str, Tensor] = field(default_factory=dict)
 
     extras: dict[str, Any] = field(default_factory=dict)
     layouts: dict[str, str] = field(default_factory=dict)
@@ -122,6 +125,8 @@ class Batch:
             and isinstance(self.targets["terminations"], Tensor)
         ):
             self.terminations = self.targets["terminations"]
+        if self.mask is not None and "obs" not in self.masks:
+            self.masks["obs"] = self.mask
 
     def to(self, device: torch.device | str) -> Batch:
         device_obj = torch.device(device) if isinstance(device, str) else device
@@ -153,6 +158,8 @@ class Batch:
             inputs=_map_tensors(self.inputs, lambda t: t.to(device_obj)),
             targets=_map_tensors(self.targets, lambda t: t.to(device_obj)),
             conditions=_map_tensors(self.conditions, lambda t: t.to(device_obj)),
+            lengths=_map_tensors(self.lengths, lambda t: t.to(device_obj)),
+            masks=_map_tensors(self.masks, lambda t: t.to(device_obj)),
             extras=_map_tensors(self.extras, lambda t: t.to(device_obj)),
             layouts=dict(self.layouts),
             strict_layout=self.strict_layout,
@@ -183,6 +190,8 @@ class Batch:
             inputs=_map_tensors(self.inputs, lambda t: t.detach()),
             targets=_map_tensors(self.targets, lambda t: t.detach()),
             conditions=_map_tensors(self.conditions, lambda t: t.detach()),
+            lengths=_map_tensors(self.lengths, lambda t: t.detach()),
+            masks=_map_tensors(self.masks, lambda t: t.detach()),
             extras=_map_tensors(self.extras, lambda t: t.detach()),
             layouts=dict(self.layouts),
             strict_layout=self.strict_layout,
@@ -213,6 +222,8 @@ class Batch:
             inputs=_map_tensors(self.inputs, lambda t: t.clone()),
             targets=_map_tensors(self.targets, lambda t: t.clone()),
             conditions=_map_tensors(self.conditions, lambda t: t.clone()),
+            lengths=_map_tensors(self.lengths, lambda t: t.clone()),
+            masks=_map_tensors(self.masks, lambda t: t.clone()),
             extras=_map_tensors(self.extras, lambda t: t.clone()),
             layouts=dict(self.layouts),
             strict_layout=self.strict_layout,
@@ -251,6 +262,8 @@ class Batch:
             "inputs": self.inputs,
             "targets": self.targets,
             "conditions": self.conditions,
+            "lengths": self.lengths,
+            "masks": self.masks,
             "extras": self.extras,
             "layouts": self.layouts,
             "strict_layout": self.strict_layout,
@@ -272,21 +285,67 @@ class Batch:
             inputs=dict(self.inputs),
             targets=dict(self.targets),
             conditions=dict(self.conditions),
+            lengths=dict(self.lengths),
+            masks=dict(self.masks),
             extras=self.extras,
             layouts=merged,
             strict_layout=self.strict_layout if strict is None else strict,
         )
 
     def _layout_for(self, field: str, subkey: str | None = None) -> str | None:
-        candidates = []
-        if subkey:
-            candidates.extend([f"{field}.{subkey}", f"{field}:{subkey}"])
-        candidates.append(field)
+        candidates = self._key_candidates(field, subkey=subkey)
         for key in candidates:
             layout = self.layouts.get(key)
             if layout is not None:
                 return layout
         return None
+
+    @staticmethod
+    def _key_candidates(field: str, subkey: str | None = None) -> list[str]:
+        candidates = []
+        if subkey:
+            candidates.extend([f"{field}.{subkey}", f"{field}:{subkey}", subkey])
+        candidates.append(field)
+        return candidates
+
+    @staticmethod
+    def _resolve_group_value(
+        group: dict[str, Tensor],
+        field: str,
+        subkey: str | None = None,
+    ) -> Tensor | None:
+        for key in Batch._key_candidates(field, subkey=subkey):
+            if key in group:
+                return group[key]
+        return None
+
+    @staticmethod
+    def _resolve_sequence_spec(
+        sequence_field_spec: dict[str, SequenceFieldSpec] | None,
+        field: str,
+        subkey: str | None = None,
+    ) -> SequenceFieldSpec | None:
+        if sequence_field_spec is None:
+            return None
+        for key in Batch._key_candidates(field, subkey=subkey):
+            spec = sequence_field_spec.get(key)
+            if spec is not None:
+                return spec
+        return None
+
+    def _is_variable_length_field(
+        self,
+        field: str,
+        *,
+        subkey: str | None = None,
+        sequence_field_spec: dict[str, SequenceFieldSpec] | None = None,
+    ) -> bool:
+        if self._resolve_group_value(self.lengths, field, subkey=subkey) is not None:
+            return True
+        if self._resolve_group_value(self.masks, field, subkey=subkey) is not None:
+            return True
+        spec = self._resolve_sequence_spec(sequence_field_spec, field, subkey=subkey)
+        return bool(spec is not None and spec.variable_length)
 
     def _validate_layout_keys(self) -> None:
         dynamic_roots = (
@@ -350,7 +409,12 @@ class Batch:
                 child_prefix = f"{prefix}.{key}" if prefix else str(key)
                 yield from Batch._iter_named(child, child_prefix)
 
-    def validate(self, *, strict_time: bool = True) -> None:
+    def validate(
+        self,
+        *,
+        strict_time: bool = True,
+        sequence_field_spec: dict[str, SequenceFieldSpec] | None = None,
+    ) -> None:
         """Validate batch shapes and consistency."""
         if self.strict_layout:
             self._validate_layout_keys()
@@ -377,9 +441,15 @@ class Batch:
             if not strict_time or time_axis is None:
                 continue
             t_size = tensor.shape[time_axis]
+            is_variable = self._is_variable_length_field(
+                "obs",
+                subkey=subkey or None,
+                sequence_field_spec=sequence_field_spec,
+            )
             if obs_time_dim is None:
-                obs_time_dim = t_size
-            elif t_size != obs_time_dim:
+                if not is_variable:
+                    obs_time_dim = t_size
+            elif not is_variable and t_size != obs_time_dim:
                 raise ShapeMismatchError(
                     "Observation time dimension mismatch",
                     expected=(obs_time_dim,),
@@ -399,7 +469,12 @@ class Batch:
                 time_axis = self._time_axis_for(name, tensor, subkey=subkey or None)
                 if time_axis is None:
                     continue
-                if tensor.shape[time_axis] != obs_time_dim:
+                is_variable = self._is_variable_length_field(
+                    name,
+                    subkey=subkey or None,
+                    sequence_field_spec=sequence_field_spec,
+                )
+                if not is_variable and tensor.shape[time_axis] != obs_time_dim:
                     raise ShapeMismatchError(
                         f"{name} time dimension mismatch",
                         expected=(obs_time_dim,),
@@ -427,6 +502,39 @@ class Batch:
         if self.targets:
             _check("targets", self.targets)
 
+        self._validate_lengths_and_masks(batch_size=batch_size)
+
+    def _validate_lengths_and_masks(self, *, batch_size: int) -> None:
+        for key, length in self.lengths.items():
+            if not isinstance(length, Tensor):
+                raise ShapeMismatchError(f"lengths['{key}'] must be a tensor")
+            if length.dim() != 1:
+                raise ShapeMismatchError(
+                    f"lengths['{key}'] must be rank-1 [B], got shape={tuple(length.shape)}"
+                )
+            if int(length.shape[0]) != batch_size:
+                raise ShapeMismatchError(
+                    f"lengths['{key}'] batch size mismatch",
+                    expected=(batch_size,),
+                    got=(int(length.shape[0]),),
+                )
+            if (length < 0).any():
+                raise ShapeMismatchError(f"lengths['{key}'] must contain non-negative values")
+
+        for key, mask in self.masks.items():
+            if not isinstance(mask, Tensor):
+                raise ShapeMismatchError(f"masks['{key}'] must be a tensor")
+            if mask.dim() < 1:
+                raise ShapeMismatchError(
+                    f"masks['{key}'] must have rank >= 1, got shape={tuple(mask.shape)}"
+                )
+            if int(mask.shape[0]) != batch_size:
+                raise ShapeMismatchError(
+                    f"masks['{key}'] batch size mismatch",
+                    expected=(batch_size,),
+                    got=(int(mask.shape[0]),),
+                )
+
 
 class BatchProvider(Protocol):
     """Protocol for batch providers."""
@@ -437,6 +545,21 @@ class BatchProvider(Protocol):
         seq_len: int | None = None,
         device: torch.device | str = "cpu",
     ) -> Batch: ...
+
+
+@dataclass(frozen=True)
+class BatchRequest:
+    """Structured batch request for BatchProviderV2."""
+
+    batch_size: int
+    seq_len: int | None = None
+    device: torch.device | str = "cpu"
+
+
+class BatchProviderV2(Protocol):
+    """Protocol for providers that accept a structured request object."""
+
+    def sample(self, request: BatchRequest) -> Batch: ...
 
 
 class TransitionProvider(BatchProvider, Protocol):
