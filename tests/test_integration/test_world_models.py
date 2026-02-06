@@ -1,8 +1,12 @@
 """Integration tests for world models."""
 
+import json
+
+import pytest
 import torch
 
 from worldflux import AutoConfig, AutoWorldModel
+from worldflux.core.exceptions import ConfigurationError
 
 
 class TestModelSwitching:
@@ -158,3 +162,39 @@ class TestSaveLoad:
 
         assert loaded.config.model_type == model.config.model_type
         assert loaded.config.encoder_dim == model.config.encoder_dim
+
+    def test_save_pretrained_writes_worldflux_metadata(self, tmp_path):
+        model = AutoWorldModel.from_pretrained(
+            "tdmpc2:5m",
+            obs_shape=(39,),
+            action_dim=6,
+        )
+
+        save_path = tmp_path / "tdmpc_meta_test"
+        model.save_pretrained(str(save_path))
+
+        meta_path = save_path / "worldflux_meta.json"
+        assert meta_path.exists()
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        assert meta["save_format_version"] == 1
+        assert meta["model_type"] == "tdmpc2"
+        assert meta["contract_fingerprint"]
+        assert meta["created_at_utc"].endswith("Z")
+        assert meta["api_version"] in {"v0.2", "v3"}
+
+    def test_load_fails_on_contract_fingerprint_mismatch(self, tmp_path):
+        model = AutoWorldModel.from_pretrained(
+            "tdmpc2:5m",
+            obs_shape=(39,),
+            action_dim=6,
+        )
+
+        save_path = tmp_path / "tdmpc_meta_mismatch"
+        model.save_pretrained(str(save_path))
+        meta_path = save_path / "worldflux_meta.json"
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        meta["contract_fingerprint"] = "mismatch"
+        meta_path.write_text(json.dumps(meta, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+        with pytest.raises(ConfigurationError, match="contract_fingerprint"):
+            AutoWorldModel.from_pretrained(str(save_path))
