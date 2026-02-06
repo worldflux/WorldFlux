@@ -44,9 +44,11 @@ Visualization of how different episodes traverse the learned latent space:
 ## Features
 
 - **Unified API**: Common interface across DreamerV3, TD-MPC2, and more
-- **Universal Payload Layer (v0.2)**: `ActionPayload` / `ConditionPayload` for polymorphic conditioning
-- **Planner Contract (v0.2+)**: planners return `ActionPayload` with `extras["wf.planner.horizon"]`
+- **v3-first API**: `create_world_model()` defaults to `api_version="v3"` (strict contracts enabled)
+- **Universal Payload Layer**: `ActionPayload` / `ConditionPayload` for polymorphic conditioning
+- **Planner Contract**: planners return `ActionPayload` with `extras["wf.planner.horizon"]`
 - **Simple Usage**: One-liner model creation with `create_world_model()`
+- **Pluggable 5-layer core**: optional `component_overrides` for encoder/dynamics/conditioner/decoder/rollout
 - **Training Infrastructure**: Complete training loop with callbacks, checkpointing, and logging
 - **Type Safe**: Full type annotations and mypy compatibility
 
@@ -54,7 +56,7 @@ Visualization of how different episodes traverse the learned latent space:
 
 - **Reference**: DreamerV3, TD-MPC2 (release baseline)
 - **Experimental**: JEPA, V-JEPA2, Token, Diffusion (API/metrics may evolve)
-- **Experimental Skeletons**: DiT, SSM, Renderer3D, Physics, GAN (contract and integration validation)
+- **Skeleton**: DiT, SSM, Renderer3D, Physics, GAN (contract and integration validation only)
 
 ## Extension Policy
 
@@ -71,6 +73,7 @@ from worldflux import list_models
 
 reference_models = list_models(maturity="reference")
 experimental_models = list_models(maturity="experimental")
+skeleton_models = list_models(maturity="skeleton")
 ```
 
 ## Architecture
@@ -161,7 +164,7 @@ model = create_world_model("dreamerv3:size12m")
 model = create_world_model("tdmpc2:5m", obs_shape=(39,), action_dim=6)
 ```
 
-### Universal Payload Usage (v0.2)
+### Universal Payload Usage (v3)
 
 ```python
 from worldflux import ActionPayload, ConditionPayload
@@ -173,6 +176,26 @@ next_state = model.transition(
     conditions=ConditionPayload(goal=goal_tensor),
 )
 ```
+
+### Component Overrides (5-layer core)
+
+```python
+from worldflux import create_world_model
+
+model = create_world_model(
+    "tdmpc2:ci",
+    obs_shape=(4,),
+    action_dim=2,
+    component_overrides={
+        # values can be registered component ids, classes, or instances
+        "action_conditioner": "my_plugin.zero_action_conditioner",
+    },
+)
+```
+
+External packages can register plugins through entry-point groups:
+- `worldflux.models`
+- `worldflux.components`
 
 ### Imagination Rollout
 
@@ -209,6 +232,7 @@ trained_model = train(model, buffer, total_steps=50_000)
 
 # Save
 trained_model.save_pretrained("./my_model")
+# emits: config.json, model.pt, worldflux_meta.json
 ```
 
 ### Full Training Control

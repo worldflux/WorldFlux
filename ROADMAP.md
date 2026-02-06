@@ -12,12 +12,19 @@ WorldFlux ships with explicit maturity tiers:
 
 - **reference**: DreamerV3, TD-MPC2
 - **experimental**: JEPA, V-JEPA2, Token, Diffusion
+- **skeleton**: DiT, SSM, Renderer3D, Physics, GAN
 
 Promotion from experimental to reference is **contract-first** and requires:
 
 - stable `io_contract()` compatibility
 - common quality gates (finite metrics, save/load parity, seed success >= 80%)
 - family-specific gate pass
+
+v3-first policy:
+
+- `create_world_model()` default is `api_version="v3"`
+- `v0.2` is migration-only and must be explicitly requested
+- strict contract checks are required for release readiness
 
 ---
 
@@ -41,7 +48,12 @@ Promotion from experimental to reference is **contract-first** and requires:
 
 ### v0.2.0 - Stability & Polish
 
-- [ ] **PyPI Release**: `pip install worldflux`
+- [x] **v3-first API default**
+- [x] **Skeleton maturity tier in catalog**
+- [x] **Strict condition/action contract validation**
+- [x] **Docs CI strict build gate**
+- [x] **Entry-point plugin discovery**
+- [ ] **PyPI Release**: `uv pip install worldflux`
 - [ ] **Pretrained Models**: Ready-to-use models for common benchmarks
   - [ ] DreamerV3: Atari Breakout, Pong, Seaquest
   - [ ] TD-MPC2: HalfCheetah, Walker, Humanoid
