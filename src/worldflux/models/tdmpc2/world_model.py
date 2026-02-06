@@ -187,6 +187,13 @@ class TDMPC2WorldModel(WorldModel):
         self.action_conditioner = _TDMPC2ActionConditioner()
         self.dynamics_model = _TDMPC2Dynamics(self)
         self.decoder_module = _TDMPC2Decoder(self)
+        self.composable_support = {
+            "observation_encoder",
+            "action_conditioner",
+            "dynamics_model",
+            "decoder",
+            "rollout_executor",
+        }
 
     @property
     def device(self) -> torch.device:
@@ -276,6 +283,14 @@ class TDMPC2WorldModel(WorldModel):
         task_id: Tensor | None = None,
     ) -> State:
         """Predict next state."""
+        if task_id is None:
+            return super().transition(
+                state,
+                action,
+                conditions=conditions,
+                deterministic=deterministic,
+            )
+
         self._validate_condition_payload(self.coerce_condition_payload(conditions))
         z = state.tensors.get("latent")
         if z is None:
@@ -285,15 +300,10 @@ class TDMPC2WorldModel(WorldModel):
         if action_tensor is None:
             action_tensor = torch.zeros(z.shape[0], self.config.action_dim, device=z.device)
 
-        # Residual prediction
+        # Residual prediction path with explicit task embedding.
         z_delta = self._dynamics(z, action_tensor, task_id)
-        z_next = z + z_delta
-        z_next = self.latent_space.sample(z_next)
-
-        return State(
-            tensors={"latent": z_next},
-            meta={"latent_type": "simnorm"},
-        )
+        z_next = self.latent_space.sample(z + z_delta)
+        return State(tensors={"latent": z_next}, meta={"latent_type": "simnorm"})
 
     def update(
         self,
@@ -326,8 +336,7 @@ class TDMPC2WorldModel(WorldModel):
             is intentionally omitted. Use isinstance checks or model_type to
             determine if observation decoding is available.
         """
-        del conditions
-        return super().decode(state)
+        return super().decode(state, conditions=conditions)
 
     def initial_state(self, batch_size: int, device: torch.device | None = None) -> State:
         """Initial state (uniform SimNorm)."""
