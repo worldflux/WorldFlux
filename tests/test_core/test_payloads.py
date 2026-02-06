@@ -17,6 +17,7 @@ from worldflux.core.payloads import (
     is_namespaced_extra_key,
     normalize_planned_action,
     validate_action_payload_against_spec,
+    validate_action_payload_against_union,
 )
 from worldflux.core.spec import ActionSpec
 
@@ -166,3 +167,35 @@ def test_validate_action_payload_against_spec_accepts_discrete_indices():
     payload = ActionPayload(kind="discrete", tensor=torch.tensor([0, 1, 2], dtype=torch.int64))
     spec = ActionSpec(kind="discrete", dim=4, discrete=True, num_actions=4)
     validate_action_payload_against_spec(payload, spec, api_version="v3")
+
+
+def test_validate_action_payload_against_union_accepts_any_matching_variant():
+    payload = ActionPayload(kind="token", tokens=torch.randint(0, 10, (2, 4)))
+    specs = (ActionSpec(kind="continuous", dim=4), ActionSpec(kind="token", dim=4))
+    validate_action_payload_against_union(payload, specs, api_version="v3")
+
+
+def test_validate_action_payload_against_union_rejects_when_none_match():
+    payload = ActionPayload(kind="text", text=["left"])
+    specs = (ActionSpec(kind="continuous", dim=2), ActionSpec(kind="token", dim=2))
+    with pytest.raises(ValueError, match="did not match any action union"):
+        validate_action_payload_against_union(payload, specs, api_version="v3")
+
+
+def test_condition_payload_schema_validation_in_strict_mode():
+    payload = ConditionPayload(extras={"wf.custom.goal": torch.ones(2, 3, dtype=torch.float32)})
+    payload.validate(
+        strict=True,
+        allowed_extra_keys={"wf.custom.goal"},
+        extra_schema={"wf.custom.goal": {"dtype": "float32", "shape": (3,)}},
+        api_version="v3",
+    )
+
+    bad = ConditionPayload(extras={"wf.custom.goal": torch.ones(2, 2, dtype=torch.int64)})
+    with pytest.raises(ValueError, match="dtype mismatch|shape mismatch"):
+        bad.validate(
+            strict=True,
+            allowed_extra_keys={"wf.custom.goal"},
+            extra_schema={"wf.custom.goal": {"dtype": "float32", "shape": (3,)}},
+            api_version="v3",
+        )
