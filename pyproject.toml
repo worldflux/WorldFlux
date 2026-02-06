@@ -86,6 +86,16 @@ all = [
     "worldflux[dev,training,env,atari,viz,logging,docs]",
 ]
 
+[project.entry-points."worldflux.models"]
+# Third-party packages should register a callable hook that performs model registration.
+# Example:
+# my_family = "my_package.worldflux_plugin:register_models"
+
+[project.entry-points."worldflux.components"]
+# Third-party packages should register a callable hook that performs component registration.
+# Example:
+# my_components = "my_package.worldflux_plugin:register_components"
+
 [project.urls]
 Homepage = "https://github.com/worldflux/Worldflux"
 Documentation = "https://github.com/worldflux/WorldFlux/tree/main/docs"
