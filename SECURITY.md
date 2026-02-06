@@ -8,7 +8,8 @@
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability, please report it by emailing the maintainers directly. Do not open a public issue.
+If you discover a security vulnerability, please report it privately by emailing
+`yhyoda@worldflux.ai`. Do not open a public issue.
 
 We will respond within 48 hours and work with you to understand and address the issue.
 

@@ -173,6 +173,37 @@ buffer.save("buffer.npz")
 buffer = ReplayBuffer.load("buffer.npz")
 ```
 
+### Required `.npz` Schema
+
+`ReplayBuffer.load()` expects a serialized buffer with these keys:
+
+| Key | Shape | Notes |
+|-----|-------|-------|
+| `obs` | `[N, *obs_shape]` | Observation rows |
+| `actions` | `[N, action_dim]` | Action rows |
+| `rewards` | `[N]` | Reward per transition |
+| `dones` | `[N]` | Episode termination flags (`0/1`) |
+| `obs_shape` | `[len(obs_shape)]` | Stored observation shape metadata |
+| `action_dim` | scalar | Stored action-dimension metadata |
+
+If your pipeline uses `terminations`, store the same array under `dones` when
+writing the `.npz` artifact for `ReplayBuffer.load()`.
+
+```python
+import numpy as np
+
+# Example: valid ReplayBuffer.load() artifact
+np.savez(
+    "buffer.npz",
+    obs=obs.astype(np.float32),                    # [N, *obs_shape]
+    actions=actions.astype(np.float32),            # [N, action_dim]
+    rewards=rewards.astype(np.float32),            # [N]
+    dones=terminations.astype(np.float32),         # [N]
+    obs_shape=np.array(obs.shape[1:], dtype=np.int64),
+    action_dim=np.array(actions.shape[-1], dtype=np.int64),
+)
+```
+
 ### Properties
 
 | Property | Type | Description |
