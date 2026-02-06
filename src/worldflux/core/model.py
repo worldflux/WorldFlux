@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import warnings
 from abc import ABC, abstractmethod
+from typing import cast
 
 import torch
 import torch.nn as nn
@@ -22,11 +23,13 @@ from .interfaces import (
 )
 from .output import LossOutput, ModelOutput
 from .payloads import (
+    ActionKind,
     ActionPayload,
     ActionSequence,
     ConditionPayload,
     WorldModelInput,
     normalize_planned_action,
+    validate_action_payload_against_spec,
 )
 from .spec import (
     ActionSpec,
@@ -129,13 +132,21 @@ class WorldModel(nn.Module, ABC):
         return cls._resolve_batch_key(batch, key) is not None
 
     @staticmethod
-    def coerce_action_payload(action: ActionPayload | Tensor | None) -> ActionPayload | None:
+    def coerce_action_payload(
+        action: ActionPayload | Tensor | None,
+        *,
+        kind: str = "continuous",
+    ) -> ActionPayload | None:
         if action is None:
             return None
         if isinstance(action, ActionPayload):
             return action
         if isinstance(action, Tensor):
-            return ActionPayload(kind="continuous", tensor=action)
+            valid_kinds = {"none", "continuous", "discrete", "token", "latent", "text", "hybrid"}
+            normalized_kind: ActionKind = (
+                cast(ActionKind, kind) if kind in valid_kinds else "continuous"
+            )
+            return ActionPayload(kind=normalized_kind, tensor=action)
         raise TypeError(f"Unsupported action type: {type(action)}")
 
     @staticmethod
@@ -164,9 +175,26 @@ class WorldModel(nn.Module, ABC):
         except ValueError as e:
             raise ValidationError(str(e)) from e
 
-    @staticmethod
-    def action_tensor_or_none(action: ActionPayload | Tensor | None) -> Tensor | None:
-        payload = WorldModel.coerce_action_payload(action)
+    def action_tensor_or_none(
+        self,
+        action: ActionPayload | Tensor | None,
+        *,
+        validate_contract: bool = True,
+    ) -> Tensor | None:
+        if validate_contract:
+            action_spec = self.io_contract().action_spec
+            payload = self.coerce_action_payload(action, kind=action_spec.kind)
+            if payload is not None:
+                try:
+                    validate_action_payload_against_spec(
+                        payload,
+                        action_spec,
+                        api_version=self._get_api_version(),
+                    )
+                except ValueError as e:
+                    raise ValidationError(str(e)) from e
+        else:
+            payload = self.coerce_action_payload(action)
         if payload is None:
             return None
         if payload.tensor is not None:
@@ -310,9 +338,17 @@ class WorldModel(nn.Module, ABC):
                 f"{self.__class__.__name__}.transition(...) is not implemented and no dynamics_model is attached"
             )
 
-        action_payload = self.coerce_action_payload(action)
+        action_spec = self.io_contract().action_spec
+        action_payload = self.coerce_action_payload(action, kind=action_spec.kind)
         if action_payload is not None:
-            action_payload.validate(api_version=self._get_api_version())
+            try:
+                validate_action_payload_against_spec(
+                    action_payload,
+                    action_spec,
+                    api_version=self._get_api_version(),
+                )
+            except ValueError as e:
+                raise ValidationError(str(e)) from e
         condition_payload = self.coerce_condition_payload(conditions)
         self._validate_condition_payload(condition_payload)
         conditioned: dict[str, Tensor] = {}
@@ -322,7 +358,7 @@ class WorldModel(nn.Module, ABC):
                 self.action_conditioner.condition(state, action_payload, condition_payload)
             )
 
-        action_tensor = self.action_tensor_or_none(action_payload)
+        action_tensor = self.action_tensor_or_none(action_payload, validate_contract=False)
         if action_tensor is not None and "action" not in conditioned:
             conditioned["action"] = action_tensor
 
