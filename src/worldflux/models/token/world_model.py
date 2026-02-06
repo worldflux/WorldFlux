@@ -16,6 +16,7 @@ from ...core.registry import WorldModelRegistry
 from ...core.spec import (
     ActionSpec,
     Capability,
+    ConditionSpec,
     ModalityKind,
     ModalitySpec,
     ModelIOContract,
@@ -146,6 +147,7 @@ class TokenWorldModel(WorldModel):
                     "tokens": ModalitySpec(kind=ModalityKind.TOKENS, shape=token_shape),
                 }
             ),
+            condition_spec=ConditionSpec(allowed_extra_keys=()),
             sequence_layout=SequenceLayout(
                 axes_by_field={
                     "obs": "BT",
@@ -223,7 +225,7 @@ class TokenWorldModel(WorldModel):
         conditions: ConditionPayload | None = None,
         deterministic: bool = False,
     ) -> State:
-        del conditions
+        self._validate_condition_payload(self.coerce_condition_payload(conditions))
         tokens = state.tensors["tokens"]
         logits = self._forward_tokens(tokens, action=action)
         next_tokens = logits.argmax(dim=-1) if deterministic else self.sampler.sample(logits)

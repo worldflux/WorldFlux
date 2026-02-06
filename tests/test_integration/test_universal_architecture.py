@@ -7,6 +7,8 @@ import torch
 
 from worldflux import create_world_model
 from worldflux.core.batch import Batch
+from worldflux.core.exceptions import ValidationError
+from worldflux.core.payloads import ConditionPayload
 from worldflux.training import Trainer, TrainingConfig
 
 
@@ -73,3 +75,67 @@ def test_model_family_smoke_train_one_step(model_id: str, tmp_path):
     trainer = Trainer(model, cfg)
     trained = trainer.train(provider, num_steps=1)
     assert trained is model
+
+
+@pytest.mark.parametrize(
+    "model_id,kwargs",
+    [
+        (
+            "dreamerv3:size12m",
+            {
+                "obs_shape": (4,),
+                "action_dim": 2,
+                "encoder_type": "mlp",
+                "decoder_type": "mlp",
+                "hidden_dim": 64,
+                "deter_dim": 64,
+                "stoch_discrete": 4,
+                "stoch_classes": 4,
+            },
+        ),
+        ("tdmpc2:5m", {"obs_shape": (4,), "action_dim": 2, "hidden_dim": 64, "latent_dim": 32}),
+        ("jepa:base", {"obs_shape": (4,), "action_dim": 2}),
+        ("vjepa2:base", {"obs_shape": (4,), "action_dim": 2}),
+        ("token:base", {"obs_shape": (4,), "action_dim": 2}),
+        ("diffusion:base", {"obs_shape": (4,), "action_dim": 2}),
+    ],
+)
+def test_v3_transition_rejects_undeclared_condition_extras(
+    model_id: str, kwargs: dict[str, object]
+):
+    model = create_world_model(model_id, api_version="v3", **kwargs)
+    if model_id == "token:base":
+        obs = torch.randint(0, 8, (2, 4))
+    else:
+        obs = torch.randn(2, 4)
+    action = torch.randn(2, 2)
+    state = model.encode(obs)
+
+    with pytest.raises(ValidationError, match="undeclared keys"):
+        model.transition(
+            state,
+            action,
+            conditions=ConditionPayload(extras={"wf.custom.condition": torch.ones(1)}),
+        )
+
+
+@pytest.mark.parametrize(
+    "model_id,kwargs",
+    [
+        (
+            "dreamerv3:size12m",
+            {"obs_shape": (4,), "action_dim": 2, "encoder_type": "mlp", "decoder_type": "mlp"},
+        ),
+        ("tdmpc2:5m", {"obs_shape": (4,), "action_dim": 2}),
+        ("jepa:base", {"obs_shape": (4,), "action_dim": 2}),
+        ("vjepa2:base", {"obs_shape": (4,), "action_dim": 2}),
+        ("token:base", {"obs_shape": (4,), "action_dim": 2}),
+        ("diffusion:base", {"obs_shape": (4,), "action_dim": 2}),
+    ],
+)
+def test_model_contracts_expose_condition_spec(model_id: str, kwargs: dict[str, object]):
+    model = create_world_model(model_id, api_version="v3", **kwargs)
+    contract = model.io_contract()
+    contract.validate()
+    assert contract.condition_spec is not None
+    assert isinstance(contract.condition_spec.allowed_extra_keys, tuple)

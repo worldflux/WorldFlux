@@ -16,6 +16,7 @@ from ...core.registry import WorldModelRegistry
 from ...core.spec import (
     ActionSpec,
     Capability,
+    ConditionSpec,
     ModalityKind,
     ModalitySpec,
     ModelIOContract,
@@ -85,6 +86,7 @@ class VJEPA2WorldModel(WorldModel):
                     )
                 }
             ),
+            condition_spec=ConditionSpec(allowed_extra_keys=()),
             sequence_layout=SequenceLayout(
                 axes_by_field={
                     "obs": "B...",
@@ -186,7 +188,8 @@ class VJEPA2WorldModel(WorldModel):
         deterministic: bool = False,
     ) -> State:
         # Action-conditioned transitions are intentionally deferred for this experimental release.
-        del action, conditions, deterministic
+        del action, deterministic
+        self._validate_condition_payload(self.coerce_condition_payload(conditions))
         return state
 
     def update(

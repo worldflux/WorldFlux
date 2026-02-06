@@ -16,6 +16,7 @@ from ...core.registry import WorldModelRegistry
 from ...core.spec import (
     ActionSpec,
     Capability,
+    ConditionSpec,
     ModalityKind,
     ModalitySpec,
     ModelIOContract,
@@ -89,6 +90,7 @@ class DiffusionWorldModel(WorldModel):
             prediction_spec=PredictionSpec(
                 tensors={"obs": ModalitySpec(kind=ModalityKind.VECTOR, shape=(obs_dim,))}
             ),
+            condition_spec=ConditionSpec(allowed_extra_keys=()),
             sequence_layout=SequenceLayout(
                 axes_by_field={
                     "obs": "B...",
@@ -210,7 +212,8 @@ class DiffusionWorldModel(WorldModel):
         conditions: ConditionPayload | None = None,
         deterministic: bool = False,
     ) -> State:
-        del conditions, deterministic
+        del deterministic
+        self._validate_condition_payload(self.coerce_condition_payload(conditions))
         obs = state.tensors["obs"]
         action_tensor = self.action_tensor_or_none(action)
         start_timestep = max(self.config.diffusion_steps - 1, 0)
