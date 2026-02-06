@@ -8,7 +8,9 @@ import torch
 from worldflux import create_world_model
 from worldflux.core.batch import Batch
 from worldflux.core.exceptions import ValidationError
+from worldflux.core.interfaces import ComponentSpec
 from worldflux.core.payloads import ConditionPayload
+from worldflux.core.registry import WorldModelRegistry
 from worldflux.training import Trainer, TrainingConfig
 
 
@@ -139,3 +141,43 @@ def test_model_contracts_expose_condition_spec(model_id: str, kwargs: dict[str, 
     contract.validate()
     assert contract.condition_spec is not None
     assert isinstance(contract.condition_spec.allowed_extra_keys, tuple)
+
+
+def test_factory_component_overrides_support_one_step_training(tmp_path):
+    class _ZeroActionConditioner:
+        def condition(self, state, action, conditions=None):
+            del state, conditions
+            if action is None or action.tensor is None:
+                return {}
+            return {"action": torch.zeros_like(action.tensor)}
+
+    component_id = "tests.override.zero_action_conditioner"
+    WorldModelRegistry.register_component(
+        component_id,
+        _ZeroActionConditioner,
+        ComponentSpec(name="Zero Action Conditioner", component_type="action_conditioner"),
+    )
+    try:
+        model = create_world_model(
+            "tdmpc2:ci",
+            obs_shape=(4,),
+            action_dim=2,
+            api_version="v3",
+            component_overrides={"action_conditioner": component_id},
+        )
+        assert model.action_conditioner is not None
+        assert type(model.action_conditioner).__name__ == "_ZeroActionConditioner"
+
+        provider = _SmokeProvider(obs_dim=4, action_dim=2)
+        cfg = TrainingConfig(
+            total_steps=1,
+            batch_size=3,
+            sequence_length=3,
+            output_dir=str(tmp_path / "override-smoke"),
+            device="cpu",
+        )
+        trainer = Trainer(model, cfg)
+        trained = trainer.train(provider, num_steps=1)
+        assert trained is model
+    finally:
+        WorldModelRegistry.unregister_component(component_id)

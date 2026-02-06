@@ -228,6 +228,7 @@ def create_world_model(
     action_dim: int | None = None,
     observation_modalities: dict[str, dict[str, Any]] | None = None,
     action_spec: dict[str, Any] | None = None,
+    component_overrides: dict[str, object] | None = None,
     device: str = "cpu",
     api_version: str = "v3",
     **kwargs: Any,
@@ -248,6 +249,10 @@ def create_world_model(
             - TD-MPC2: Must be specified for vector observations
         action_dim: Action dimension. Default: 6
         device: Device to place model on. Default: "cpu"
+        component_overrides: Optional component-slot overrides. Values may be:
+            - Registered component id (str)
+            - Component class
+            - Pre-built component instance
         **kwargs: Additional model-specific configuration
 
     Returns:
@@ -310,6 +315,8 @@ def create_world_model(
 
     # Create model
     world_model = WorldModelRegistry.from_pretrained(resolved_model, **config_kwargs)
+    if component_overrides:
+        WorldModelRegistry.apply_component_overrides(world_model, component_overrides)
 
     # Move to device
     if hasattr(world_model, "to"):

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 import os
 from typing import Any
@@ -93,6 +94,16 @@ class WorldModelRegistry:
     _aliases: dict[str, str] = {}
     _catalog: dict[str, dict[str, Any]] = {}
     _component_registry: dict[str, tuple[ComponentSpec, type]] = {}
+    _component_slots: dict[str, tuple[str, str]] = {
+        "observation_encoder": ("observation_encoder", "observation_encoder"),
+        "action_conditioner": ("action_conditioner", "action_conditioner"),
+        "dynamics_model": ("dynamics_model", "dynamics_model"),
+        "decoder": ("decoder_module", "decoder"),
+        "decoder_module": ("decoder_module", "decoder"),
+        "rollout_executor": ("rollout_executor", "rollout_executor"),
+        # v0.2 compatibility alias.
+        "rollout_engine": ("rollout_engine", "rollout_executor"),
+    }
 
     @classmethod
     def register(
@@ -225,6 +236,82 @@ class WorldModelRegistry:
     @classmethod
     def list_components(cls) -> dict[str, ComponentSpec]:
         return {component_id: spec for component_id, (spec, _) in cls._component_registry.items()}
+
+    @staticmethod
+    def _instantiate_component(component_class: type, model: WorldModel) -> Any:
+        """Instantiate a component class with either ``(model)`` or ``()`` signature."""
+        init_method = getattr(component_class, "__init__", None)
+        if init_method is object.__init__:
+            return component_class()
+
+        try:
+            init_sig = inspect.signature(component_class.__init__)  # type: ignore[misc]
+        except (TypeError, ValueError):
+            init_sig = None
+
+        if init_sig is not None:
+            params = list(init_sig.parameters.values())[1:]  # skip `self`
+            required_positional = [
+                p
+                for p in params
+                if p.default is inspect._empty
+                and p.kind
+                in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+            ]
+            has_var_positional = any(p.kind == inspect.Parameter.VAR_POSITIONAL for p in params)
+            if not required_positional and not has_var_positional:
+                return component_class()
+
+        try:
+            return component_class(model)
+        except TypeError:
+            return component_class()
+
+    @classmethod
+    def build_component(
+        cls,
+        override: object,
+        *,
+        expected_component_type: str,
+        model: WorldModel,
+    ) -> Any:
+        """Build a component override from registry id, class, or pre-built instance."""
+        if isinstance(override, str):
+            spec, component_class = cls.get_component(override)
+            if spec.component_type != expected_component_type:
+                raise ConfigurationError(
+                    f"Component '{override}' has type {spec.component_type!r}, "
+                    f"expected {expected_component_type!r}."
+                )
+            return cls._instantiate_component(component_class, model)
+        if isinstance(override, type):
+            return cls._instantiate_component(override, model)
+        return override
+
+    @classmethod
+    def apply_component_overrides(
+        cls,
+        model: WorldModel,
+        component_overrides: dict[str, object],
+    ) -> None:
+        """Apply component overrides to a world model instance."""
+        for slot, override in component_overrides.items():
+            slot_meta = cls._component_slots.get(slot)
+            if slot_meta is None:
+                raise ConfigurationError(
+                    f"Unknown component slot '{slot}'. "
+                    f"Available: {sorted(cls._component_slots.keys())}"
+                )
+            attr_name, expected_type = slot_meta
+            built_component = cls.build_component(
+                override,
+                expected_component_type=expected_type,
+                model=model,
+            )
+            setattr(model, attr_name, built_component)
+            if slot == "rollout_engine":
+                # Keep deprecated alias and new slot in sync.
+                setattr(model, "rollout_executor", built_component)
 
 
 class AutoWorldModel:

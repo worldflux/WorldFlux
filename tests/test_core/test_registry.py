@@ -6,6 +6,7 @@ import pytest
 
 from worldflux.core.config import DreamerV3Config, TDMPC2Config, VJEPA2Config, WorldModelConfig
 from worldflux.core.exceptions import ConfigurationError
+from worldflux.core.interfaces import ComponentSpec
 from worldflux.core.registry import AutoConfig, AutoWorldModel, ConfigRegistry, WorldModelRegistry
 
 
@@ -145,3 +146,31 @@ class TestConfigRegistryErrors:
         config_path.write_text(json.dumps({"model_type": "unknown"}))
         with pytest.raises(ConfigurationError):
             WorldModelRegistry.from_pretrained(str(tmp_path))
+
+
+class TestComponentOverrides:
+    def test_apply_component_overrides_rejects_unknown_slot(self):
+        model = WorldModelRegistry.from_pretrained("tdmpc2:ci", obs_shape=(4,), action_dim=2)
+        with pytest.raises(ConfigurationError, match="Unknown component slot"):
+            WorldModelRegistry.apply_component_overrides(model, {"unknown_slot": object()})
+
+    def test_apply_component_overrides_rejects_component_type_mismatch(self):
+        class _DummyDynamics:
+            def transition(self, state, conditioned, deterministic: bool = False):
+                del conditioned, deterministic
+                return state
+
+        component_id = "tests.registry.dummy_dynamics"
+        WorldModelRegistry.register_component(
+            component_id,
+            _DummyDynamics,
+            ComponentSpec(name="Dummy Dynamics", component_type="dynamics_model"),
+        )
+        try:
+            model = WorldModelRegistry.from_pretrained("tdmpc2:ci", obs_shape=(4,), action_dim=2)
+            with pytest.raises(ConfigurationError, match="expected 'action_conditioner'"):
+                WorldModelRegistry.apply_component_overrides(
+                    model, {"action_conditioner": component_id}
+                )
+        finally:
+            WorldModelRegistry.unregister_component(component_id)
