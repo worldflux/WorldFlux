@@ -46,6 +46,10 @@ uv run python inference.py
 - `gameplay.enabled`
 - `gameplay.fps`
 - `gameplay.max_frames`
+- `online_collection.enabled`
+- `online_collection.warmup_transitions`
+- `online_collection.collect_steps_per_update`
+- `online_collection.max_episode_steps`
 - `visualization.enabled`
 - `visualization.port`
 - `visualization.refresh_ms`
@@ -53,7 +57,7 @@ uv run python inference.py
 
 ## Gym Data Collection (Default)
 
-This sample uses `data.source = "gym"` by default so live gameplay can be streamed to the dashboard.
+This sample uses `data.source = "gym"` and `online_collection.enabled = true` by default so live gameplay can keep updating during training.
 Install gym dependencies:
 
 ```bash
