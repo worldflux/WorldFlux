@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from dataset import get_demo_buffer
+from dataset import build_training_data
 from local_dashboard import DashboardCallback, GameplayBuffer, MetricBuffer, MetricsDashboardServer
 
 from worldflux import create_world_model
@@ -180,11 +180,16 @@ def main() -> None:
             dashboard_callback = None
             print(f"Visualization disabled (startup failed): {exc}")
 
-    print("Preparing demo buffer...")
+    print("Preparing training data...")
     if dashboard_buffer is not None and gameplay["enabled"]:
         publish_phase("collecting")
 
-    buffer = get_demo_buffer(
+    def _noop_cleanup() -> None:
+        return
+
+    cleanup_data_source = _noop_cleanup
+    data_mode = "offline"
+    data_source, cleanup_data_source, data_mode = build_training_data(
         model.config,
         frame_callback=publish_frame if gameplay["enabled"] else None,
         phase_callback=publish_phase if dashboard_buffer is not None else None,
@@ -199,7 +204,7 @@ def main() -> None:
     print(
         "Training config: "
         f"steps={total_steps}, batch_size={batch_size}, "
-        f"sequence_length={sequence_length}, lr={learning_rate}"
+        f"sequence_length={sequence_length}, lr={learning_rate}, mode={data_mode}"
     )
 
     trainer = Trainer(
@@ -218,7 +223,7 @@ def main() -> None:
     print("Starting training...")
     failed_error: Exception | None = None
     try:
-        trainer.train(buffer)
+        trainer.train(data_source)
     except Exception as exc:
         failed_error = exc
         if dashboard_buffer is not None:
@@ -232,6 +237,11 @@ def main() -> None:
             dashboard_callback.close()
         raise
     finally:
+        try:
+            cleanup_data_source()
+        except Exception as exc:
+            print(f"Data source cleanup failed: {exc}")
+
         if dashboard_server is not None:
             linger_seconds = 60.0
             if failed_error is None and dashboard_buffer is not None:

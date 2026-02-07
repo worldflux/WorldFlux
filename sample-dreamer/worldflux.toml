@@ -28,6 +28,12 @@ enabled = true
 fps = 8
 max_frames = 512
 
+[online_collection]
+enabled = true
+warmup_transitions = 512
+collect_steps_per_update = 64
+max_episode_steps = 100
+
 [inference]
 horizon = 15
 checkpoint = "./outputs/checkpoint_best.pt"
