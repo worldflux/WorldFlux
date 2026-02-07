@@ -299,6 +299,9 @@
           fps: 8,
           lastSeq: -1,
           queue: [],
+          history: [],
+          replayIndex: 0,
+          replayMode: false,
           current: null,
           lastFrameTs: 0,
           offscreen: document.createElement("canvas"),
@@ -615,9 +618,11 @@
         const detail = state.gameplay.detail;
 
         if (current) {
+          const suffix = state.gameplay.replayMode ? " (replay)" : "";
           gameplayInfoEl.textContent =
             `status=${state.gameplay.status} phase=${state.gameplay.phase} ` +
-            `episode=${current.episode} step=${current.episode_step} reward=${formatNumber(current.reward, 3)}`;
+            `episode=${current.episode} step=${current.episode_step} reward=${formatNumber(current.reward, 3)}` +
+            suffix;
           return;
         }
 
@@ -639,11 +644,21 @@
         const interval = 1000 / fps;
 
         if (
-          state.gameplay.queue.length > 0 &&
           (state.gameplay.current === null || timestamp - state.gameplay.lastFrameTs >= interval)
         ) {
-          state.gameplay.current = state.gameplay.queue.shift();
-          state.gameplay.lastFrameTs = timestamp;
+          if (state.gameplay.queue.length > 0) {
+            state.gameplay.current = state.gameplay.queue.shift();
+            state.gameplay.replayMode = false;
+            state.gameplay.lastFrameTs = timestamp;
+          } else if (state.gameplay.history.length > 0) {
+            const replayFrame =
+              state.gameplay.history[state.gameplay.replayIndex % state.gameplay.history.length];
+            state.gameplay.current = replayFrame;
+            state.gameplay.replayIndex =
+              (state.gameplay.replayIndex + 1) % state.gameplay.history.length;
+            state.gameplay.replayMode = true;
+            state.gameplay.lastFrameTs = timestamp;
+          }
         }
 
         if (state.gameplay.current) {
@@ -714,11 +729,20 @@
             const decoded = decodeFrame(frame);
             if (!decoded) return;
             state.gameplay.queue.push(decoded);
+            state.gameplay.history.push(decoded);
+            while (state.gameplay.history.length > 1024) {
+              state.gameplay.history.shift();
+            }
             state.gameplay.lastSeq = Math.max(state.gameplay.lastSeq, decoded.seq);
           });
 
           while (state.gameplay.queue.length > 256) {
             state.gameplay.queue.shift();
+          }
+
+          if (state.gameplay.history.length > 0) {
+            const tailWindow = Math.min(120, state.gameplay.history.length);
+            state.gameplay.replayIndex = Math.max(0, state.gameplay.history.length - tailWindow);
           }
         }
       }
