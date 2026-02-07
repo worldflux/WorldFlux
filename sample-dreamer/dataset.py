@@ -18,6 +18,7 @@ except ModuleNotFoundError:  # pragma: no cover
 
 PhaseCallback = Callable[[str, str | None], None]
 FrameCallback = Callable[[Any, int, int, float, bool], None]
+CleanupFn = Callable[[], None]
 
 
 def _emit_phase(callback: PhaseCallback | None, phase: str, detail: str | None = None) -> None:
@@ -93,6 +94,152 @@ def _one_hot(action: int, dim: int) -> np.ndarray:
     vec = np.zeros(dim, dtype=np.float32)
     vec[action % dim] = 1.0
     return vec
+
+
+class OnlineAtariBatchProvider:
+    """BatchProvider that alternates online Atari rollout and replay sampling."""
+
+    def __init__(
+        self,
+        *,
+        gym_env: str,
+        obs_shape: tuple[int, ...],
+        action_dim: int,
+        capacity: int,
+        warmup_transitions: int,
+        collect_steps_per_update: int,
+        max_episode_steps: int,
+        frame_callback: FrameCallback | None = None,
+        phase_callback: PhaseCallback | None = None,
+        frame_fps: int = 8,
+    ):
+        self._obs_shape = obs_shape
+        self._action_dim = action_dim
+        self._collect_steps_per_update = max(1, int(collect_steps_per_update))
+        self._warmup_transitions = max(1, int(warmup_transitions))
+        self._max_episode_steps = max(8, int(max_episode_steps))
+        self._frame_callback = frame_callback
+        self._phase_callback = phase_callback
+
+        self._buffer = ReplayBuffer(capacity=capacity, obs_shape=obs_shape, action_dim=action_dim)
+        self._episode_obs: list[np.ndarray] = []
+        self._episode_actions: list[np.ndarray] = []
+        self._episode_rewards: list[float] = []
+        self._episode_dones: list[float] = []
+        self._episode_step = 0
+        self._episode_index = 0
+
+        self._min_frame_interval = 1.0 / max(1, int(frame_fps))
+        self._last_frame_time = 0.0
+        self._closed = False
+
+        try:
+            import ale_py
+            import gymnasium as gym
+
+            gym.register_envs(ale_py)
+            self._env = gym.make(gym_env, render_mode=None)
+        except Exception as exc:  # pragma: no cover - depends on optional extras
+            raise RuntimeError(
+                "Install gymnasium + ale-py to enable live gameplay. "
+                f"(failed to initialize Atari env '{gym_env}': {exc})"
+            ) from exc
+
+        self._obs, _ = self._env.reset()
+        _emit_phase(self._phase_callback, "collecting")
+        self._collect_until(self._warmup_transitions)
+
+    def _flush_episode(self) -> None:
+        if not self._episode_obs:
+            return
+        self._buffer.add_episode(
+            obs=np.asarray(self._episode_obs, dtype=np.float32),
+            actions=np.asarray(self._episode_actions, dtype=np.float32),
+            rewards=np.asarray(self._episode_rewards, dtype=np.float32),
+            dones=np.asarray(self._episode_dones, dtype=np.float32),
+        )
+        self._episode_obs.clear()
+        self._episode_actions.clear()
+        self._episode_rewards.clear()
+        self._episode_dones.clear()
+
+    def _step_once(self) -> None:
+        action = int(self._env.action_space.sample())
+        next_obs, reward, terminated, truncated, _ = self._env.step(action)
+        done = bool(terminated or truncated)
+
+        self._episode_obs.append(_fit_visual_obs(self._obs, self._obs_shape))
+        self._episode_actions.append(_one_hot(action, self._action_dim))
+        self._episode_rewards.append(float(reward))
+        self._episode_dones.append(float(done))
+
+        self._episode_step += 1
+
+        now = time.monotonic()
+        if now - self._last_frame_time >= self._min_frame_interval or done:
+            _emit_frame(
+                self._frame_callback,
+                next_obs,
+                self._episode_index + 1,
+                self._episode_step,
+                float(reward),
+                done,
+            )
+            self._last_frame_time = now
+
+        boundary = done or self._episode_step >= self._max_episode_steps
+        if boundary:
+            self._flush_episode()
+            self._episode_index += 1
+            self._episode_step = 0
+            self._obs, _ = self._env.reset()
+        else:
+            self._obs = next_obs
+
+    def _collect_steps(self, steps: int) -> None:
+        for _ in range(max(0, int(steps))):
+            self._step_once()
+
+    def _collect_until(self, min_transitions: int) -> None:
+        target = max(1, int(min_transitions))
+        guard = 0
+        max_guard = max(target * 8, self._max_episode_steps * 8, 2048)
+        while len(self._buffer) < target and guard < max_guard:
+            self._step_once()
+            guard += 1
+
+        if len(self._buffer) < target:
+            if self._episode_obs:
+                self._flush_episode()
+            if len(self._buffer) < target:
+                raise RuntimeError(
+                    f"Unable to collect enough online transitions: have {len(self._buffer)}, need {target}."
+                )
+
+    def sample(self, batch_size: int, seq_len: int, device: str = "cpu"):
+        if self._closed:
+            raise RuntimeError("OnlineAtariBatchProvider is already closed")
+
+        needed = max(int(seq_len), 1)
+        ready_target = max(self._warmup_transitions, needed)
+        if len(self._buffer) < ready_target:
+            self._collect_until(ready_target)
+
+        self._collect_steps(self._collect_steps_per_update)
+
+        if len(self._buffer) < needed:
+            self._collect_until(needed)
+
+        return self._buffer.sample(batch_size=batch_size, seq_len=seq_len, device=device)
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            self._env.close()
+        except Exception:
+            return
 
 
 def _collect_atari_buffer(
@@ -231,18 +378,16 @@ def _collect_mujoco_buffer(
     return buffer if len(buffer) > 0 else None
 
 
-def get_demo_buffer(
-    model_config: Any,
-    frame_callback: FrameCallback | None = None,
-    phase_callback: PhaseCallback | None = None,
-) -> ReplayBuffer:
-    """Return a replay buffer that works out-of-the-box."""
+def _resolve_data_settings(model_config: Any) -> dict[str, Any]:
     cfg = _load_project_config()
     architecture = cfg.get("architecture", {})
     data_cfg = cfg.get("data", {})
     gameplay_cfg = cfg.get("gameplay", {})
     if not isinstance(gameplay_cfg, dict):
         gameplay_cfg = {}
+    online_cfg = cfg.get("online_collection", {})
+    if not isinstance(online_cfg, dict):
+        online_cfg = {}
 
     default_obs = getattr(model_config, "obs_shape", (3, 64, 64))
     default_action_dim = int(getattr(model_config, "action_dim", 6))
@@ -258,8 +403,47 @@ def get_demo_buffer(
     )
     gym_env = str(data_cfg.get("gym_env", "")).strip()
     environment = str(cfg.get("environment", "custom")).strip().lower()
-    gameplay_enabled = bool(gameplay_cfg.get("enabled", True))
-    gameplay_fps = max(1, int(gameplay_cfg.get("fps", 8)))
+
+    model_type = str(cfg.get("model_type", "")).strip().lower()
+    online_default = environment == "atari" and model_type.startswith("dreamer")
+
+    return {
+        "obs_shape": obs_shape,
+        "action_dim": action_dim,
+        "source": source,
+        "num_episodes": num_episodes,
+        "episode_length": episode_length,
+        "capacity": capacity,
+        "gym_env": gym_env,
+        "environment": environment,
+        "gameplay_enabled": bool(gameplay_cfg.get("enabled", True)),
+        "gameplay_fps": max(1, int(gameplay_cfg.get("fps", 8))),
+        "online_enabled": bool(online_cfg.get("enabled", online_default)),
+        "warmup_transitions": max(32, int(online_cfg.get("warmup_transitions", 512))),
+        "collect_steps_per_update": max(1, int(online_cfg.get("collect_steps_per_update", 64))),
+        "max_episode_steps": max(8, int(online_cfg.get("max_episode_steps", episode_length))),
+    }
+
+
+def get_demo_buffer(
+    model_config: Any,
+    frame_callback: FrameCallback | None = None,
+    phase_callback: PhaseCallback | None = None,
+) -> ReplayBuffer:
+    """Return a replay buffer that works out-of-the-box."""
+    settings = _resolve_data_settings(model_config)
+
+    source = settings["source"]
+    obs_shape = settings["obs_shape"]
+    action_dim = settings["action_dim"]
+    num_episodes = settings["num_episodes"]
+    episode_length = settings["episode_length"]
+    capacity = settings["capacity"]
+    gym_env = settings["gym_env"]
+    environment = settings["environment"]
+    gameplay_enabled = settings["gameplay_enabled"]
+    gameplay_fps = settings["gameplay_fps"]
+
     atari_frame_callback = frame_callback if gameplay_enabled else None
 
     if source == "gym":
@@ -344,3 +528,58 @@ def get_demo_buffer(
         episode_length=episode_length,
         seed=42,
     )
+
+
+def build_training_data(
+    model_config: Any,
+    frame_callback: FrameCallback | None = None,
+    phase_callback: PhaseCallback | None = None,
+) -> tuple[Any, CleanupFn, str]:
+    """Build either online provider or offline replay buffer for Trainer.train()."""
+    settings = _resolve_data_settings(model_config)
+
+    source = settings["source"]
+    environment = settings["environment"]
+    gameplay_enabled = settings["gameplay_enabled"]
+    online_enabled = settings["online_enabled"]
+
+    if (
+        source == "gym"
+        and online_enabled
+        and (environment == "atari" or len(settings["obs_shape"]) >= 3)
+    ):
+        if gameplay_enabled:
+            _emit_phase(phase_callback, "collecting")
+        try:
+            provider = OnlineAtariBatchProvider(
+                gym_env=settings["gym_env"] or "ALE/Breakout-v5",
+                obs_shape=settings["obs_shape"],
+                action_dim=settings["action_dim"],
+                capacity=settings["capacity"],
+                warmup_transitions=settings["warmup_transitions"],
+                collect_steps_per_update=settings["collect_steps_per_update"],
+                max_episode_steps=settings["max_episode_steps"],
+                frame_callback=frame_callback if gameplay_enabled else None,
+                phase_callback=phase_callback,
+                frame_fps=settings["gameplay_fps"],
+            )
+            return provider, provider.close, "online"
+        except Exception as exc:
+            warnings.warn(f"Online Atari collection is unavailable: {exc}")
+            _emit_phase(phase_callback, "unavailable", str(exc))
+
+    if source == "gym" and online_enabled and environment == "mujoco":
+        _emit_phase(
+            phase_callback,
+            "unavailable",
+            "Online collection loop is currently implemented for Atari only.",
+        )
+
+    buffer = get_demo_buffer(
+        model_config,
+        frame_callback=frame_callback,
+        phase_callback=phase_callback,
+    )
+
+    mode = "offline" if source == "gym" else "random"
+    return buffer, (lambda: None), mode
