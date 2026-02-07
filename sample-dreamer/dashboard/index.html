@@ -1,0 +1,754 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>WorldFlux Live Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Manrope:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+      :root {
+        --bg: #0d1012;
+        --surface: #14191d;
+        --surface-soft: #171d21;
+        --border: rgba(218, 228, 236, 0.14);
+        --border-strong: rgba(218, 228, 236, 0.28);
+        --text: #eff3f5;
+        --muted: #98a7b0;
+        --ok: #57c58f;
+        --warn: #d2b571;
+        --bad: #e07d7d;
+        --grid: rgba(177, 193, 203, 0.2);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        color: var(--text);
+        font-family: "Manrope", "Segoe UI", sans-serif;
+        background: radial-gradient(circle at top, #121a1f 0%, #0d1012 48%, #0a0c0f 100%);
+      }
+
+      .container {
+        width: min(1140px, 94vw);
+        margin: 18px auto 28px;
+      }
+
+      .header {
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 16px;
+        background: rgba(20, 25, 29, 0.95);
+        backdrop-filter: blur(8px);
+      }
+
+      .title {
+        margin: 0;
+        font-family: "Space Grotesk", sans-serif;
+        font-size: clamp(30px, 4vw, 42px);
+        font-weight: 700;
+        letter-spacing: 0.01em;
+      }
+
+      .subtitle {
+        margin: 6px 0 0;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .hint {
+        margin: 7px 0 0;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .cards {
+        margin-top: 12px;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(165px, 1fr));
+        gap: 8px;
+      }
+
+      .card {
+        border: 1px solid var(--border);
+        border-radius: 11px;
+        background: var(--surface-soft);
+        padding: 10px 12px;
+      }
+
+      .label {
+        color: var(--muted);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      .value {
+        margin-top: 6px;
+        font-size: 24px;
+        font-weight: 700;
+        line-height: 1;
+        font-family: "Space Grotesk", sans-serif;
+      }
+
+      .section {
+        margin-top: 12px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 12px;
+        background: var(--surface);
+      }
+
+      .section h2 {
+        margin: 0 0 10px;
+        font-size: 13px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+      }
+
+      .gameplay-shell {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        overflow: hidden;
+        background: #080b0d;
+      }
+
+      #gameplay-canvas {
+        width: 100%;
+        height: min(48vw, 420px);
+        display: block;
+        background: #070a0d;
+      }
+
+      .gameplay-info {
+        border-top: 1px solid var(--border);
+        margin: 0;
+        padding: 8px 10px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      canvas.metrics {
+        width: 100%;
+        height: 250px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: #101418;
+      }
+
+      #other-chart {
+        height: 300px;
+      }
+
+      .legend {
+        margin-top: 9px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 7px;
+      }
+
+      .legend-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        background: rgba(17, 22, 27, 0.9);
+        padding: 5px 9px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .legend-item:hover {
+        border-color: var(--border-strong);
+      }
+
+      .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+      }
+
+      @media (max-width: 860px) {
+        .container {
+          width: 96vw;
+          margin-top: 12px;
+        }
+
+        .value {
+          font-size: 22px;
+        }
+
+        #gameplay-canvas {
+          height: min(62vw, 320px);
+        }
+
+        canvas.metrics {
+          height: 220px;
+        }
+
+        #other-chart {
+          height: 250px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="container">
+      <header class="header">
+        <h1 class="title">WorldFlux Training Dashboard</h1>
+        <p class="subtitle">Live gameplay (Atari) + real-time training metrics</p>
+        <p class="hint">Hover cards or legend tags to see beginner-friendly metric explanations.</p>
+      </header>
+
+      <section class="cards">
+        <div class="card" data-metric="status">
+          <div class="label">Status</div>
+          <div id="status" class="value">starting</div>
+        </div>
+        <div class="card" data-metric="phase">
+          <div class="label">Phase</div>
+          <div id="phase" class="value">starting</div>
+        </div>
+        <div class="card" data-metric="step">
+          <div class="label">Step</div>
+          <div id="step" class="value">0</div>
+        </div>
+        <div class="card" data-metric="elapsed">
+          <div class="label">Elapsed</div>
+          <div id="elapsed" class="value">0s</div>
+        </div>
+        <div class="card" data-metric="speed">
+          <div class="label">Speed (step/s)</div>
+          <div id="speed" class="value">0.00</div>
+        </div>
+        <div class="card" data-metric="loss">
+          <div class="label">Loss</div>
+          <div id="loss" class="value">-</div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>Live Gameplay</h2>
+        <div class="gameplay-shell">
+          <canvas id="gameplay-canvas"></canvas>
+          <p id="gameplay-info" class="gameplay-info">Waiting for gameplay stream...</p>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>Loss (Primary)</h2>
+        <canvas id="loss-chart" class="metrics"></canvas>
+      </section>
+
+      <section class="section">
+        <h2>Other Metrics + Speed</h2>
+        <canvas id="other-chart" class="metrics"></canvas>
+        <div id="legend" class="legend"></div>
+      </section>
+    </main>
+
+    <script>
+      const palette = [
+        "#53c997", "#65b1ff", "#f0c96a", "#ec7e86", "#c79cff",
+        "#78d4d4", "#ffad75", "#86d8af", "#ccd374", "#f6949e",
+      ];
+      const metricDescriptions = {
+        status:
+          "Overall training state. running means training is active, finished means done, error means it stopped unexpectedly.",
+        phase:
+          "Current pipeline stage. collecting = gathering environment data, training = optimization step, unavailable = gameplay stream is not active.",
+        step:
+          "How many optimizer updates have run. It usually increases by one each training iteration.",
+        elapsed:
+          "Real wall-clock time since this run started.",
+        speed:
+          "Training throughput in steps per second. Higher is faster execution.",
+        loss:
+          "Main training objective. Lower usually means the model is fitting data better.",
+        kl:
+          "Kullback-Leibler regularization. It keeps latent dynamics stable and prevents drift.",
+        reconstruction:
+          "Reconstruction error for observations. Lower means decoded frames/states are closer to targets.",
+        reward:
+          "Reward prediction error. Lower means predicted rewards match collected rewards better.",
+        continue:
+          "Continuation/terminal prediction error. Lower means better episode-end prediction.",
+      };
+
+      const state = {
+        status: "starting",
+        phase: "starting",
+        lastStep: -1,
+        points: [],
+        metricKeys: new Set(),
+        summary: null,
+        refreshMs: 1000,
+        summaryCounter: 0,
+        legendNodes: new Map(),
+        gameplay: {
+          status: "starting",
+          phase: "starting",
+          detail: "",
+          fps: 8,
+          lastSeq: -1,
+          queue: [],
+          current: null,
+          lastFrameTs: 0,
+          offscreen: document.createElement("canvas"),
+        },
+      };
+
+      const statusEl = document.getElementById("status");
+      const phaseEl = document.getElementById("phase");
+      const stepEl = document.getElementById("step");
+      const elapsedEl = document.getElementById("elapsed");
+      const speedEl = document.getElementById("speed");
+      const lossEl = document.getElementById("loss");
+      const lossCanvas = document.getElementById("loss-chart");
+      const otherCanvas = document.getElementById("other-chart");
+      const legendEl = document.getElementById("legend");
+      const gameplayCanvas = document.getElementById("gameplay-canvas");
+      const gameplayInfoEl = document.getElementById("gameplay-info");
+      const metricCards = document.querySelectorAll(".card[data-metric]");
+
+      function metricDescription(metricName) {
+        return metricDescriptions[metricName] || "Training metric logged from this run.";
+      }
+
+      function initializeMetricTooltips() {
+        metricCards.forEach((card) => {
+          const metric = card.dataset.metric;
+          if (!metric) return;
+          const description = metricDescription(metric);
+          card.title = `${metric.toUpperCase()}: ${description}`;
+          card.setAttribute("aria-label", `${metric}: ${description}`);
+        });
+      }
+
+      function statusColor(status) {
+        if (status === "running") return "var(--ok)";
+        if (status === "finished") return "var(--warn)";
+        if (status === "error") return "var(--bad)";
+        return "var(--text)";
+      }
+
+      function formatNumber(value, digits = 4) {
+        if (typeof value !== "number" || Number.isNaN(value)) return "-";
+        return value.toFixed(digits);
+      }
+
+      function formatElapsed(totalSec) {
+        const sec = Math.max(0, Math.floor(totalSec || 0));
+        const h = Math.floor(sec / 3600);
+        const m = Math.floor((sec % 3600) / 60);
+        const s = sec % 60;
+        if (h > 0) return `${h}h ${m}m ${s}s`;
+        if (m > 0) return `${m}m ${s}s`;
+        return `${s}s`;
+      }
+
+      function pickColor(index) {
+        return palette[index % palette.length];
+      }
+
+      function clearCanvas(canvas) {
+        const dpr = window.devicePixelRatio || 1;
+        const rect = canvas.getBoundingClientRect();
+        const width = Math.max(1, Math.floor(rect.width * dpr));
+        const height = Math.max(1, Math.floor(rect.height * dpr));
+        if (canvas.width !== width || canvas.height !== height) {
+          canvas.width = width;
+          canvas.height = height;
+        }
+        const ctx = canvas.getContext("2d");
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.scale(dpr, dpr);
+        ctx.clearRect(0, 0, rect.width, rect.height);
+        return { ctx, width: rect.width, height: rect.height };
+      }
+
+      function drawChart(canvas, datasets) {
+        const { ctx, width, height } = clearCanvas(canvas);
+        const left = 42;
+        const right = width - 16;
+        const top = 14;
+        const bottom = height - 26;
+        const chartW = Math.max(1, right - left);
+        const chartH = Math.max(1, bottom - top);
+
+        const values = [];
+        for (const ds of datasets) {
+          for (const v of ds.values) {
+            if (typeof v === "number" && Number.isFinite(v)) {
+              values.push(v);
+            }
+          }
+        }
+
+        if (values.length === 0) {
+          ctx.fillStyle = "#95a7b1";
+          ctx.font = "13px Space Grotesk, sans-serif";
+          ctx.fillText("Waiting for data...", left, top + 20);
+          return;
+        }
+
+        let yMin = Math.min(...values);
+        let yMax = Math.max(...values);
+        if (yMin === yMax) {
+          yMin -= 1;
+          yMax += 1;
+        }
+        const pad = (yMax - yMin) * 0.08;
+        yMin -= pad;
+        yMax += pad;
+
+        ctx.strokeStyle = "var(--grid)";
+        ctx.lineWidth = 1;
+        for (let i = 0; i <= 4; i += 1) {
+          const y = top + (chartH * i) / 4;
+          ctx.beginPath();
+          ctx.moveTo(left, y);
+          ctx.lineTo(right, y);
+          ctx.stroke();
+        }
+
+        ctx.fillStyle = "#95a7b1";
+        ctx.font = "11px Space Grotesk, sans-serif";
+        ctx.fillText(yMax.toFixed(3), 2, top + 8);
+        ctx.fillText(yMin.toFixed(3), 2, bottom);
+
+        const n = state.points.length;
+        const xAt = (idx) => left + (chartW * idx) / Math.max(1, n - 1);
+        const yAt = (v) => top + ((yMax - v) / (yMax - yMin)) * chartH;
+
+        datasets.forEach((ds) => {
+          ctx.strokeStyle = ds.color;
+          ctx.lineWidth = ds.width || 1.7;
+          ctx.beginPath();
+          let started = false;
+
+          ds.values.forEach((v, idx) => {
+            if (typeof v !== "number" || !Number.isFinite(v)) {
+              started = false;
+              return;
+            }
+            const x = xAt(idx);
+            const y = yAt(v);
+            if (!started) {
+              ctx.moveTo(x, y);
+              started = true;
+            } else {
+              ctx.lineTo(x, y);
+            }
+          });
+
+          ctx.stroke();
+        });
+      }
+
+      function ensureLegendItem(label, color) {
+        let item = state.legendNodes.get(label);
+        if (!item) {
+          item = document.createElement("span");
+          item.className = "legend-item";
+
+          const dot = document.createElement("span");
+          dot.className = "dot";
+          item.appendChild(dot);
+
+          const text = document.createElement("span");
+          text.className = "legend-label";
+          item.appendChild(text);
+
+          state.legendNodes.set(label, item);
+        }
+
+        const dotEl = item.querySelector(".dot");
+        const labelEl = item.querySelector(".legend-label");
+        if (dotEl) {
+          dotEl.style.backgroundColor = color;
+        }
+        if (labelEl) {
+          labelEl.textContent = label;
+        }
+
+        const description = metricDescription(label);
+        item.title = `${label}: ${description}`;
+        item.setAttribute("aria-label", `${label}: ${description}`);
+        return item;
+      }
+
+      function updateLegend(datasets) {
+        const active = new Set();
+        datasets.forEach((ds) => {
+          const node = ensureLegendItem(ds.label, ds.color);
+          legendEl.appendChild(node);
+          active.add(ds.label);
+        });
+
+        for (const [label, node] of state.legendNodes.entries()) {
+          if (!active.has(label)) {
+            node.remove();
+            state.legendNodes.delete(label);
+          }
+        }
+      }
+
+      function latestPoint() {
+        return state.points.length > 0 ? state.points[state.points.length - 1] : null;
+      }
+
+      function renderMetrics() {
+        const latest = latestPoint();
+        statusEl.textContent = state.status;
+        statusEl.style.color = statusColor(state.status);
+
+        phaseEl.textContent = state.phase || "starting";
+        stepEl.textContent = latest ? String(latest.step) : "0";
+        speedEl.textContent = latest ? formatNumber(latest.speed, 2) : "0.00";
+        lossEl.textContent =
+          latest && typeof latest.metrics.loss === "number"
+            ? formatNumber(latest.metrics.loss, 5)
+            : "-";
+
+        const elapsed = state.summary ? state.summary.elapsed_seconds : 0;
+        elapsedEl.textContent = formatElapsed(elapsed);
+
+        drawChart(lossCanvas, [
+          {
+            label: "loss",
+            color: "#65b1ff",
+            width: 2.2,
+            values: state.points.map((p) => p.metrics.loss),
+          },
+        ]);
+
+        const otherKeys = Array.from(state.metricKeys).filter((k) => k !== "loss").sort();
+        const otherDatasets = otherKeys.map((key, idx) => ({
+          label: key,
+          color: pickColor(idx),
+          values: state.points.map((p) => p.metrics[key]),
+        }));
+
+        otherDatasets.push({
+          label: "speed",
+          color: pickColor(otherDatasets.length),
+          values: state.points.map((p) => p.speed),
+        });
+
+        drawChart(otherCanvas, otherDatasets);
+        updateLegend(otherDatasets);
+      }
+
+      function decodeFrame(frame) {
+        if (!frame || !frame.rgb_b64) return null;
+        const width = Number(frame.width || 0);
+        const height = Number(frame.height || 0);
+        if (!width || !height) return null;
+
+        try {
+          const binary = atob(frame.rgb_b64);
+          const expected = width * height * 3;
+          if (binary.length !== expected) return null;
+
+          const rgba = new Uint8ClampedArray(width * height * 4);
+          let rgbIdx = 0;
+          for (let i = 0; i < rgba.length; i += 4) {
+            rgba[i] = binary.charCodeAt(rgbIdx);
+            rgba[i + 1] = binary.charCodeAt(rgbIdx + 1);
+            rgba[i + 2] = binary.charCodeAt(rgbIdx + 2);
+            rgba[i + 3] = 255;
+            rgbIdx += 3;
+          }
+
+          return {
+            ...frame,
+            imageData: new ImageData(rgba, width, height),
+          };
+        } catch (err) {
+          console.error("failed to decode gameplay frame", err);
+          return null;
+        }
+      }
+
+      function drawGameplayFrame(frame) {
+        if (!frame || !frame.imageData) return;
+
+        const { ctx, width, height } = clearCanvas(gameplayCanvas);
+        const offscreen = state.gameplay.offscreen;
+        if (offscreen.width !== frame.width || offscreen.height !== frame.height) {
+          offscreen.width = frame.width;
+          offscreen.height = frame.height;
+        }
+        const offCtx = offscreen.getContext("2d");
+        offCtx.putImageData(frame.imageData, 0, 0);
+
+        const srcRatio = frame.width / frame.height;
+        const dstRatio = width / height;
+        let drawW = width;
+        let drawH = height;
+        let drawX = 0;
+        let drawY = 0;
+
+        if (srcRatio > dstRatio) {
+          drawH = width / srcRatio;
+          drawY = (height - drawH) / 2;
+        } else {
+          drawW = height * srcRatio;
+          drawX = (width - drawW) / 2;
+        }
+
+        ctx.fillStyle = "#070a0d";
+        ctx.fillRect(0, 0, width, height);
+        ctx.drawImage(offscreen, drawX, drawY, drawW, drawH);
+      }
+
+      function renderGameplayInfo() {
+        const current = state.gameplay.current;
+        const detail = state.gameplay.detail;
+
+        if (current) {
+          gameplayInfoEl.textContent =
+            `status=${state.gameplay.status} phase=${state.gameplay.phase} ` +
+            `episode=${current.episode} step=${current.episode_step} reward=${formatNumber(current.reward, 3)}`;
+          return;
+        }
+
+        if (detail) {
+          gameplayInfoEl.textContent = detail;
+          return;
+        }
+
+        if (state.gameplay.phase === "unavailable") {
+          gameplayInfoEl.textContent = "Install gymnasium + ale-py to enable live gameplay.";
+          return;
+        }
+
+        gameplayInfoEl.textContent = "Waiting for gameplay stream...";
+      }
+
+      function gameplayLoop(timestamp) {
+        const fps = Math.max(1, Number(state.gameplay.fps) || 8);
+        const interval = 1000 / fps;
+
+        if (
+          state.gameplay.queue.length > 0 &&
+          (state.gameplay.current === null || timestamp - state.gameplay.lastFrameTs >= interval)
+        ) {
+          state.gameplay.current = state.gameplay.queue.shift();
+          state.gameplay.lastFrameTs = timestamp;
+        }
+
+        if (state.gameplay.current) {
+          drawGameplayFrame(state.gameplay.current);
+        }
+
+        renderGameplayInfo();
+        window.requestAnimationFrame(gameplayLoop);
+      }
+
+      async function fetchSummary() {
+        const res = await fetch("/api/summary", { cache: "no-store" });
+        if (!res.ok) return;
+
+        const payload = await res.json();
+        state.summary = payload;
+        state.status = payload.status || state.status;
+        state.phase = payload.phase || state.phase;
+
+        if (typeof payload.refresh_ms === "number" && payload.refresh_ms > 0) {
+          state.refreshMs = payload.refresh_ms;
+        }
+
+        if (typeof payload.gameplay_fps === "number" && payload.gameplay_fps > 0) {
+          state.gameplay.fps = payload.gameplay_fps;
+        }
+
+        if (payload.phase_message) {
+          state.gameplay.detail = String(payload.phase_message);
+        }
+      }
+
+      async function fetchMetrics() {
+        const res = await fetch(`/api/metrics?since_step=${state.lastStep}`, { cache: "no-store" });
+        if (!res.ok) return;
+
+        const payload = await res.json();
+        state.status = payload.status || state.status;
+        state.phase = payload.phase || state.phase;
+
+        if (Array.isArray(payload.points) && payload.points.length > 0) {
+          payload.points.forEach((point) => {
+            state.points.push(point);
+            state.lastStep = Math.max(state.lastStep, point.step);
+            if (point.metrics && typeof point.metrics === "object") {
+              Object.keys(point.metrics).forEach((key) => state.metricKeys.add(key));
+            }
+          });
+        }
+      }
+
+      async function fetchGameplay() {
+        const res = await fetch(`/api/gameplay?since_seq=${state.gameplay.lastSeq}`, {
+          cache: "no-store",
+        });
+        if (!res.ok) return;
+
+        const payload = await res.json();
+        state.gameplay.status = payload.status || state.gameplay.status;
+        state.gameplay.phase = payload.phase || state.gameplay.phase;
+        state.gameplay.detail = payload.detail || state.gameplay.detail;
+        if (typeof payload.fps === "number" && payload.fps > 0) {
+          state.gameplay.fps = payload.fps;
+        }
+
+        if (Array.isArray(payload.frames) && payload.frames.length > 0) {
+          payload.frames.forEach((frame) => {
+            const decoded = decodeFrame(frame);
+            if (!decoded) return;
+            state.gameplay.queue.push(decoded);
+            state.gameplay.lastSeq = Math.max(state.gameplay.lastSeq, decoded.seq);
+          });
+
+          while (state.gameplay.queue.length > 256) {
+            state.gameplay.queue.shift();
+          }
+        }
+      }
+
+      async function tick() {
+        try {
+          await fetchMetrics();
+          await fetchGameplay();
+          state.summaryCounter += 1;
+          if (state.summaryCounter % 5 === 0 || !state.summary) {
+            await fetchSummary();
+          }
+          renderMetrics();
+        } catch (err) {
+          console.error(err);
+        } finally {
+          setTimeout(tick, state.refreshMs);
+        }
+      }
+
+      window.addEventListener("resize", () => {
+        renderMetrics();
+        if (state.gameplay.current) {
+          drawGameplayFrame(state.gameplay.current);
+        }
+      });
+
+      initializeMetricTooltips();
+      tick();
+      window.requestAnimationFrame(gameplayLoop);
+    </script>
+  </body>
+</html>
