@@ -4,8 +4,8 @@ Minimum criteria before tagging a public release.
 
 ## CI and Quality Gates
 
-- [ ] Lint passes: `uv run ruff check src/ tests/ examples/`
-- [ ] Format check passes: `uv run ruff format --check src/ tests/ examples/`
+- [ ] Lint passes: `uvx ruff check src/ tests/ examples/`
+- [ ] Format check passes: `uvx ruff format --check src/ tests/ examples/`
 - [ ] Typecheck passes: `uv run mypy src/worldflux/`
 - [ ] Test suite passes: `uv run pytest tests/`
 - [ ] Example smoke tests pass:

@@ -15,7 +15,7 @@ model = create_world_model(
     model="dreamerv3:size12m",
     obs_shape=(3, 64, 64),
     action_dim=4,
-    device="cuda",
+    device="cpu",
 )
 ```
 
@@ -23,15 +23,16 @@ model = create_world_model(
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `model` | `str` | required | Model preset, alias, or path to saved model |
-| `obs_shape` | `tuple[int, ...]` | `None` | Observation shape (required for new models) |
-| `action_dim` | `int` | `None` | Action dimension (required for new models) |
-| `device` | `str` | `"cuda"` | Device to place model on |
-| `**kwargs` | | | Additional config overrides |
+| `model` | `str` | required | Model preset, alias, or path to a saved model |
+| `obs_shape` | `tuple[int, ...]` | `None` | Observation shape (required for new model creation) |
+| `action_dim` | `int` | `None` | Action dimension (required for new model creation) |
+| `device` | `str` | `"cpu"` | Device to place model on |
+| `api_version` | `str` | `"v3"` | API compatibility mode |
+| `**kwargs` |  |  | Config overrides for the selected model family |
 
 ### Model Specifiers
 
-#### Presets (type:size)
+#### Presets (`type:size`)
 
 ```python
 model = create_world_model("dreamerv3:size12m", ...)
@@ -42,16 +43,16 @@ model = create_world_model("tdmpc2:5m", ...)
 
 ```python
 # DreamerV3 aliases
-model = create_world_model("dreamer", ...)       # size12m
-model = create_world_model("dreamer-small", ...)  # size12m
-model = create_world_model("dreamer-medium", ...) # size50m
-model = create_world_model("dreamer-large", ...)  # size200m
+model = create_world_model("dreamer", ...)        # dreamerv3:size12m
+model = create_world_model("dreamer-small", ...)  # dreamerv3:size12m
+model = create_world_model("dreamer-medium", ...) # dreamerv3:size50m
+model = create_world_model("dreamer-large", ...)  # dreamerv3:size200m
 
 # TD-MPC2 aliases
-model = create_world_model("tdmpc", ...)         # 5m
-model = create_world_model("tdmpc-small", ...)   # 5m
-model = create_world_model("tdmpc-medium", ...)  # 48m
-model = create_world_model("tdmpc-large", ...)   # 317m
+model = create_world_model("tdmpc", ...)         # tdmpc2:5m
+model = create_world_model("tdmpc-small", ...)   # tdmpc2:5m
+model = create_world_model("tdmpc-medium", ...)  # tdmpc2:48m
+model = create_world_model("tdmpc-large", ...)   # tdmpc2:317m
 ```
 
 #### Load from Path
@@ -64,15 +65,16 @@ model = create_world_model("/path/to/checkpoint")
 ### Config Overrides
 
 ```python
-# Override default configuration
 model = create_world_model(
-    "dreamerv3:size12m",
-    obs_shape=(3, 64, 64),
-    action_dim=4,
-    hidden_dim=256,  # Override default
-    num_layers=3,    # Override default
+    "tdmpc2:19m",
+    obs_shape=(39,),
+    action_dim=6,
+    hidden_dim=768,      # Valid TDMPC2Config field
+    num_q_networks=7,    # Valid TDMPC2Config field
 )
 ```
+
+Use config-field names that exist on the selected config class.
 
 ### Returns
 
@@ -82,57 +84,49 @@ A world model instance implementing the [`WorldModel` protocol](protocol.md).
 
 ## list_models
 
-List all available model presets.
+List available model presets.
 
 ```python
 from worldflux import list_models
 
 # Simple list
 models = list_models()
-# ['dreamerv3:size12m', 'dreamerv3:size25m', ..., 'tdmpc2:5m', ...]
 
 # With descriptions
 models = list_models(verbose=True)
-# {
-#     'dreamerv3:size12m': {
-#         'params': '12M',
-#         'type': 'dreamerv3',
-#         'description': 'Small DreamerV3 model'
-#     },
-#     ...
-# }
 ```
 
 ### Parameters
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `verbose` | `bool` | `False` | Return detailed info as dict |
+| `verbose` | `bool` | `False` | Return detailed metadata instead of only names |
+| `maturity` | `str \| None` | `None` | Optional maturity filter (`reference`, `experimental`, `skeleton`) |
 
 ### Returns
 
 - `verbose=False`: `list[str]` of model names
-- `verbose=True`: `dict[str, dict]` with model info
+- `verbose=True`: `dict[str, dict]` with catalog metadata
 
 ---
 
-## Model Presets
+## Reference Presets
 
 ### DreamerV3
 
-| Preset | Parameters | deter_dim | stoch_dim |
-|--------|------------|-----------|-----------|
-| `dreamerv3:size12m` | ~12M | 2048 | 1024 |
-| `dreamerv3:size25m` | ~25M | 2048 | 1024 |
-| `dreamerv3:size50m` | ~50M | 4096 | 1024 |
-| `dreamerv3:size100m` | ~100M | 4096 | 2048 |
-| `dreamerv3:size200m` | ~200M | 8192 | 2048 |
+| Preset | Approx Params | `deter_dim` | `stoch_discrete` | `stoch_classes` |
+|--------|----------------|-------------|------------------|-----------------|
+| `dreamerv3:size12m` | ~12M | 2048 | 16 | 16 |
+| `dreamerv3:size25m` | ~25M | 4096 | 32 | 16 |
+| `dreamerv3:size50m` | ~50M | 4096 | 32 | 32 |
+| `dreamerv3:size100m` | ~100M | 8192 | 32 | 32 |
+| `dreamerv3:size200m` | ~200M | 8192 | 32 | 32 |
 
 ### TD-MPC2
 
-| Preset | Parameters | latent_dim | num_q |
-|--------|------------|------------|-------|
-| `tdmpc2:5m` | ~5M | 512 | 5 |
-| `tdmpc2:19m` | ~19M | 512 | 5 |
-| `tdmpc2:48m` | ~48M | 1024 | 5 |
-| `tdmpc2:317m` | ~317M | 2048 | 10 |
+| Preset | Approx Params | `latent_dim` | `hidden_dim` | `num_q_networks` |
+|--------|----------------|--------------|--------------|------------------|
+| `tdmpc2:5m` | ~5M | 256 | 256 | 5 |
+| `tdmpc2:19m` | ~19M | 512 | 512 | 5 |
+| `tdmpc2:48m` | ~48M | 512 | 1024 | 5 |
+| `tdmpc2:317m` | ~317M | 1024 | 2048 | 5 |

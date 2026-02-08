@@ -6,8 +6,8 @@ This document defines the **release readiness gates** for WorldFlux.
 
 All PRs must pass:
 
-- **Lint**: `uv run ruff check src/ tests/ examples/`
-- **Format**: `uv run ruff format --check src/ tests/ examples/`
+- **Lint**: `uvx ruff check src/ tests/ examples/`
+- **Format**: `uvx ruff format --check src/ tests/ examples/`
 - **Typecheck**: `uv run mypy src/worldflux/`
 - **Unit tests**: `uv run pytest tests/`
 - **Example smoke tests**:

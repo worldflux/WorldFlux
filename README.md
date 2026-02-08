@@ -8,7 +8,7 @@
 
 *One API. Multiple Architectures. Infinite Imagination.*
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/worldflux/Worldflux/blob/main/examples/worldflux_quickstart.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/worldflux/WorldFlux/blob/main/examples/worldflux_quickstart.ipynb)
 [![Hugging Face Spaces](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Spaces-blue)](https://huggingface.co/spaces/WorldFlux/demo)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Community-7289da?logo=discord&logoColor=white)](https://discord.gg/ZUBn9UEp2z)
 [![PyPI](https://img.shields.io/pypi/v/worldflux.svg)](https://pypi.org/project/worldflux/)
@@ -130,7 +130,7 @@ Install `uv` first if you do not have it yet: [uv installation guide](https://do
 ### From Source (recommended)
 
 ```bash
-git clone https://github.com/worldflux/Worldflux.git
+git clone https://github.com/worldflux/WorldFlux.git
 cd worldflux
 uv sync
 
@@ -430,7 +430,7 @@ If you use this library in your research, please cite:
 @software{worldflux,
   title = {WorldFlux: Unified Interface for World Models},
   year = {2026},
-  url = {https://github.com/worldflux/Worldflux}
+  url = {https://github.com/worldflux/WorldFlux}
 }
 ```
 

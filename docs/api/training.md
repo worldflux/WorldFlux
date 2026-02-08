@@ -192,6 +192,7 @@ buffer = ReplayBuffer.load("buffer.npz")
 | `dones` | `[N]` | Episode termination flags (`0/1`) |
 | `obs_shape` | `[len(obs_shape)]` | Stored observation shape metadata |
 | `action_dim` | scalar | Stored action-dimension metadata |
+| `capacity` | scalar | Replay buffer capacity used when saving |
 
 If your pipeline uses `terminations`, store the same array under `dones` when
 writing the `.npz` artifact for `ReplayBuffer.load()`.
@@ -208,6 +209,7 @@ np.savez(
     dones=terminations.astype(np.float32),         # [N]
     obs_shape=np.array(obs.shape[1:], dtype=np.int64),
     action_dim=np.array(actions.shape[-1], dtype=np.int64),
+    capacity=np.array(max(len(obs), 1), dtype=np.int64),
 )
 ```
 
