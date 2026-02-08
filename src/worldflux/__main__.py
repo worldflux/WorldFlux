@@ -9,9 +9,7 @@ def main() -> None:
     except ModuleNotFoundError as exc:
         missing = (exc.name or "").split(".")[0].lower()
         if missing in {"typer", "rich", "inquirerpy"}:
-            print(
-                "WorldFlux CLI dependencies are not installed. " "Run: uv pip install -e '.[cli]'"
-            )
+            print("WorldFlux CLI dependencies are not installed. Run: uv pip install -e '.[cli]'")
             raise SystemExit(1) from exc
         raise
 
