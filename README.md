@@ -402,9 +402,10 @@ Results on standard benchmarks:
 
 ## Documentation
 
-- [Full Documentation](https://github.com/worldflux/WorldFlux/tree/main/docs) - Comprehensive guides and API reference
-- [Tutorials](https://github.com/worldflux/WorldFlux/tree/main/docs/tutorials) - Step-by-step learning
-- [API Reference](https://github.com/worldflux/WorldFlux/tree/main/docs/api) - Detailed API docs
+- [Full Documentation](https://github.com/worldflux/WorldFlux/tree/main/docs) - Operational guides and API reference
+- [API Reference](https://github.com/worldflux/WorldFlux/tree/main/docs/api) - Contract and symbol-level docs
+- [Reproduction Guides](https://github.com/worldflux/WorldFlux/tree/main/docs/tutorials) - Reproducible training/validation runs
+- [Quality Gates](https://github.com/worldflux/WorldFlux/tree/main/docs/reference) - Release and reliability requirements
 
 ## Community
 

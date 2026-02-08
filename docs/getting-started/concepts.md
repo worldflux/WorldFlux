@@ -2,6 +2,12 @@
 
 Understanding WorldFlux's architecture and key components.
 
+!!! warning "Reference / Deprecated onboarding page"
+    This page is retained for backward compatibility and deep background reading.
+    For the supported onboarding path, use [Installation](installation.md) and
+    [Quick Start](quickstart.md). For practical verification, use
+    [Reproduce Dreamer/TD-MPC2](../tutorials/reproduce-dreamer-tdmpc2.md).
+
 ## What is a World Model?
 
 A **world model** is a neural network that learns to predict how an environment evolves. It enables:
