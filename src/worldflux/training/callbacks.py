@@ -101,6 +101,8 @@ class LoggingCallback(Callback):
         wandb_project: str | None = None,
         wandb_run_name: str | None = None,
     ):
+        if log_interval <= 0:
+            raise ValueError(f"log_interval must be positive, got {log_interval}")
         self.log_interval = log_interval
         self.use_wandb = use_wandb
         self.wandb_project = wandb_project
@@ -198,6 +200,10 @@ class CheckpointCallback(Callback):
         save_best: bool = True,
         max_checkpoints: int | None = 5,
     ):
+        if save_interval <= 0:
+            raise ValueError(f"save_interval must be positive, got {save_interval}")
+        if max_checkpoints is not None and max_checkpoints <= 0:
+            raise ValueError(f"max_checkpoints must be positive when set, got {max_checkpoints}")
         self.save_interval = save_interval
         self.output_dir = Path(output_dir)
         self.save_best = save_best
@@ -266,6 +272,10 @@ class EarlyStoppingCallback(Callback):
         min_delta: float = 1e-4,
         monitor: str = "loss",
     ):
+        if patience <= 0:
+            raise ValueError(f"patience must be positive, got {patience}")
+        if min_delta < 0:
+            raise ValueError(f"min_delta must be non-negative, got {min_delta}")
         self.patience = patience
         self.min_delta = min_delta
         self.monitor = monitor
