@@ -566,6 +566,9 @@ class Trainer:
         Returns:
             Dictionary of average metrics.
         """
+        if num_batches <= 0:
+            raise TrainingError(f"num_batches must be positive, got {num_batches}")
+
         self.model.eval()
 
         total_metrics: dict[str, float] = {}
