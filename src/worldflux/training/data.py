@@ -359,27 +359,90 @@ class ReplayBuffer:
 
     @classmethod
     def load(cls, path: str | Path) -> ReplayBuffer:
-        """Load buffer from disk."""
+        """Load buffer from disk with schema validation."""
+        required_keys = {
+            "obs",
+            "actions",
+            "rewards",
+            "dones",
+            "obs_shape",
+            "action_dim",
+            "capacity",
+        }
         # allow_pickle=False for security (only load array data, not arbitrary objects)
-        data = np.load(path, allow_pickle=False)
-        obs_shape = tuple(data["obs_shape"].tolist())
-        action_dim = int(data["action_dim"])
-        capacity = int(data["capacity"])
+        with np.load(path, allow_pickle=False) as data:
+            missing = sorted(required_keys.difference(data.files))
+            if missing:
+                raise BufferError(f"Invalid replay buffer file: missing keys {missing}")
 
-        buffer = cls(capacity=capacity, obs_shape=obs_shape, action_dim=action_dim)
+            obs = data["obs"]
+            actions = data["actions"]
+            rewards = data["rewards"]
+            dones = data["dones"]
 
-        # Load data
-        size = len(data["obs"])
-        buffer._obs[:size] = data["obs"]
-        buffer._actions[:size] = data["actions"]
-        buffer._rewards[:size] = data["rewards"]
-        buffer._dones[:size] = data["dones"]
-        buffer._size = size
-        buffer._position = size % capacity
+            try:
+                obs_shape = tuple(int(v) for v in np.asarray(data["obs_shape"]).tolist())
+            except Exception as exc:
+                raise BufferError(f"Invalid obs_shape metadata: {exc}") from exc
+            if not obs_shape or any(dim <= 0 for dim in obs_shape):
+                raise BufferError(f"Invalid obs_shape metadata: {obs_shape}")
+
+            try:
+                action_dim = int(np.asarray(data["action_dim"]).item())
+            except Exception as exc:
+                raise BufferError(f"Invalid action_dim metadata: {exc}") from exc
+            if action_dim <= 0:
+                raise BufferError(f"Invalid action_dim metadata: {action_dim}")
+
+            try:
+                capacity = int(np.asarray(data["capacity"]).item())
+            except Exception as exc:
+                raise BufferError(f"Invalid capacity metadata: {exc}") from exc
+            if capacity <= 0:
+                raise BufferError(f"Invalid capacity metadata: {capacity}")
+
+            if obs.ndim < 2:
+                raise BufferError(f"Invalid obs shape: expected [N, *obs_shape], got {obs.shape}")
+            if tuple(obs.shape[1:]) != obs_shape:
+                raise BufferError(
+                    f"obs shape does not match obs_shape metadata: {obs.shape[1:]} vs {obs_shape}"
+                )
+            if actions.ndim != 2:
+                raise BufferError(
+                    f"Invalid actions shape: expected [N, action_dim], got {actions.shape}"
+                )
+            if actions.shape[1] != action_dim:
+                raise BufferError(
+                    "actions shape does not match action_dim metadata: "
+                    f"{actions.shape[1]} vs {action_dim}"
+                )
+            if rewards.ndim != 1:
+                raise BufferError(f"Invalid rewards shape: expected [N], got {rewards.shape}")
+            if dones.ndim != 1:
+                raise BufferError(f"Invalid dones shape: expected [N], got {dones.shape}")
+
+            size = len(obs)
+            if len(actions) != size or len(rewards) != size or len(dones) != size:
+                raise BufferError(
+                    "Inconsistent trajectory lengths in replay buffer file: "
+                    f"obs={len(obs)}, actions={len(actions)}, rewards={len(rewards)}, dones={len(dones)}"
+                )
+            if size > capacity:
+                raise BufferError(
+                    "Invalid replay buffer file: number of stored rows exceeds capacity "
+                    f"({size} > {capacity})"
+                )
+
+            buffer = cls(capacity=capacity, obs_shape=obs_shape, action_dim=action_dim)
+            buffer._obs[:size] = obs
+            buffer._actions[:size] = actions
+            buffer._rewards[:size] = rewards
+            buffer._dones[:size] = dones
+            buffer._size = size
+            buffer._position = size % capacity
 
         # Reconstruct episode boundaries from done flags
         buffer._reconstruct_episodes()
-
         return buffer
 
     def _reconstruct_episodes(self) -> None:
