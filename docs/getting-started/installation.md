@@ -31,6 +31,9 @@ uv sync --extra all
 
 # Development (testing, linting, type checking)
 uv sync --extra dev
+
+# Documentation tooling (MkDocs + API autogen plugins)
+uv sync --extra docs
 ```
 
 ## From PyPI (Coming Soon)
@@ -81,4 +84,12 @@ If you get import errors for training features:
 
 ```bash
 uv sync --extra training
+```
+
+## Build Documentation Locally
+
+```bash
+uv sync --extra docs
+uv run mkdocs serve
+uv run mkdocs build --strict
 ```
