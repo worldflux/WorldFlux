@@ -2,6 +2,12 @@
 
 A complete walkthrough of training a world model from scratch.
 
+!!! warning "Reference / Deprecated onboarding tutorial"
+    This tutorial remains available for compatibility, but it is no longer part of
+    the primary onboarding path. For production-oriented flows, start from
+    [Quick Start](../getting-started/quickstart.md) and
+    [Reproduce Dreamer/TD-MPC2](reproduce-dreamer-tdmpc2.md).
+
 ## Prerequisites
 
 ```bash
