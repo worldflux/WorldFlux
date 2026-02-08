@@ -8,8 +8,8 @@
 
 *One API. Multiple Architectures. Infinite Imagination.*
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/worldflux/Worldflux/blob/main/examples/worldflux_quickstart.ipynb)
-[![GitHub](https://img.shields.io/badge/GitHub-worldflux-blue?logo=github)](https://github.com/worldflux/Worldflux)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/worldflux/WorldFlux/blob/main/examples/worldflux_quickstart.ipynb)
+[![GitHub](https://img.shields.io/badge/GitHub-worldflux-blue?logo=github)](https://github.com/worldflux/WorldFlux)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 ---
@@ -44,7 +44,7 @@ state = model.encode(obs)
 actions = torch.randn(15, 1, 4)
 trajectory = model.rollout(state, actions)
 
-print(f"Predicted rewards: {trajectory.rewards.shape}")  # [15, 1, 1]
+print(f"Predicted rewards: {trajectory.rewards.shape}")  # [15, 1]
 ```
 
 ## Available Models
@@ -146,20 +146,20 @@ graph LR
 ## Installation
 
 ```bash
-git clone https://github.com/worldflux/Worldflux.git
+git clone https://github.com/worldflux/WorldFlux.git
 cd worldflux
 uv sync --extra training
 ```
 
 ## Try It Now
 
-The fastest way to get started is our [interactive Colab notebook](https://colab.research.google.com/github/worldflux/Worldflux/blob/main/examples/worldflux_quickstart.ipynb).
+The fastest way to get started is our [interactive Colab notebook](https://colab.research.google.com/github/worldflux/WorldFlux/blob/main/examples/worldflux_quickstart.ipynb).
 
 ## Contributing
 
-Contributions are welcome! See our [Contributing Guide](https://github.com/worldflux/Worldflux/blob/main/CONTRIBUTING.md).
+Contributions are welcome! See our [Contributing Guide](https://github.com/worldflux/WorldFlux/blob/main/CONTRIBUTING.md).
 
 ## License
 
-Apache License 2.0 - see [LICENSE](https://github.com/worldflux/Worldflux/blob/main/LICENSE) and
-[NOTICE](https://github.com/worldflux/Worldflux/blob/main/NOTICE) for details.
+Apache License 2.0 - see [LICENSE](https://github.com/worldflux/WorldFlux/blob/main/LICENSE) and
+[NOTICE](https://github.com/worldflux/WorldFlux/blob/main/NOTICE) for details.

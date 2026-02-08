@@ -9,7 +9,7 @@
 ## From Source (Recommended)
 
 ```bash
-git clone https://github.com/worldflux/Worldflux.git
+git clone https://github.com/worldflux/WorldFlux.git
 cd worldflux
 uv sync
 ```

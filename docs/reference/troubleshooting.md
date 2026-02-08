@@ -81,9 +81,9 @@ config = TrainingConfig(batch_size=8)  # Instead of 16
 config = TrainingConfig(sequence_length=25)  # Instead of 50
 ```
 
-4. Enable gradient checkpointing:
+4. Enable mixed precision on CUDA:
 ```python
-model.enable_gradient_checkpointing()
+config = TrainingConfig(mixed_precision=True)
 ```
 
 5. Use CPU for smaller experiments:
@@ -331,7 +331,7 @@ trajectory = model.rollout(states, actions)  # Batched
 
 If your issue isn't listed here:
 
-1. Check [GitHub Issues](https://github.com/worldflux/Worldflux/issues)
+1. Check [GitHub Issues](https://github.com/worldflux/WorldFlux/issues)
 2. Search existing issues for similar problems
 3. Open a new issue with:
    - WorldFlux version (`worldflux.__version__`)

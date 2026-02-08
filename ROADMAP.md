@@ -112,11 +112,11 @@ v3-first policy:
 
 We welcome contributions! Check out:
 
-1. [Good First Issues](https://github.com/worldflux/Worldflux/labels/good%20first%20issue)
-2. [Help Wanted](https://github.com/worldflux/Worldflux/labels/help%20wanted)
+1. [Good First Issues](https://github.com/worldflux/WorldFlux/labels/good%20first%20issue)
+2. [Help Wanted](https://github.com/worldflux/WorldFlux/labels/help%20wanted)
 3. [Contributing Guide](CONTRIBUTING.md)
 
-Have a feature request? [Open an issue](https://github.com/worldflux/Worldflux/issues/new?template=feature_request.md)!
+Have a feature request? [Open an issue](https://github.com/worldflux/WorldFlux/issues/new?template=feature_request.md)!
 
 ---
 
