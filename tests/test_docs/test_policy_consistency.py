@@ -50,8 +50,8 @@ def test_ci_includes_strict_docs_gate():
 
 def test_quality_gates_doc_matches_uv_ci_commands():
     gates = _read("docs/reference/quality-gates.md")
-    assert "uv run ruff check src/ tests/ examples/" in gates
-    assert "uv run ruff format --check src/ tests/ examples/" in gates
+    assert "uvx ruff check src/ tests/ examples/" in gates
+    assert "uvx ruff format --check src/ tests/ examples/" in gates
     assert "uv run mypy src/worldflux/" in gates
     assert "uv run pytest tests/" in gates
     assert "uv run mkdocs build --strict" in gates
