@@ -45,6 +45,9 @@ dependencies = [
     "numpy>=1.24.0,<3.0.0",
 ]
 
+[project.scripts]
+worldflux = "worldflux.cli:app"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0.0,<9.0.0",
@@ -75,14 +78,25 @@ viz = [
 logging = [
     "wandb>=0.15.0,<1.0.0",
 ]
+cli = [
+    "typer>=0.9.0",
+    "rich>=13.0.0",
+    "inquirerpy>=0.3.4",
+    "tomli>=2.0.1; python_version < '3.11'",
+    "tomli-w>=1.0.0",
+]
 docs = [
     "mkdocs>=1.5.0,<2.0.0",
     "mkdocs-material>=9.0.0,<10.0.0",
     "mkdocstrings[python]>=0.24.0,<1.0.0",
+    "mkdocs-autorefs>=1.2.0,<2.0.0",
+    "mkdocs-redirects>=1.2.2,<2.0.0",
+    "mkdocs-git-revision-date-localized-plugin>=1.2.4,<2.0.0",
+    "mkdocs-minify-plugin>=0.8.0,<1.0.0",
     "pymdown-extensions>=10.0.0,<11.0.0",
 ]
 all = [
-    "worldflux[dev,training,env,atari,viz,logging,docs]",
+    "worldflux[dev,training,env,atari,viz,logging,docs,cli]",
 ]
 
 [project.entry-points."worldflux.models"]
@@ -97,7 +111,7 @@ all = [
 
 [project.urls]
 Homepage = "https://github.com/worldflux/Worldflux"
-Documentation = "https://github.com/worldflux/WorldFlux/tree/main/docs"
+Documentation = "https://worldflux.github.io/WorldFlux/"
 Repository = "https://github.com/worldflux/Worldflux"
 Changelog = "https://github.com/worldflux/Worldflux/blob/main/CHANGELOG.md"
 Issues = "https://github.com/worldflux/Worldflux/issues"

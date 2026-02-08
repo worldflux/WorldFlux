@@ -142,12 +142,23 @@ uv sync --extra all
 
 # For development
 uv sync --extra dev
+
+# For documentation tooling
+uv sync --extra docs
 ```
 
 ### From PyPI
 
 ```bash
 uv pip install worldflux
+```
+
+### Build Docs Locally
+
+```bash
+uv sync --extra docs
+uv run mkdocs serve
+uv run mkdocs build --strict
 ```
 
 ## Quick Start
@@ -391,9 +402,9 @@ Results on standard benchmarks:
 
 ## Documentation
 
-- [Full Documentation](https://github.com/worldflux/WorldFlux/tree/main/docs) - Comprehensive guides and API reference
-- [Tutorials](https://github.com/worldflux/WorldFlux/tree/main/docs/tutorials) - Step-by-step learning
-- [API Reference](https://github.com/worldflux/WorldFlux/tree/main/docs/api) - Detailed API docs
+- [Full Documentation](https://worldflux.github.io/WorldFlux/) - Comprehensive guides and API reference
+- [Tutorials](https://worldflux.github.io/WorldFlux/tutorials/train-first-model/) - Step-by-step learning
+- [API Reference](https://worldflux.github.io/WorldFlux/api/factory/) - Detailed API docs
 
 ## Community
 
