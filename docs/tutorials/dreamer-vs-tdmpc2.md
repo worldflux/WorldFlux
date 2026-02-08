@@ -190,7 +190,7 @@ trained = train(model, buffer, total_steps=1_000_000)
 
 # Use for planning
 state = model.encode(obs)
-q_values = model.q(state, action)
+q_values = model.predict_q(state, action)
 ```
 
 ## Migration Between Models
