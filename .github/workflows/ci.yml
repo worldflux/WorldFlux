@@ -217,7 +217,7 @@ jobs:
       - name: Build docs (strict)
         run: uv run mkdocs build --strict
 
-      - name: Check external links (README + docs)
+      - name: Check external links (all markdown targets)
         uses: lycheeverse/lychee-action@v2
         with:
           args: >-
@@ -226,7 +226,8 @@ jobs:
             --max-retries 2
             --retry-wait-time 2
             --accept 200,206,301,302,303,307,308,403,429
-            README.md docs
+            README.md CONTRIBUTING.md CHANGELOG.md ROADMAP.md SECURITY.md CODE_OF_CONDUCT.md
+            docs sample-dreamer sample-dreamer1 spaces
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
