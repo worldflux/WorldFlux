@@ -6,12 +6,27 @@
 - PyTorch 2.0+
 - [uv](https://docs.astral.sh/uv/getting-started/installation/)
 
+## Global CLI Install (cargo new style)
+
+```bash
+uv tool install worldflux
+worldflux init my-world-model
+```
+
+Optional: install InquirerPy for enhanced prompt widgets.
+
+```bash
+uv tool install --with inquirerpy worldflux
+```
+
 ## From Source (Recommended)
 
 ```bash
 git clone https://github.com/worldflux/WorldFlux.git
 cd worldflux
 uv sync
+source .venv/bin/activate
+worldflux init my-world-model
 ```
 
 ### With Optional Dependencies
@@ -36,10 +51,11 @@ uv sync --extra dev
 uv sync --extra docs
 ```
 
-## From PyPI (Coming Soon)
+## From PyPI
 
 ```bash
 uv pip install worldflux
+worldflux init my-world-model
 ```
 
 ## Verify Installation
