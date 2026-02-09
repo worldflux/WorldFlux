@@ -35,12 +35,6 @@ World model rolls out future frames from a single observation:
 
 *Left: Real game frames | Right: Model's imagination*
 
-### Latent Space Dynamics
-
-Visualization of how episodes traverse the learned latent space:
-
-![Latent Space](https://raw.githubusercontent.com/worldflux/WorldFlux/main/docs/assets/latent_space.gif)
-
 ## Features
 
 - **Unified API**: Common interface across model families
