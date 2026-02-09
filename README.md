@@ -127,12 +127,27 @@ graph LR
 
 Install `uv` first if you do not have it yet: [uv installation guide](https://docs.astral.sh/uv/getting-started/installation/).
 
+### Global CLI Install (cargo new style)
+
+```bash
+uv tool install worldflux
+worldflux init my-world-model
+```
+
+Optional: enable the InquirerPy-powered prompt UI.
+
+```bash
+uv tool install --with inquirerpy worldflux
+```
+
 ### From Source (recommended)
 
 ```bash
 git clone https://github.com/worldflux/WorldFlux.git
 cd worldflux
 uv sync
+source .venv/bin/activate
+worldflux init my-world-model
 
 # With training dependencies
 uv sync --extra training
@@ -151,6 +166,7 @@ uv sync --extra docs
 
 ```bash
 uv pip install worldflux
+worldflux init my-world-model
 ```
 
 ### Build Docs Locally

@@ -142,9 +142,8 @@ graph LR
 ## Installation
 
 ```bash
-git clone https://github.com/worldflux/WorldFlux.git
-cd worldflux
-uv sync --extra training
+uv tool install worldflux
+worldflux init my-world-model
 ```
 
 ## Try It Now
