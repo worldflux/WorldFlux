@@ -11,7 +11,7 @@ from types import SimpleNamespace
 import pytest
 
 if importlib.util.find_spec("typer") is None or importlib.util.find_spec("rich") is None:
-    pytest.skip("CLI optional dependencies are not installed", allow_module_level=True)
+    pytest.skip("CLI dependencies are not installed", allow_module_level=True)
 
 from typer.testing import CliRunner
 
@@ -33,9 +33,14 @@ def _base_context(project_name: str = "demo-project", device: str = "cpu") -> di
     }
 
 
+def _patch_init_noninteractive(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(cli, "_print_logo", lambda: None)
+    monkeypatch.setattr(cli, "_confirm_generation", lambda: True)
+
+
 def test_init_with_path_argument(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(cli, "_prompt_user_configuration", lambda: _base_context("named-project"))
-    monkeypatch.setattr(cli, "_print_logo", lambda: None)
+    _patch_init_noninteractive(monkeypatch)
 
     with runner.isolated_filesystem():
         result = runner.invoke(cli.app, ["init", "my-ai"])
@@ -46,7 +51,7 @@ def test_init_with_path_argument(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_init_without_path_uses_project_name_directory(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(cli, "_prompt_user_configuration", lambda: _base_context("auto-dir"))
-    monkeypatch.setattr(cli, "_print_logo", lambda: None)
+    _patch_init_noninteractive(monkeypatch)
 
     with runner.isolated_filesystem():
         result = runner.invoke(cli.app, ["init"])
@@ -55,9 +60,20 @@ def test_init_without_path_uses_project_name_directory(monkeypatch: pytest.Monke
         assert Path("auto-dir/train.py").exists()
 
 
+def test_init_shows_guided_intro_panel(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(cli, "_prompt_user_configuration", lambda: _base_context("intro-project"))
+    monkeypatch.setattr(cli, "_confirm_generation", lambda: True)
+
+    with runner.isolated_filesystem():
+        result = runner.invoke(cli.app, ["init", "intro-project"])
+        assert result.exit_code == 0
+        assert "Create a ready-to-run WorldFlux project" in result.stdout
+        assert "Configuration Summary" in result.stdout
+
+
 def test_init_gpu_fallback_to_cpu(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(cli, "_prompt_user_configuration", lambda: _base_context(device="cuda"))
-    monkeypatch.setattr(cli, "_print_logo", lambda: None)
+    _patch_init_noninteractive(monkeypatch)
     monkeypatch.setattr(cli.torch.cuda, "is_available", lambda: False)
 
     with runner.isolated_filesystem():
@@ -70,7 +86,7 @@ def test_init_gpu_fallback_to_cpu(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_init_returns_non_zero_when_target_is_file(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(cli, "_prompt_user_configuration", lambda: _base_context("unused"))
-    monkeypatch.setattr(cli, "_print_logo", lambda: None)
+    _patch_init_noninteractive(monkeypatch)
 
     with runner.isolated_filesystem():
         Path("target").write_text("not a dir", encoding="utf-8")
@@ -94,7 +110,7 @@ def test_resolve_python_launcher_falls_back_to_python3(monkeypatch: pytest.Monke
 
 def test_init_next_steps_uses_resolved_launcher(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(cli, "_prompt_user_configuration", lambda: _base_context("step-launcher"))
-    monkeypatch.setattr(cli, "_print_logo", lambda: None)
+    _patch_init_noninteractive(monkeypatch)
     monkeypatch.setattr(cli, "_resolve_python_launcher", lambda: "python3")
 
     with runner.isolated_filesystem():
@@ -145,7 +161,7 @@ def test_init_keyboard_interrupt_returns_130(monkeypatch: pytest.MonkeyPatch) ->
         raise KeyboardInterrupt
 
     monkeypatch.setattr(cli, "_prompt_user_configuration", _interrupt)
-    monkeypatch.setattr(cli, "_print_logo", lambda: None)
+    _patch_init_noninteractive(monkeypatch)
 
     with runner.isolated_filesystem():
         result = runner.invoke(cli.app, ["init", "cancelled"])
@@ -153,9 +169,23 @@ def test_init_keyboard_interrupt_returns_130(monkeypatch: pytest.MonkeyPatch) ->
         assert "Initialization cancelled" in result.stdout
 
 
+def test_init_decline_confirmation_returns_130_and_generates_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(cli, "_prompt_user_configuration", lambda: _base_context("declined"))
+    monkeypatch.setattr(cli, "_print_logo", lambda: None)
+    monkeypatch.setattr(cli, "_confirm_generation", lambda: False)
+
+    with runner.isolated_filesystem():
+        result = runner.invoke(cli.app, ["init", "declined"])
+        assert result.exit_code == 130
+        assert not Path("declined").exists()
+        assert "No files were generated" in result.stdout
+
+
 def test_init_force_overwrites_non_empty_directory(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(cli, "_prompt_user_configuration", lambda: _base_context("forced-project"))
-    monkeypatch.setattr(cli, "_print_logo", lambda: None)
+    _patch_init_noninteractive(monkeypatch)
 
     with runner.isolated_filesystem():
         target = Path("forced")
@@ -172,7 +202,7 @@ def test_init_force_overwrites_non_empty_directory(monkeypatch: pytest.MonkeyPat
 
 def test_init_value_error_is_reported(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(cli, "_prompt_user_configuration", lambda: _base_context("bad-context"))
-    monkeypatch.setattr(cli, "_print_logo", lambda: None)
+    _patch_init_noninteractive(monkeypatch)
 
     def _raise(*args, **kwargs):
         raise ValueError("invalid config")
@@ -242,6 +272,7 @@ def test_prompt_with_inquirer_retries_invalid_values_and_falls_back_to_cpu(
     assert any("Invalid observation shape" in message for message in printed)
     assert any("Invalid action dim" in message for message in printed)
     assert any("CUDA is not available" in message for message in printed)
+    assert any("Recommended model" in message for message in printed)
 
 
 def test_prompt_with_rich_retries_invalid_values_and_falls_back_to_cpu(
@@ -274,9 +305,36 @@ def test_prompt_with_rich_retries_invalid_values_and_falls_back_to_cpu(
     assert config["model"] == "tdmpc2:ci"
     assert config["device"] == "cpu"
     assert any("Project name cannot be empty" in message for message in printed)
+    assert any("Choose your environment type" in message for message in printed)
     assert any("Invalid observation shape" in message for message in printed)
     assert any("Invalid action dim" in message for message in printed)
     assert any("CUDA is not available" in message for message in printed)
+    assert any("Recommended model" in message for message in printed)
+
+
+def test_confirm_generation_uses_inquirer_when_available(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_inquirer = SimpleNamespace(
+        confirm=lambda **_kwargs: SimpleNamespace(execute=lambda: False),
+    )
+    monkeypatch.setitem(sys.modules, "InquirerPy", SimpleNamespace(inquirer=fake_inquirer))
+    assert cli._confirm_generation() is False
+
+
+def test_confirm_generation_falls_back_to_rich_when_inquirer_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_import = builtins.__import__
+
+    def _import(name: str, *args, **kwargs):
+        if name == "InquirerPy":
+            raise ModuleNotFoundError(name="InquirerPy")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _import)
+    monkeypatch.setattr(cli.Confirm, "ask", staticmethod(lambda *_args, **_kwargs: True))
+    assert cli._confirm_generation() is True
 
 
 def test_prompt_user_configuration_prefers_inquirer_result(
@@ -301,5 +359,11 @@ def test_print_logo_writes_banner_and_header(monkeypatch: pytest.MonkeyPatch) ->
     printed: list[str] = []
     monkeypatch.setattr(cli.console, "print", lambda message="": printed.append(str(message)))
     cli._print_logo()
-    assert len(printed) == 3
+    assert len(printed) == 4
     assert "WorldFlux CLI" in printed[1]
+    assert "Panel" in printed[2]
+
+
+def test_cli_module_does_not_require_optional_cli_extra_hint() -> None:
+    source = Path(cli.__file__).read_text(encoding="utf-8")
+    assert ".[cli]" not in source
