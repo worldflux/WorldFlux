@@ -226,7 +226,7 @@ jobs:
             --max-retries 2
             --retry-wait-time 2
             --accept 200,206,301,302,303,307,308,403,429
-            README.md CONTRIBUTING.md CHANGELOG.md ROADMAP.md SECURITY.md CODE_OF_CONDUCT.md
+            README.md CONTRIBUTING.md CHANGELOG.md SECURITY.md CODE_OF_CONDUCT.md
             docs sample-dreamer sample-dreamer1 spaces
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

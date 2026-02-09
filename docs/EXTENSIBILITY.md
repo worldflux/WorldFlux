@@ -1,9 +1,8 @@
 # WorldFlux Extensibility Guide
 
-This document provides a comprehensive analysis of WorldFlux's architecture, extensibility characteristics, and guidelines for extending the framework with new world model architectures.
+This document describes how to extend WorldFlux safely while keeping API contracts stable.
 
-WorldFlux uses a **contract-first** policy: every model family defines and validates
-its runtime I/O contract before it is treated as release-ready.
+WorldFlux follows a **contract-first** approach: each model family must define runtime I/O contracts before wider integration.
 
 ## Table of Contents
 
@@ -20,7 +19,7 @@ its runtime I/O contract before it is treated as release-ready.
 
 ### Unified API Verification
 
-WorldFlux implements a **unified API** through the `WorldModel` base class, ensuring all world models share a consistent interface:
+WorldFlux provides a unified API through the `WorldModel` base class so all model families share a consistent interface:
 
 ```python
 class WorldModel(ABC):
@@ -35,122 +34,77 @@ class WorldModel(ABC):
     def loss(self, batch: Batch) -> LossOutput: ...
 ```
 
-| Operation | Purpose | DreamerV3 | TD-MPC2 |
-|-----------|---------|-----------|---------|
-| `encode` | obs → latent | CNN/MLP encoder | MLP encoder |
-| `transition` | prior transition | RSSM prior | Dynamics network |
-| `update` | posterior update | RSSM posterior | N/A (implicit) |
-| `decode` | latent → prediction | CNN/MLP decoder | None (implicit) |
-| `rollout` | multi-step rollout | Prior sequence | Dynamics sequence |
-| `loss` | training losses | ELBO components | TD + auxiliary |
+### Design Patterns
 
-### Design Patterns Verified
+1. **Registry Pattern** (`src/worldflux/core/registry.py`)
 
-**1. Registry Pattern** (`src/worldflux/core/registry.py`)
 ```python
 @WorldModelRegistry.register("dreamer", DreamerV3Config)
 class DreamerV3WorldModel(nn.Module): ...
-
-# Usage: AutoWorldModel.from_pretrained("dreamerv3:size12m")
 ```
 
-**2. Universal State Representation** (`src/worldflux/core/state.py`)
-- `State` supports all architectures via `tensors` + `meta`
-- Deterministic (h), stochastic (z), VQ-VAE, and Gaussian components stored by key
-- Downstream heads consume model-specific tensor keys
+2. **Universal State Representation** (`src/worldflux/core/state.py`)
+- `State` supports model-specific tensor keys via `tensors` + `meta`.
 
-**3. Polymorphic Latent Spaces** (`src/worldflux/core/latent_space.py`)
-- `GaussianLatentSpace` - VAE-style models
-- `CategoricalLatentSpace` - DreamerV3 (discrete)
-- `SimNormLatentSpace` - TD-MPC2 (simplicial normalization)
+3. **Polymorphic Latent Spaces** (`src/worldflux/core/latent_space.py`)
+- `GaussianLatentSpace`
+- `CategoricalLatentSpace`
+- `SimNormLatentSpace`
 
-**4. Unified Trainer** (`src/worldflux/training/trainer.py`)
-- Works with any `WorldModel` via duck-typing
-- Requires only `loss(batch)` method
-- Handles checkpointing, logging, scheduling
+4. **Unified Trainer** (`src/worldflux/training/trainer.py`)
+- Common training flow for model families implementing the `WorldModel` contract.
 
 ---
 
 ## Extensibility Assessment
 
-### Overall Score: **9.0/10**
+### Architectural Characteristics
 
-| Category | Score | Description |
-|----------|-------|-------------|
-| **Model Addition** | 9/10 | Registry pattern + base class + entry-point plugins |
-| **Latent Space** | 8/10 | ABC extensible; may need new `State.tensors` keys |
-| **Training** | 8/10 | Trainer abstracted; custom losses supported |
-| **State Representation** | 7/10 | Universal container; VQ/flow may need new tensor keys |
-| **Decoder Patterns** | 7/10 | Optional decoder path is explicit in contract |
-| **Temporal Modeling** | 6/10 | Autoregressive/video models need new patterns |
+| Category | Notes |
+|----------|-------|
+| Model addition | Registry-based registration and config classes make family additions straightforward |
+| Latent space extension | New latent-space implementations can be added through existing abstractions |
+| Training integration | Trainer works with any model that implements `loss(batch)` and contracted outputs |
+| State representation | `State.tensors` and `State.meta` allow additive model-specific fields |
+| Decoder patterns | Optional decoder path is explicit in the model contract |
 
 ### Strengths
 
-1. **Zero Existing Code Changes**: New families can be added without modifying existing family code
-2. **Type Safety**: Base class + shared types (`Batch`, `State`, `ModelOutput`)
-3. **HuggingFace Compatibility**: `from_pretrained`/`save_pretrained` patterns
-4. **Flexible State**: `State.meta` for architecture-specific data
-5. **Consistent Training**: Single `Trainer` class works across all models
-6. **Plugin Discovery**: external model/component registration via entry-point groups
+- Additive model-family integration via registry.
+- Shared runtime contracts and payload types.
+- Unified serialization path (`save_pretrained` / `from_pretrained`).
+- External plugin discovery hooks.
 
 ### Areas for Enhancement
 
-1. **Video/Sequence Models**: May need batch dimension handling
-2. **Diffusion Decoders**: Iterative decoding not yet abstracted
-3. **Hierarchical States**: Multi-scale representations
-4. **Flow-based Models**: Invertible transformations
-
----
-
-## Maturity Tiers (Public Policy)
-
-WorldFlux now classifies model families by maturity tier in the model catalog:
-
-- **reference**: Production-grade baseline families with stronger compatibility expectations.
-- **experimental**: Functional but evolving APIs/metrics (not yet release-grade parity).
-- **skeleton**: Interface stubs intended for design exploration only.
-
-Current default policy (v3-first):
-
-- **reference**: DreamerV3, TD-MPC2
-- **experimental**: JEPA, V-JEPA2, Token, Diffusion
-- **skeleton**: DiT, SSM, Renderer3D, Physics, GAN
-
-Promotion rule (experimental -> reference):
-
-- pass common quality gates (finite metrics, save/load parity, seed success >= 80%)
-- pass family-specific gates
-- keep API/runtime contract stable across releases
+- Additional support patterns for long-horizon video/sequence use cases.
+- Broader reusable abstractions for iterative decoders/samplers.
+- More examples for advanced external plugin packaging.
 
 ---
 
 ## World Model Classification
 
-### Taxonomy of World Model Architectures
+### Taxonomy of Architecture Families
 
-| Category | Examples | WorldFlux Support |
-|----------|----------|-------------------|
-| **Latent Dynamics (RSSM)** | DreamerV3, PlaNet | ✅ Fully supported |
-| **Implicit Models** | TD-MPC2, MBPO | ✅ Fully supported |
-| **Transformer Sequence** | IRIS, Gato | 🔶 Partial (needs VQ-VAE extension) |
-| **Diffusion-based** | Diffusion World Models | 🔶 Partial (decoder abstraction needed) |
-| **Video Prediction** | V-JEPA, VideoGPT | ⚪ Planned |
-| **Foundation Models** | Cosmos, Genie 3 | ⚪ Future consideration |
+| Category | Examples | Support Status |
+|----------|----------|----------------|
+| Latent Dynamics (RSSM) | DreamerV3, PlaNet | Supported |
+| Implicit Dynamics | TD-MPC2, MBPO-style | Supported |
+| Transformer Sequence | IRIS-like families | Partial |
+| Diffusion-based | Diffusion world models | Partial |
+| Video Prediction | V-JEPA style families | Planned extension |
+| Foundation-style | Large multimodal families | Planned extension |
 
-### Five-Layer Pluggable Core (v0.2)
+### Five-Layer Pluggable Core
 
-WorldFlux now standardizes model composition around five replaceable component types:
+WorldFlux standardizes model composition around replaceable components:
 
 1. `ObservationEncoder`
 2. `DynamicsModel`
 3. `ActionConditioner`
 4. `Decoder` (optional)
-5. `RolloutExecutor` (open-loop execution only)
-
-Planning strategies (`CEM`, future `MPPI`/tree-search) are defined separately through
-`worldflux.planners.interfaces.Planner` and return `ActionPayload`.
-
-New families should be assembled from these components instead of hard-coding monolithic model classes.
+5. `RolloutExecutor` (open-loop execution)
 
 Factory-level overrides are supported:
 
@@ -158,128 +112,36 @@ Factory-level overrides are supported:
 create_world_model(..., component_overrides={"action_conditioner": "my.plugin.component"})
 ```
 
-`component_overrides` accepts registry ids, classes, or prebuilt instances.
-
-#### Composable Support Contract
-
-`component_overrides` is now gated by each family's `composable_support` declaration:
-
-- If a slot is declared, overrides are guaranteed to be effective on runtime paths.
-- If a slot is not declared, override attempts fail fast with a configuration error.
-
-This prevents "silent no-op" overrides on families that implement custom monolithic
-`transition`/`decode` paths.
-
 ### Planner Metadata Contract
 
-Planner outputs must set:
+Planner outputs must include:
 
-- `extras["wf.planner.horizon"]` (required in `v0.3`)
-
-Compatibility in `v0.2`:
-
-- if horizon is missing, it is inferred from tensor shape with `DeprecationWarning`
-- `extras["wf.planner.sequence"]` is still accepted with `DeprecationWarning`
-
-Condition extras must be namespaced:
-
-- format: `wf.<domain>.<name>`
-- strict `v3` mode rejects undeclared extras
+- `extras["wf.planner.horizon"]`
 
 ### External Plugin Hooks
 
-Third-party packages can register plugin hooks through:
+Third-party packages can register through entry-point groups:
 
 - `worldflux.models`
 - `worldflux.components`
 
-At load time, WorldFlux resolves entry points and executes callable registration hooks.
-
-Plugin API status:
-
-- **experimental** (public policy)
-- plugins should provide a manifest with:
-  - `plugin_api_version`
-  - `worldflux_version_range`
-  - `capabilities`
-- incompatible manifests are rejected at load time with explicit compatibility errors
+Plugin manifests should provide compatibility metadata (`plugin_api_version`, `worldflux_version_range`, `capabilities`).
 
 ### Required Components by Family
 
 | Family | Required Components |
 |--------|---------------------|
-| **Latent Dynamics (RSSM)** | Encoder, Dynamics, Decoder, Reward/Continue heads |
-| **Implicit Models** | Encoder, Dynamics, Value/Policy heads |
-| **Token Models** | Tokenizer, Dynamics (Transformer), Sampler |
-| **Diffusion Models** | Encoder, Sampler (denoising), Decoder |
-| **JEPA** | Encoder, Predictor, Objective (masked prediction) |
-| **Foundation Models** | Tokenizer/Encoder, Large generator, Sampler, Optional planner |
-
-### Contract Compatibility Matrix
-
-Each model family should publish and satisfy:
-
-- **Required capabilities** (`Capability` flags)
-- **Required batch keys** (for training/eval)
-- **Required state keys** (for planner/sampler hooks)
-- **Sequence layout** (explicit `B`/`T` axis mapping by field)
-
-### Category Details
-
-#### 1. Latent Dynamics Models (RSSM-based)
-- **Architecture**: Encoder → RSSM (deterministic + stochastic) → Decoder
-- **State**: `State.tensors["deter"]`, `State.tensors["stoch"]`, logits in `State.tensors`
-- **Examples**: DreamerV3, PlaNet, Dreamer
-- **Status**: ✅ Reference implementation complete
-
-#### 2. Implicit World Models
-- **Architecture**: Encoder → Dynamics → Q-functions (no decoder)
-- **State**: `State.tensors["latent"]` (SimNorm embedding)
-- **Examples**: TD-MPC2, TD-MPC, MBPO
-- **Status**: ✅ Reference implementation complete
-
-#### 3. Transformer Sequence Models
-- **Architecture**: VQ-VAE tokenizer → Transformer → Token prediction
--- **State**: tokens stored in `State.tensors` (e.g. `tokens`, `codebook_indices`)
-- **Examples**: IRIS, GAIA-1, Gato
-- **Required Changes**:
-  - Store codebook embeddings/tokens in `State.tensors`
-  - Add `VQVAELatentSpace` implementation
-  - Support variable-length sequences
-
-#### 4. Diffusion World Models
-- **Architecture**: Encoder → Latent diffusion → Iterative decoder
--- **State**: diffusion latents + timestep in `State.meta`
-- **Examples**: Diffusion World Models, DIAMOND
-- **Required Changes**:
-  - Add `DiffusionLatentSpace` with score function
-  - Extend `decode()` for iterative denoising
-  - Support noise schedule in training
-
-#### 5. Video Prediction Models
-- **Architecture**: Spatiotemporal encoder → Frame prediction
-- **State**: Multi-frame representation
-- **Examples**: V-JEPA, VideoGPT, MCVD
-- **Required Changes**:
-  - Support 5D tensors (batch, time, channels, height, width)
-  - Add frame-level prediction heads
-  - Temporal consistency losses
-
-#### 6. Foundation World Models
-- **Architecture**: Large-scale pretrained models
-- **Examples**: Cosmos (NVIDIA), Genie 3 (DeepMind)
-- **Considerations**:
-  - Multi-modal inputs (video, text, actions)
-  - Massive parameter counts (billions)
-  - Inference optimization critical
+| Latent Dynamics | Encoder, Dynamics, Decoder, Reward/Continue heads |
+| Implicit Models | Encoder, Dynamics, Value/Policy heads |
+| Token Models | Tokenizer, Dynamics, Sampler |
+| Diffusion Models | Encoder, Sampler, Decoder |
+| JEPA-style | Encoder, Predictor, Objective |
 
 ---
 
 ## Adding New Models
 
-### Step-by-Step Guide
-
-#### Step 1: Create Config Class
+### Step 1: Create Config Class
 
 ```python
 # src/worldflux/core/config.py
@@ -287,151 +149,44 @@ Each model family should publish and satisfy:
 class MyModelConfig(WorldModelConfig):
     model_type: str = "mymodel"
     custom_param: int = 256
-
-    @classmethod
-    def from_size(cls, size: str, **kwargs) -> "MyModelConfig":
-        presets = {"small": {"custom_param": 128}, "large": {"custom_param": 512}}
-        return cls(**presets.get(size, {}), **kwargs)
 ```
 
-#### Step 2: Implement World Model
+### Step 2: Implement World Model
 
 ```python
 # src/worldflux/models/mymodel/world_model.py
-from worldflux.core.registry import WorldModelRegistry
-from worldflux.core.state import State
-from worldflux.core.output import LossOutput, ModelOutput
-
 @WorldModelRegistry.register("mymodel", MyModelConfig)
 class MyWorldModel(nn.Module):
-    def __init__(self, config: MyModelConfig):
-        super().__init__()
-        self.config = config
-        # Initialize components...
-
-    def encode(self, obs: Tensor, deterministic: bool = False) -> State:
-        # obs → latent
-        embedding = self.encoder(obs)
-        return State(tensors={"latent": embedding}, meta={"latent_type": "deterministic"})
-
-    def transition(self, state: State, action: Tensor, ...) -> State:
-        # state, action → next_state (prior)
-        next_embed = self.dynamics(state.tensors["latent"], action)
-        return State(tensors={"latent": next_embed}, meta={"latent_type": "deterministic"})
-
-    def update(self, state: State, action: Tensor, obs: Tensor) -> State:
-        # For implicit models, often same as transition or not used
-        return self.transition(state, action)
-
-    def decode(self, state: State) -> ModelOutput:
-        reward = self.reward_head(state.tensors["latent"])
-        return ModelOutput(preds={"reward": reward})
-
-    def rollout(self, initial_state: State, actions: Tensor, ...) -> Trajectory:
-        states, rewards = [initial_state], []
-        state = initial_state
-        for t in range(actions.shape[1]):
-            state = self.transition(state, actions[:, t])
-            preds = self.decode(state)
-            states.append(state)
-            rewards.append(preds["reward"])
-        return Trajectory(states=states, rewards=torch.stack(rewards, dim=1))
-
-    def loss(self, batch: Batch) -> LossOutput:
-        # Implement training losses
-        return LossOutput(loss=total_loss, components={"reward_loss": r_loss})
+    def encode(self, obs: Tensor, deterministic: bool = False) -> State: ...
+    def transition(self, state: State, action: Tensor, ...) -> State: ...
+    def update(self, state: State, action: Tensor, obs: Tensor) -> State: ...
+    def decode(self, state: State) -> ModelOutput: ...
+    def rollout(self, initial_state: State, actions: Tensor, ...) -> Trajectory: ...
+    def loss(self, batch: Batch) -> LossOutput: ...
 ```
 
-#### Step 3: Export in Package
+### Step 3: Export and Register
 
-```python
-# src/worldflux/models/mymodel/__init__.py
-from .world_model import MyWorldModel
-__all__ = ["MyWorldModel"]
+- Export symbols in `src/worldflux/models/mymodel/__init__.py`
+- Ensure registry and factory aliases are configured where needed.
 
-# src/worldflux/models/__init__.py
-from .mymodel import MyWorldModel
-```
+### Step 4: Add Tests and Docs
 
-#### Step 4: Use the Model
-
-```python
-from worldflux import create_world_model
-
-model = create_world_model("mymodel:small")
-# or
-model = AutoWorldModel.from_pretrained("mymodel:large")
-```
-
-### Extending State (If Needed)
-
-For models requiring new state components:
-
-```python
-# Add new tensors by key
-state = State(
-    tensors={"latent": embed, "noise": noise},
-    meta={"diffusion_timestep": t, "noise_level": sigma},
-)
-```
+- Add family tests under `tests/test_models/`.
+- Document required batch/state keys and contract expectations.
 
 ---
 
 ## Future Architecture Roadmap
 
-### Phase 1: VQ-VAE Foundation (Q2 2026)
+The following areas are tracked as technical extension directions:
 
-**Goal**: Support transformer-based models like IRIS
+- Tokenization/VQ pathways for sequence-oriented models.
+- Additional iterative sampler/decoder abstractions.
+- Enhanced support for video-shaped tensors and temporal objectives.
+- Integration patterns for large-scale external pretrained families.
 
-| Component | Change Type | Description |
-|-----------|-------------|-------------|
-| `VQVAELatentSpace` | Additive | New latent space class |
-| `State.tensors["codebook_embeddings"]` | Additive | Optional tensor key |
-| `TransformerDynamics` | Additive | Autoregressive dynamics |
-
-**Implementation Priority**: IRIS → Gato-style models
-
-### Phase 2: Diffusion Integration (Q3 2026)
-
-**Goal**: Support diffusion-based world models
-
-| Component | Change Type | Description |
-|-----------|-------------|-------------|
-| `DiffusionLatentSpace` | Additive | Score-based sampling |
-| `IterativeDecoder` | Additive | Multi-step decode interface |
-| `NoiseScheduler` | Additive | Training utility |
-
-**Implementation Priority**: Diffusion World Models → DIAMOND
-
-### Phase 3: Video Prediction (Q4 2026)
-
-**Goal**: Support V-JEPA and video generation models
-
-| Component | Change Type | Description |
-|-----------|-------------|-------------|
-| Video batch handling | Modification | 5D tensor support |
-| `TemporalConsistencyLoss` | Additive | Training loss |
-| `FramePredictionHead` | Additive | Multi-frame output |
-
-**Implementation Priority**: V-JEPA → VideoGPT
-
-### Phase 4: Foundation Model Compatibility (2027+)
-
-**Goal**: Integration with large-scale pretrained models
-
-**Considerations for Cosmos/Genie 3**:
-- **Scale**: Models with billions of parameters
-- **Multi-modal**: Text + video + action inputs
-- **Inference**: Need efficient serving (ONNX, TensorRT)
-- **Fine-tuning**: LoRA/adapter patterns
-- **API**: Possibly external API integration
-
-| Challenge | Approach |
-|-----------|----------|
-| Memory constraints | Gradient checkpointing, model sharding |
-| Multi-modal inputs | Unified tokenization interface |
-| Inference speed | Quantization, ONNX export |
-| Adaptation | Parameter-efficient fine-tuning |
+These are implementation directions, not release commitments.
 
 ---
 
@@ -439,61 +194,33 @@ state = State(
 
 ### Additive Changes (Backward Compatible)
 
-These changes extend functionality without breaking existing code:
-
-| Change | Impact | Existing Code Affected |
-|--------|--------|------------------------|
-| New model registration | None | ❌ No changes needed |
-| New `State` tensor key | None | ❌ Use new key in `State.tensors` |
-| New `LatentSpace` subclass | None | ❌ ABC inheritance |
-| New loss function | None | ❌ Opt-in via config |
-| New decoder type | None | ❌ Factory pattern |
+| Change | Expected Impact |
+|--------|------------------|
+| New model registration | No impact on existing families |
+| New optional `State.tensors` key | Additive usage only |
+| New latent-space subclass | Isolated to new family |
+| New callback/loss utilities | Opt-in |
 
 ### Potentially Breaking Changes
 
-These changes require careful migration:
+| Change | Risk | Mitigation |
+|--------|------|------------|
+| `WorldModel` signature changes | High | Versioned migration path |
+| Required state-key changes | Medium | Deprecation period and validation errors |
+| Batch convention changes | High | Feature flags and adapters |
 
-| Change | Risk Level | Mitigation |
-|--------|------------|------------|
-| `WorldModel` signature change | High | Version the API |
-| Required `State` tensor key | Medium | Deprecation period |
-| `Trainer` interface change | Medium | Adapter pattern |
-| Batch dimension convention | High | Feature flag |
+### Compatibility Guidelines
 
-### Backward Compatibility Guidelines
+- Add new config fields with safe defaults.
+- Keep optional extensions additive where possible.
+- Provide explicit migration notes for contract-affecting changes.
 
-1. **Optional Fields**: Always add with `default=None`
-2. **New Methods**: Add to base class with default implementation
-3. **Config Changes**: New fields must have defaults
-4. **Deprecation**: Minimum 2 minor versions warning
-
-### Extension Points (No Core Changes)
+### Extension Points
 
 | Extension | Mechanism |
 |-----------|-----------|
 | Custom model | `@WorldModelRegistry.register()` |
 | Custom config | Inherit `WorldModelConfig` |
-| Custom latent space | Inherit `LatentSpace` ABC |
-| Custom trainer callback | Implement `Callback` interface |
-| Custom data loader | Implement `BatchProvider` / `BatchProviderV2` protocol |
-
----
-
-## Summary
-
-WorldFlux provides a **highly extensible** framework for world models with:
-
-- **Base-class API** ensuring consistent interfaces
-- **Registry pattern** enabling zero-modification model addition
-- **Universal state representation** accommodating diverse architectures
-- **Unified training** working across all model types
-
-**Extensibility Score: 7.5/10**
-
-The framework is well-positioned for current latent-space models (DreamerV3, TD-MPC2) and has clear paths for extending to:
-- Transformer sequence models (IRIS)
-- Diffusion world models
-- Video prediction models (V-JEPA)
-- Foundation models (Cosmos, Genie 3)
-
-Most future architectures can be added with **purely additive changes**, maintaining backward compatibility with existing implementations.
+| Custom latent space | Inherit `LatentSpace` |
+| Custom callback | Implement callback interface |
+| Custom data source | Implement `BatchProvider` / `BatchProviderV2` |

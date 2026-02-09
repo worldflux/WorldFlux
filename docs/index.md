@@ -14,13 +14,13 @@
 
 ---
 
-WorldFlux provides a unified Python interface for world models used in reinforcement learning. Starting with efficient latent-space models (DreamerV3, TD-MPC2), with plans to support diverse architectures including autoregressive and diffusion-based world models.
+WorldFlux provides a unified Python interface for world models used in reinforcement learning.
 
 ## Features
 
-- **Unified API**: Common interface across DreamerV3, TD-MPC2, and more
+- **Unified API**: Common interface across model families
 - **Simple Usage**: One-liner model creation with `create_world_model()`
-- **Training Infrastructure**: Complete training loop with callbacks, checkpointing, and logging
+- **Training Infrastructure**: Training loop with callbacks, checkpointing, and logging
 - **Type Safe**: Full type annotations and mypy compatibility
 
 ## Quick Start
@@ -29,33 +29,30 @@ WorldFlux provides a unified Python interface for world models used in reinforce
 from worldflux import create_world_model
 import torch
 
-# Create a world model
 model = create_world_model(
     "dreamerv3:size12m",
     obs_shape=(3, 64, 64),
     action_dim=4,
 )
 
-# Encode observation to latent state
 obs = torch.randn(1, 3, 64, 64)
 state = model.encode(obs)
 
-# Imagine 15 steps into the future
 actions = torch.randn(15, 1, 4)
 trajectory = model.rollout(state, actions)
 
-print(f"Predicted rewards: {trajectory.rewards.shape}")  # [15, 1]
+print(trajectory.rewards.shape)
 ```
 
 ## Available Models
 
-| Model | Best For | Presets |
-|-------|----------|---------|
-| **DreamerV3** | Images, Atari | `size12m`, `size25m`, `size50m`, `size100m`, `size200m` |
-| **TD-MPC2** | State vectors, MuJoCo | `5m`, `19m`, `48m`, `317m` |
-| **JEPA** | Representation prediction | `base` |
-| **Token** | Discrete token dynamics | `base` |
-| **Diffusion** | Stochastic dynamics | `base` |
+| Family | Presets |
+|-------|---------|
+| DreamerV3 | `size12m`, `size25m`, `size50m`, `size100m`, `size200m` |
+| TD-MPC2 | `5m`, `19m`, `48m`, `317m` |
+| JEPA | `base` |
+| Token | `base` |
+| Diffusion | `base` |
 
 ## Documentation
 
@@ -70,22 +67,6 @@ print(f"Predicted rewards: {trajectory.rewards.shape}")  # [15, 1]
     [:octicons-arrow-right-24: Installation](getting-started/installation.md)
 
     [:octicons-arrow-right-24: Quick Start](getting-started/quickstart.md)
-
--   **Tutorials**
-
-    ---
-
-    Architecture tradeoffs and applied model selection.
-
-    [:octicons-arrow-right-24: DreamerV3 vs TD-MPC2](tutorials/dreamer-vs-tdmpc2.md)
-
--   **Reproduction**
-
-    ---
-
-    Reproduce results with bundled datasets.
-
-    [:octicons-arrow-right-24: Reproduce Dreamer/TD-MPC2](tutorials/reproduce-dreamer-tdmpc2.md)
 
 -   **API Reference**
 
@@ -103,9 +84,13 @@ print(f"Predicted rewards: {trajectory.rewards.shape}")  # [15, 1]
 
     ---
 
-    Quality gates, release policy, and operational troubleshooting.
+    Operational documentation and project quality checks.
 
-    [:octicons-arrow-right-24: OSS Quality Gates](reference/quality-gates.md)
+    [:octicons-arrow-right-24: Documentation Stack](reference/docs-stack.md)
+
+    [:octicons-arrow-right-24: Release Checklist](reference/release-checklist.md)
+
+    [:octicons-arrow-right-24: Troubleshooting](reference/troubleshooting.md)
 
 </div>
 
@@ -152,7 +137,7 @@ The fastest way to get started is our [interactive Colab notebook](https://colab
 
 ## Contributing
 
-Contributions are welcome! See our [Contributing Guide](https://github.com/worldflux/WorldFlux/blob/main/CONTRIBUTING.md).
+Contributions are welcome. See our [Contributing Guide](https://github.com/worldflux/WorldFlux/blob/main/CONTRIBUTING.md).
 
 ## License
 

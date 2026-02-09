@@ -27,9 +27,3 @@ Minimum criteria before tagging a public release.
 - [ ] Build succeeds: `uv run --with build python -m build`
 - [ ] `CHANGELOG.md` includes release-ready notes for the tag
 - [ ] Version and tag are aligned (`pyproject.toml` version matches release tag)
-
-## Alpha Note
-
-For Alpha releases, include links or artifacts for benchmark/repro gate runs
-(for example, nightly/release `scripts/measure_quality_gates.py` outputs) in
-the release notes to document current confidence.
