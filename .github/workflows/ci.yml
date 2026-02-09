@@ -227,7 +227,7 @@ jobs:
             --retry-wait-time 2
             --accept 200,206,301,302,303,307,308,403,429
             README.md CONTRIBUTING.md CHANGELOG.md SECURITY.md CODE_OF_CONDUCT.md
-            docs sample-dreamer sample-dreamer1 spaces
+            docs spaces
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
