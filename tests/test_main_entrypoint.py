@@ -25,7 +25,7 @@ def test_main_invokes_cli_app(monkeypatch: pytest.MonkeyPatch) -> None:
     assert called["prog_name"] == "worldflux"
 
 
-def test_main_exits_with_hint_when_optional_cli_dependency_is_missing(
+def test_main_exits_with_hint_when_cli_dependency_is_missing(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.delitem(sys.modules, "worldflux.cli", raising=False)
@@ -45,7 +45,9 @@ def test_main_exits_with_hint_when_optional_cli_dependency_is_missing(
 
     assert exc.value.code == 1
     out = capsys.readouterr().out
-    assert "WorldFlux CLI dependencies are not installed" in out
+    assert "WorldFlux CLI dependencies are missing from this environment" in out
+    assert "uv pip install -U worldflux" in out
+    assert ".[cli]" not in out
 
 
 def test_main_reraises_unexpected_module_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
