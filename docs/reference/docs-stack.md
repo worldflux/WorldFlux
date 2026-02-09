@@ -22,25 +22,6 @@ This page defines the documentation tooling used by WorldFlux and explains why e
 | `mkdocs-minify-plugin` | Smaller generated HTML output |
 | `pymdown-extensions` | Markdown quality-of-life features (tabs, fences, details) |
 
-## Benchmarked OSS Stacks
-
-### LangChain
-
-- API docs stack is centered on `Sphinx` (`sphinx`, `autodoc_pydantic`, `myst_parser`, `pydata-sphinx-theme`).
-- Good fit for very large API surfaces and template-heavy reference docs.
-
-### LlamaIndex
-
-- Hybrid approach:
-  - Site: `Astro` / `Starlight`
-  - API reference: `MkDocs` + `mkdocstrings` + additional plugins.
-- Good fit for large monorepos with many integrations.
-
-### Haystack
-
-- Site stack is `Docusaurus` with docs-focused QA workflows.
-- Strong docs quality pipeline (style linting and snippet testing).
-
 ## Not Adopted in This Revision (and why)
 
 | Candidate | Deferred reason |

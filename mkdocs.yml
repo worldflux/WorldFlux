@@ -72,9 +72,6 @@ nav:
   - Getting Started:
     - Installation: getting-started/installation.md
     - Quick Start: getting-started/quickstart.md
-  - Tutorials:
-    - DreamerV3 vs TD-MPC2: tutorials/dreamer-vs-tdmpc2.md
-    - Reproduce Dreamer/TD-MPC2: tutorials/reproduce-dreamer-tdmpc2.md
   - API Reference:
     - Factory (Guide): api/factory.md
     - WorldModel Protocol (Guide): api/protocol.md
