@@ -1,6 +1,6 @@
 # OSS Quality Gates
 
-This document defines the **release readiness gates** for WorldFlux.
+This document defines baseline quality checks for WorldFlux.
 
 ## CI Gates (Required on PR)
 
@@ -20,90 +20,29 @@ All PRs must pass:
 - **Docs build**: `uv run mkdocs build --strict`
 - **Planner boundary tests**: verify planner/dynamics decoupling invariants
 
-## Reproducibility Gates (Nightly / Release)
+## Operational Reliability Checks
 
-- **Seed stability**: same seed produces key losses/metrics within ±5–10%.
-- **Save/Load parity**: outputs after `save_pretrained` and reload differ only within tolerance.
-- **Seed success rate**: at least **80%** of seeds pass family-specific success criteria.
-- **Confidence interval reporting**: report bootstrap CI for success rate on every run.
+- **Save/Load parity**: outputs after `save_pretrained` and reload should remain within tolerance.
+- **Numerical stability**: no NaN/Inf during defined smoke-check budgets.
+- **Contract compliance**: required payload and planner metadata fields are validated.
 
-## Benchmark Gates (Release Only)
+## Family Validation Scope
 
-- **Loss trend**: training loss decreases by a minimum threshold within N steps.
-- **Numerical stability**: no NaN/Inf during training in defined step budget.
+- **DreamerV3 / TD-MPC2**: finite losses and stable train/eval smoke paths.
+- **Token / Diffusion / JEPA / V-JEPA2**: finite outputs and smoke-train viability.
+- **Skeleton families** (DiT/SSM/Renderer3D/Physics/GAN): contract validation and trainer smoke pass.
 
-## Family-Specific Gates
+## Planner Boundary Checks
 
-- **Reference families** (DreamerV3, TD-MPC2):
-  - loss drop threshold
-  - finite loss components
-  - seed success rate >= 80%
-- **Token family**:
-  - token cross-entropy/perplexity trend
-  - finite logits and loss
-- **Diffusion family**:
-  - denoise error trend
-  - finite scheduler states and losses
-- **JEPA family**:
-  - representation prediction loss trend
-  - finite context/target projections
-- **V-JEPA2 family**:
-  - representation prediction loss trend
-  - finite context/target/mask pipelines
-- **Skeleton families** (DiT/SSM/Renderer3D/Physics/GAN):
-  - contract validation pass
-  - trainer 1-step smoke pass
-  - no core modifications required when adding additional family variants
+- Planner returns `ActionPayload` with `extras["wf.planner.horizon"]`.
+- Dynamics family swaps do not require planner code changes.
 
-- **Planner boundary gates**:
-  - planner returns `ActionPayload` with `extras["wf.planner.horizon"]`
-  - dynamics family swap does not require planner code changes
-
-## Recommended Threshold Defaults
-
-These can be tightened over time:
-
-- Loss decrease: **≥10%** within **2,000 steps** on bundled datasets.
-- Seed variance: **≤10%** on main loss components.
-- Extensibility gate: new category integrations should be additive to `src/worldflux/models/` only.
-
-## Output Schema (Summary)
-
-`scripts/measure_quality_gates.py` writes summary fields including:
-
-- `success_rate`
-- `gates.common.ci_low`
-- `gates.common.ci_high`
-- `gates.family_pass`
-
-Interpretation:
-
-- `gates.common.pass` checks finite metrics + success rate threshold (default 80%).
-- `gates.family_pass` is true only if both common gates and family-specific gates pass.
-
-## Measurement Commands
-
-The following scripts are committed for reproducible measurement runs.
-Defaults use **bundled datasets** and **small CI-sized models**.
-
-### Run Measurements (Balanced)
+## Recommended Commands
 
 ```bash
-uv run python scripts/measure_quality_gates.py \
-  --models dreamer,tdmpc2 \
-  --seeds 0,1,2,3,4 \
-  --steps 5000 \
-  --device auto
-```
-
-Output:
-
-- `reports/quality-gates/seed_runs.json`
-
-### Estimate Runtime from Measured Results
-
-```bash
-uv run python scripts/estimate_quality_gate_runtime.py \
-  --input reports/quality-gates/seed_runs.json \
-  --scenarios 5x5000,7x10000,10x10000,7x20000,10x20000
+uvx ruff check src/ tests/ examples/
+uvx ruff format --check src/ tests/ examples/
+uv run mypy src/worldflux/
+uv run pytest tests/
+uv run mkdocs build --strict
 ```

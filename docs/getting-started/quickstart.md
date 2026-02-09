@@ -33,7 +33,6 @@ print(trajectory.continues.shape)  # [15, 1]
 
 ```python
 model.save_pretrained("./my_model")
-
 reloaded = create_world_model("./my_model")
 ```
 
@@ -42,4 +41,3 @@ reloaded = create_world_model("./my_model")
 - [Factory API Guide](../api/factory.md)
 - [Training API Guide](../api/training.md)
 - [Protocol API Guide](../api/protocol.md)
-- [Reproduce Dreamer/TD-MPC2](../tutorials/reproduce-dreamer-tdmpc2.md)

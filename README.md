@@ -23,7 +23,7 @@
 
 ---
 
-WorldFlux provides a unified Python interface for world models used in reinforcement learning. Starting with efficient latent-space models (DreamerV3, TD-MPC2), with plans to support diverse architectures including autoregressive and diffusion-based world models.
+WorldFlux provides a unified Python interface for world models used in reinforcement learning.
 
 ## Demo
 
@@ -37,13 +37,13 @@ World model rolls out future frames from a single observation:
 
 ### Latent Space Dynamics
 
-Visualization of how different episodes traverse the learned latent space:
+Visualization of how episodes traverse the learned latent space:
 
 ![Latent Space](https://raw.githubusercontent.com/worldflux/WorldFlux/main/docs/assets/latent_space.gif)
 
 ## Features
 
-- **Unified API**: Common interface across DreamerV3, TD-MPC2, and more
+- **Unified API**: Common interface across model families
 - **v3-first API**: `create_world_model()` defaults to `api_version="v3"` (strict contracts enabled)
 - **Universal Payload Layer**: `ActionPayload` / `ConditionPayload` for polymorphic conditioning
 - **Planner Contract**: planners return `ActionPayload` with `extras["wf.planner.horizon"]`
@@ -51,30 +51,6 @@ Visualization of how different episodes traverse the learned latent space:
 - **Pluggable 5-layer core**: optional `component_overrides` for encoder/dynamics/conditioner/decoder/rollout
 - **Training Infrastructure**: Complete training loop with callbacks, checkpointing, and logging
 - **Type Safe**: Full type annotations and mypy compatibility
-
-## Model Maturity Policy
-
-- **Reference**: DreamerV3, TD-MPC2 (release baseline)
-- **Experimental**: JEPA, V-JEPA2, Token, Diffusion (API/metrics may evolve)
-- **Skeleton**: DiT, SSM, Renderer3D, Physics, GAN (contract and integration validation only)
-
-## Extension Policy
-
-WorldFlux follows a **contract-first** extension policy:
-
-- define `io_contract()` before adding model-specific training logic
-- validate required batch/state keys at runtime
-- promote families from experimental to reference only after gate compliance
-
-You can inspect maturity tiers programmatically via:
-
-```python
-from worldflux import list_models
-
-reference_models = list_models(maturity="reference")
-experimental_models = list_models(maturity="experimental")
-skeleton_models = list_models(maturity="skeleton")
-```
 
 ## Architecture
 
@@ -87,12 +63,12 @@ graph LR
     subgraph WorldModel["World Model"]
         B[Encoder]
         C[State]
-        D[Dynamics<br/>RSSM/MLP]
+        D[Dynamics]
         E[Decoder]
     end
 
     subgraph Output
-        F[Predictions<br/>obs, reward, continue]
+        F[Predictions]
     end
 
     A --> B
@@ -105,23 +81,6 @@ graph LR
     style C fill:#e1f5fe
     style D fill:#fff3e0
 ```
-
-**Key Concepts:**
-- **Encoder**: Maps observations to latent states
-- **State**: Compact representation (deterministic + stochastic components)
-- **Dynamics**: Predicts next latent state from current state + action
-- **Decoder**: Reconstructs observations/rewards from latent states
-
-## Model Comparison
-
-| Feature | DreamerV3 | TD-MPC2 |
-|---------|-----------|---------|
-| **Input Type** | Images or State | State vectors |
-| **Latent Space** | Categorical (discrete) | SimNorm (continuous) |
-| **Architecture** | RSSM | Implicit MLP |
-| **Decoder** | Yes | No (implicit) |
-| **Best For** | Atari, visual tasks | MuJoCo, robotics |
-| **Planning** | Policy rollouts | MPC with Q-ensemble |
 
 ## Installation
 
@@ -184,11 +143,7 @@ uv run mkdocs build --strict
 ```python
 from worldflux import create_world_model
 
-# DreamerV3 (image observations)
 model = create_world_model("dreamerv3:size12m")
-
-# TD-MPC2 (state observations)
-model = create_world_model("tdmpc2:5m", obs_shape=(39,), action_dim=6)
 ```
 
 ### Universal Payload Usage (v3)
@@ -229,15 +184,12 @@ External packages can register plugins through entry-point groups:
 ```python
 import torch
 
-# Encode initial observation
 obs = torch.randn(1, 3, 64, 64)
 state = model.encode(obs)
 
-# Imagine 15 steps into the future
 actions = torch.randn(15, 1, 4)  # [horizon, batch, action_dim]
 trajectory = model.rollout(state, actions)
 
-# Access predictions
 print(f"Predicted rewards: {trajectory.rewards.shape}")
 print(f"Continue probs: {trajectory.continues.shape}")
 ```
@@ -248,85 +200,22 @@ print(f"Continue probs: {trajectory.continues.shape}")
 from worldflux import create_world_model
 from worldflux.training import train, ReplayBuffer
 
-# Create model
 model = create_world_model("dreamerv3:size12m", obs_shape=(4,), action_dim=2)
-
-# Load data
 buffer = ReplayBuffer.load("trajectories.npz")
-
-# Train (one-liner)
 trained_model = train(model, buffer, total_steps=50_000)
-
-# Save
 trained_model.save_pretrained("./my_model")
-# emits: config.json, model.pt, worldflux_meta.json
-```
-
-### Full Training Control
-
-```python
-from worldflux import create_world_model
-from worldflux.training import Trainer, TrainingConfig, ReplayBuffer
-
-model = create_world_model("tdmpc2:5m", obs_shape=(39,), action_dim=6)
-buffer = ReplayBuffer(capacity=100_000, obs_shape=(39,), action_dim=6)
-
-config = TrainingConfig(
-    total_steps=100_000,
-    batch_size=256,
-    learning_rate=1e-4,
-)
-
-trainer = Trainer(model, config)
-trainer.train(buffer)
 ```
 
 ## Available Models
 
-### DreamerV3
-
-| Preset | Parameters | Description |
-|--------|------------|-------------|
-| `dreamerv3:size12m` | 12M | Small, fast training |
-| `dreamerv3:size25m` | 25M | Balanced |
-| `dreamerv3:size50m` | 50M | Standard |
-| `dreamerv3:size100m` | 100M | Large |
-| `dreamerv3:size200m` | 200M | Maximum capacity |
-
-### TD-MPC2
-
-| Preset | Parameters | Description |
-|--------|------------|-------------|
-| `tdmpc2:5m` | 5M | Small, fast |
-| `tdmpc2:19m` | 19M | Balanced |
-| `tdmpc2:48m` | 48M | Large |
-| `tdmpc2:317m` | 317M | Maximum capacity |
-
-### JEPA
-
-| Preset | Parameters | Description |
-|--------|------------|-------------|
-| `jepa:base` | ~1M+ | Representation prediction |
-
-### V-JEPA2
-
-| Preset | Parameters | Description |
-|--------|------------|-------------|
-| `vjepa2:ci` | ~0.2M+ | CI smoke-test representation model |
-| `vjepa2:tiny` | ~1M+ | Lightweight predictive representation |
-| `vjepa2:base` | ~4M+ | Predictive representation baseline |
-
-### Token
-
-| Preset | Parameters | Description |
-|--------|------------|-------------|
-| `token:base` | ~1M+ | Discrete token dynamics |
-
-### Diffusion
-
-| Preset | Parameters | Description |
-|--------|------------|-------------|
-| `diffusion:base` | ~1M+ | Generative diffusion dynamics |
+| Family | Presets |
+|--------|---------|
+| DreamerV3 | `size12m`, `size25m`, `size50m`, `size100m`, `size200m` |
+| TD-MPC2 | `5m`, `19m`, `48m`, `317m` |
+| JEPA | `base` |
+| V-JEPA2 | `ci`, `tiny`, `base` |
+| Token | `base` |
+| Diffusion | `base` |
 
 ## API Reference
 
@@ -335,23 +224,12 @@ trainer.train(buffer)
 All world models implement the `WorldModel` base class:
 
 ```python
-# Encode observation to latent state
 state = model.encode(obs)
-
-# Predict next state (imagination, no observation)
 next_state = model.transition(state, action)
-
-# Update state with observation (posterior)
 next_state = model.update(state, action, obs)
-
-# Decode latent state to predictions
 output = model.decode(state)
 preds = output.preds  # e.g. {"obs", "reward", "continue"}
-
-# Multi-step imagination rollout
 trajectory = model.rollout(initial_state, actions)
-
-# Compute training losses
 loss_out = model.loss(batch)  # LossOutput (loss_out.loss, loss_out.components)
 ```
 
@@ -365,16 +243,6 @@ from worldflux.training import (
     train,
 )
 
-# Configuration
-config = TrainingConfig(
-    total_steps=100_000,
-    batch_size=16,
-    sequence_length=50,
-    learning_rate=3e-4,
-    grad_clip=100.0,
-)
-
-# Callbacks
 from worldflux.training.callbacks import (
     LoggingCallback,
     CheckpointCallback,
@@ -388,40 +256,20 @@ from worldflux.training.callbacks import (
 See the `examples/` directory:
 
 - `worldflux_quickstart.ipynb` - Interactive Colab notebook
-- `train_dreamer.py` - DreamerV3 training example
-- `train_tdmpc2.py` - TD-MPC2 training example
+- `train_dreamer.py` - Training example
+- `train_tdmpc2.py` - Training example
 - `visualize_imagination.py` - Imagination rollout visualization
 
 ```bash
-# Quick test with random data
 python examples/train_dreamer.py --test
-
-# Train with real data
 python examples/train_dreamer.py --data trajectories.npz --steps 100000
-
-# Collect Atari data
-python examples/collect_atari.py --env Breakout --episodes 100
-
-# Train on Atari
-python examples/train_atari_dreamer.py --data atari_data.npz --steps 100000
 ```
-
-## Benchmarks
-
-Results on standard benchmarks:
-
-| Environment | Model | Score | Training Steps |
-|-------------|-------|-------|----------------|
-| Atari Breakout | DreamerV3-50M | - | 200K |
-| MuJoCo HalfCheetah | TD-MPC2-19M | - | 1M |
-| DMControl Walker | DreamerV3-25M | - | 500K |
 
 ## Documentation
 
-- [Full Documentation](https://github.com/worldflux/WorldFlux/tree/main/docs) - Operational guides and API reference
+- [Full Documentation](https://github.com/worldflux/WorldFlux/tree/main/docs) - Guides and API reference
 - [API Reference](https://github.com/worldflux/WorldFlux/tree/main/docs/api) - Contract and symbol-level docs
-- [Reproduction Guides](https://github.com/worldflux/WorldFlux/tree/main/docs/tutorials) - Reproducible training/validation runs
-- [Quality Gates](https://github.com/worldflux/WorldFlux/tree/main/docs/reference) - Release and reliability requirements
+- [Reference](https://github.com/worldflux/WorldFlux/tree/main/docs/reference) - Operational and quality docs
 
 ## Community
 
@@ -437,7 +285,7 @@ Apache License 2.0 - see [LICENSE](LICENSE) and [NOTICE](NOTICE) for details.
 
 ## Contributing
 
-Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md) before submitting pull requests.
+Contributions are welcome. Please read our [Contributing Guide](CONTRIBUTING.md) before submitting pull requests.
 
 ## Citation
 
@@ -450,9 +298,3 @@ If you use this library in your research, please cite:
   url = {https://github.com/worldflux/WorldFlux}
 }
 ```
-
-## Acknowledgments
-
-WorldFlux builds on the excellent research from:
-- [DreamerV3](https://arxiv.org/abs/2301.04104) - Hafner et al.
-- [TD-MPC2](https://arxiv.org/abs/2310.16828) - Hansen et al.
