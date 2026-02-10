@@ -36,6 +36,7 @@ def _base_context(project_name: str = "demo-project", device: str = "cpu") -> di
 def _patch_init_noninteractive(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(cli, "_print_logo", lambda: None)
     monkeypatch.setattr(cli, "_confirm_generation", lambda: True)
+    monkeypatch.setattr(cli, "_handle_optional_atari_dependency_install", lambda _ctx: None)
 
 
 def test_init_with_path_argument(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -95,9 +96,14 @@ def test_init_returns_non_zero_when_target_is_file(monkeypatch: pytest.MonkeyPat
         assert "Error:" in result.stdout
 
 
-def test_resolve_python_launcher_prefers_uv(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(cli.shutil, "which", lambda cmd: "/usr/bin/uv" if cmd == "uv" else None)
-    assert cli._resolve_python_launcher() == "uv run python"
+def test_resolve_python_launcher_prefers_current_uv_tool_python(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        cli.sys, "executable", "/home/user/.local/share/uv/tools/worldflux/bin/python"
+    )
+    monkeypatch.setattr(cli.shutil, "which", lambda _cmd: None)
+    assert cli._resolve_python_launcher() == "/home/user/.local/share/uv/tools/worldflux/bin/python"
 
 
 def test_resolve_python_launcher_falls_back_to_python3(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -106,6 +112,14 @@ def test_resolve_python_launcher_falls_back_to_python3(monkeypatch: pytest.Monke
 
     monkeypatch.setattr(cli.shutil, "which", _which)
     assert cli._resolve_python_launcher() == "python3"
+
+
+def test_resolve_python_launcher_falls_back_to_uv_when_no_python_binary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(cli.sys, "executable", "/opt/custom/python")
+    monkeypatch.setattr(cli.shutil, "which", lambda cmd: "/usr/bin/uv" if cmd == "uv" else None)
+    assert cli._resolve_python_launcher() == "uv run python"
 
 
 def test_init_next_steps_uses_resolved_launcher(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -217,8 +231,113 @@ def test_init_value_error_is_reported(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_resolve_python_launcher_defaults_to_python_when_no_launcher_is_available(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(cli.sys, "executable", "/opt/custom/python")
     monkeypatch.setattr(cli.shutil, "which", lambda _cmd: None)
-    assert cli._resolve_python_launcher() == "python"
+    assert cli._resolve_python_launcher() == "/opt/custom/python"
+
+
+def test_missing_atari_dependency_packages_detects_expected_modules(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _find_spec(name: str):
+        if name == "gymnasium":
+            return object()
+        if name == "ale_py":
+            return None
+        return object()
+
+    monkeypatch.setattr(cli.importlib.util, "find_spec", _find_spec)
+    assert cli._missing_atari_dependency_packages() == ["ale-py"]
+
+
+def test_handle_optional_atari_dependency_install_skips_non_atari(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    called: dict[str, bool] = {"missing_checked": False}
+
+    def _missing() -> list[str]:
+        called["missing_checked"] = True
+        return ["gymnasium", "ale-py"]
+
+    monkeypatch.setattr(cli, "_missing_atari_dependency_packages", _missing)
+    cli._handle_optional_atari_dependency_install({"environment": "mujoco"})
+    assert called["missing_checked"] is False
+
+
+def test_handle_optional_atari_dependency_install_non_interactive_prints_hint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    printed: list[str] = []
+    monkeypatch.setattr(cli, "_missing_atari_dependency_packages", lambda: ["ale-py"])
+    monkeypatch.setattr(cli, "_is_interactive_terminal", lambda: False)
+    monkeypatch.setattr(cli.console, "print", lambda message="": printed.append(str(message)))
+    monkeypatch.setattr(
+        cli,
+        "_confirm_optional_dependency_install",
+        lambda _packages: pytest.fail("should not prompt in non-interactive mode"),
+    )
+    monkeypatch.setattr(
+        cli, "_install_packages_with_pip", lambda _packages: pytest.fail("should not install")
+    )
+
+    cli._handle_optional_atari_dependency_install({"environment": "atari"})
+    assert any("Install later with:" in line for line in printed)
+
+
+def test_handle_optional_atari_dependency_install_interactive_and_confirmed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    installed: list[list[str]] = []
+    printed: list[str] = []
+    monkeypatch.setattr(cli, "_missing_atari_dependency_packages", lambda: ["gymnasium", "ale-py"])
+    monkeypatch.setattr(cli, "_is_interactive_terminal", lambda: True)
+    monkeypatch.setattr(cli, "_confirm_optional_dependency_install", lambda _packages: True)
+    monkeypatch.setattr(
+        cli,
+        "_install_packages_with_pip",
+        lambda packages: installed.append(packages) or True,
+    )
+    monkeypatch.setattr(cli.console, "print", lambda message="": printed.append(str(message)))
+
+    cli._handle_optional_atari_dependency_install({"environment": "atari"})
+
+    assert installed == [["gymnasium", "ale-py"]]
+    assert any("installed successfully" in line for line in printed)
+
+
+def test_install_packages_with_pip_falls_back_to_uv_when_pip_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[list[str]] = []
+
+    def _run(cmd, **_kwargs):
+        calls.append(list(cmd))
+        if cmd[:3] == [cli.sys.executable, "-m", "pip"]:
+            return SimpleNamespace(returncode=1)
+        if cmd[:4] == ["uv", "pip", "install", "--python"]:
+            return SimpleNamespace(returncode=0)
+        return SimpleNamespace(returncode=1)
+
+    monkeypatch.setattr(cli.subprocess, "run", _run)
+    monkeypatch.setattr(cli.shutil, "which", lambda cmd: "/usr/bin/uv" if cmd == "uv" else None)
+    monkeypatch.setattr(cli.console, "print", lambda _message="": None)
+
+    assert cli._install_packages_with_pip(["gymnasium", "ale-py"]) is True
+    assert calls[0][:3] == [cli.sys.executable, "-m", "pip"]
+    assert calls[1][:4] == ["uv", "pip", "install", "--python"]
+    assert "--break-system-packages" in calls[1]
+
+
+def test_install_packages_with_pip_returns_false_when_no_uv_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        cli.subprocess, "run", lambda _cmd, **_kwargs: SimpleNamespace(returncode=1)
+    )
+    monkeypatch.setattr(cli.shutil, "which", lambda _cmd: None)
+    monkeypatch.setattr(cli.console, "print", lambda _message="": None)
+
+    assert cli._install_packages_with_pip(["gymnasium", "ale-py"]) is False
 
 
 def test_prompt_with_inquirer_returns_none_when_dependency_is_missing(
