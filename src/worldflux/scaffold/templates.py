@@ -11,6 +11,416 @@ from ._asset_local_dashboard import LOCAL_DASHBOARD_PY
 from ._asset_train import TRAIN_PY
 
 
+def _ensure_trailing_newline(content: str) -> str:
+    return content if content.endswith("\n") else content + "\n"
+
+
+def _replace_exact(content: str, old: str, new: str, *, label: str) -> str:
+    if old not in content:
+        raise RuntimeError(f"Scaffold template drift detected while applying patch: {label}")
+    return content.replace(old, new)
+
+
+def _patch_dataset_template(content: str) -> str:
+    content = _replace_exact(
+        content,
+        "import time\nimport warnings\n",
+        "import time\n",
+        label="dataset remove warnings import",
+    )
+    content = _replace_exact(
+        content,
+        "CleanupFn = Callable[[], None]\n\n\n",
+        'CleanupFn = Callable[[], None]\n\n\ndef _info(message: str) -> None:\n    print(f"[dataset] {message}")\n\n\n',
+        label="dataset info logger",
+    )
+
+    replacements = (
+        (
+            '        warnings.warn(f"Atari gym collection is unavailable: {exc}")',
+            '        _info(f"Atari gym collection is unavailable: {exc}")',
+            "dataset atari unavailable log",
+        ),
+        (
+            "        warnings.warn(f\"Failed to create Atari env '{gym_env}': {exc}\")",
+            "        _info(f\"Failed to create Atari env '{gym_env}': {exc}\")",
+            "dataset atari env failure log",
+        ),
+        (
+            '        warnings.warn(f"MuJoCo gym collection is unavailable: {exc}")',
+            '        _info(f"MuJoCo gym collection is unavailable: {exc}")',
+            "dataset mujoco unavailable log",
+        ),
+        (
+            "        warnings.warn(f\"Failed to create MuJoCo env '{gym_env}': {exc}\")",
+            "        _info(f\"Failed to create MuJoCo env '{gym_env}': {exc}\")",
+            "dataset mujoco env failure log",
+        ),
+        (
+            '        warnings.warn("Falling back to random buffer because gym collection failed.")',
+            '        _info("Falling back to random buffer because gym collection failed.")',
+            "dataset fallback log",
+        ),
+        (
+            '            warnings.warn(f"Online Atari collection is unavailable: {exc}")',
+            '            _info(f"Online Atari collection is unavailable: {exc}")',
+            "dataset online atari log",
+        ),
+    )
+    for old, new, label in replacements:
+        content = _replace_exact(content, old, new, label=label)
+
+    return content
+
+
+def _patch_train_template(content: str) -> str:
+    content = _replace_exact(
+        content,
+        """        if dashboard_buffer is not None:
+            dashboard_buffer.set_phase(phase, detail)
+            if phase == "unavailable":
+                dashboard_buffer.set_gameplay_available(False)
+
+        if gameplay_buffer is not None:
+            gameplay_buffer.set_phase(phase, detail)
+            if phase == "unavailable":
+                gameplay_buffer.set_status("unavailable")
+            elif phase in {"finished", "error"}:
+                gameplay_buffer.set_status(phase)
+            else:
+                gameplay_buffer.set_status("running")
+""",
+        """        if dashboard_buffer is not None:
+            dashboard_buffer.set_phase(phase, detail)
+            if phase == "unavailable" or (phase == "training" and gameplay_unavailable):
+                dashboard_buffer.set_gameplay_available(False)
+
+        if gameplay_buffer is not None:
+            gameplay_buffer.set_phase(phase, detail)
+            if phase == "unavailable":
+                gameplay_buffer.set_status("unavailable")
+            elif phase == "training" and gameplay_unavailable:
+                gameplay_buffer.set_status("unavailable")
+            elif phase in {"finished", "error"}:
+                gameplay_buffer.set_status(phase)
+            else:
+                gameplay_buffer.set_status("running")
+""",
+        label="train phase behavior",
+    )
+
+    content = _replace_exact(
+        content,
+        '            dashboard_buffer = MetricBuffer(max_points=visualization["history_max_points"])\n',
+        """            dashboard_buffer = MetricBuffer(max_points=visualization["history_max_points"])
+            dashboard_buffer.set_target_steps(total_steps)
+""",
+        label="train set target steps",
+    )
+    content = _replace_exact(
+        content,
+        '            print(f"Dashboard: {dashboard_server.url}")\n',
+        """            print(f"Dashboard: {dashboard_server.url}")
+            print("Open this URL in your browser to monitor live training progress.")
+""",
+        label="train dashboard url hint",
+    )
+    content = _replace_exact(
+        content,
+        """    if dashboard_buffer is not None:
+        if gameplay_unavailable:
+            publish_phase("unavailable", unavailable_detail)
+        else:
+            publish_phase("training")
+""",
+        """    if dashboard_buffer is not None:
+        if gameplay_unavailable and unavailable_detail:
+            publish_phase(
+                "training",
+                f"Training is running. Live gameplay unavailable. {unavailable_detail}",
+            )
+        else:
+            publish_phase("training")
+""",
+        label="train phase summary",
+    )
+    content = _replace_exact(
+        content,
+        """            dashboard_server.schedule_shutdown(linger_seconds)
+            print(
+                "Dashboard will stay online for " f"{int(linger_seconds)}s: {dashboard_server.url}"
+            )
+            dashboard_server.wait_for_stop(timeout=linger_seconds + 5.0)
+""",
+        """            dashboard_server.schedule_shutdown(linger_seconds)
+            print(
+                "Dashboard will stay online for " f"{int(linger_seconds)}s: {dashboard_server.url}"
+            )
+            try:
+                dashboard_server.wait_for_stop(timeout=linger_seconds + 5.0)
+            except KeyboardInterrupt:
+                print("Interrupted while waiting for dashboard shutdown.")
+""",
+        label="train dashboard shutdown interrupt handling",
+    )
+    return content
+
+
+def _patch_local_dashboard_template(content: str) -> str:
+    content = _replace_exact(
+        content,
+        "        self._latest_speed = 0.0\n",
+        """        self._latest_speed = 0.0
+        self._target_steps: int | None = None
+""",
+        label="dashboard target field",
+    )
+    content = _replace_exact(
+        content,
+        """    def set_gameplay_available(self, available: bool) -> None:
+        with self._lock:
+            self._gameplay_available = bool(available)
+
+    def metrics_payload(self, since_step: int = -1) -> dict[str, Any]:
+""",
+        """    def set_gameplay_available(self, available: bool) -> None:
+        with self._lock:
+            self._gameplay_available = bool(available)
+
+    def set_target_steps(self, total_steps: int) -> None:
+        normalized = max(1, int(total_steps))
+        with self._lock:
+            self._target_steps = normalized
+
+    def metrics_payload(self, since_step: int = -1) -> dict[str, Any]:
+""",
+        label="dashboard target setter",
+    )
+    content = _replace_exact(
+        content,
+        """    def summary_payload(self, *, host: str, port: int) -> dict[str, Any]:
+        with self._lock:
+            ended_at = self._ended_at
+            now = time.time()
+            return {
+                "status": self._status,
+                "phase": self._phase,
+                "phase_message": self._phase_message,
+                "gameplay_available": self._gameplay_available,
+                "started_at": self._started_at,
+                "ended_at": ended_at,
+                "elapsed_seconds": (ended_at or now) - self._started_at,
+                "latest_step": self._latest_step,
+                "latest_metrics": dict(self._latest_metrics),
+                "latest_speed": self._latest_speed,
+                "error": self._error,
+                "host": host,
+                "port": int(port),
+                "total_points": len(self._points),
+            }
+""",
+        """    def summary_payload(self, *, host: str, port: int) -> dict[str, Any]:
+        with self._lock:
+            ended_at = self._ended_at
+            now = time.time()
+            target_steps = self._target_steps
+            progress_percent = 0.0
+            if target_steps and target_steps > 0:
+                progress_percent = min(
+                    100.0,
+                    max(0.0, (self._latest_step / float(target_steps)) * 100.0),
+                )
+            return {
+                "status": self._status,
+                "phase": self._phase,
+                "phase_message": self._phase_message,
+                "gameplay_available": self._gameplay_available,
+                "started_at": self._started_at,
+                "ended_at": ended_at,
+                "elapsed_seconds": (ended_at or now) - self._started_at,
+                "latest_step": self._latest_step,
+                "target_steps": target_steps,
+                "progress_percent": progress_percent,
+                "latest_metrics": dict(self._latest_metrics),
+                "latest_speed": self._latest_speed,
+                "error": self._error,
+                "host": host,
+                "port": int(port),
+                "total_points": len(self._points),
+            }
+""",
+        label="dashboard summary progress",
+    )
+    return content
+
+
+def _patch_dashboard_html_template(content: str) -> str:
+    content = _replace_exact(
+        content,
+        """      .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+      }
+""",
+        """      .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+      }
+
+      .progress-track {
+        width: 100%;
+        height: 14px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: #0e1317;
+        overflow: hidden;
+      }
+
+      .progress-fill {
+        height: 100%;
+        width: 0%;
+        background: linear-gradient(90deg, #57c58f 0%, #65b1ff 100%);
+        transition: width 0.35s ease;
+      }
+
+      .progress-meta {
+        margin: 10px 0 0;
+        color: var(--muted);
+        font-size: 12px;
+      }
+""",
+        label="dashboard html progress styles",
+    )
+    content = _replace_exact(
+        content,
+        """        <div class="card" data-metric="step">
+          <div class="label">Step</div>
+          <div id="step" class="value">0</div>
+        </div>
+        <div class="card" data-metric="elapsed">
+""",
+        """        <div class="card" data-metric="step">
+          <div class="label">Step</div>
+          <div id="step" class="value">0</div>
+        </div>
+        <div class="card" data-metric="progress">
+          <div class="label">Progress</div>
+          <div id="progress" class="value">0.0%</div>
+        </div>
+        <div class="card" data-metric="elapsed">
+""",
+        label="dashboard html progress card",
+    )
+    content = _replace_exact(
+        content,
+        """      </section>
+
+      <section class="section">
+        <h2>Live Gameplay</h2>
+""",
+        """      </section>
+
+      <section class="section">
+        <h2>Training Progress</h2>
+        <div class="progress-track">
+          <div id="progress-fill" class="progress-fill"></div>
+        </div>
+        <p id="progress-meta" class="progress-meta">0 / 0 steps</p>
+      </section>
+
+      <section class="section">
+        <h2>Live Gameplay</h2>
+""",
+        label="dashboard html progress section",
+    )
+    content = _replace_exact(
+        content,
+        """        step:
+          "How many optimizer updates have run. It usually increases by one each training iteration.",
+        elapsed:
+""",
+        """        step:
+          "How many optimizer updates have run. It usually increases by one each training iteration.",
+        progress:
+          "Training completion percentage computed from current step and configured total steps.",
+        elapsed:
+""",
+        label="dashboard html progress tooltip",
+    )
+    content = _replace_exact(
+        content,
+        """      const stepEl = document.getElementById("step");
+      const elapsedEl = document.getElementById("elapsed");
+      const speedEl = document.getElementById("speed");
+      const lossEl = document.getElementById("loss");
+""",
+        """      const stepEl = document.getElementById("step");
+      const progressEl = document.getElementById("progress");
+      const progressFillEl = document.getElementById("progress-fill");
+      const progressMetaEl = document.getElementById("progress-meta");
+      const elapsedEl = document.getElementById("elapsed");
+      const speedEl = document.getElementById("speed");
+      const lossEl = document.getElementById("loss");
+""",
+        label="dashboard html progress dom refs",
+    )
+    content = _replace_exact(
+        content,
+        """      function pickColor(index) {
+        return palette[index % palette.length];
+      }
+""",
+        """      function pickColor(index) {
+        return palette[index % palette.length];
+      }
+
+      function resolveProgressPercent(latest) {
+        const summaryPercent = state.summary?.progress_percent;
+        if (typeof summaryPercent === "number" && Number.isFinite(summaryPercent)) {
+          return Math.min(100, Math.max(0, summaryPercent));
+        }
+
+        const targetSteps = state.summary?.target_steps;
+        if (
+          latest &&
+          typeof latest.step === "number" &&
+          typeof targetSteps === "number" &&
+          Number.isFinite(targetSteps) &&
+          targetSteps > 0
+        ) {
+          return Math.min(100, Math.max(0, (latest.step / targetSteps) * 100));
+        }
+        return 0;
+      }
+""",
+        label="dashboard html progress helper",
+    )
+    content = _replace_exact(
+        content,
+        """        const elapsed = state.summary ? state.summary.elapsed_seconds : 0;
+        elapsedEl.textContent = formatElapsed(elapsed);
+""",
+        """        const elapsed = state.summary ? state.summary.elapsed_seconds : 0;
+        elapsedEl.textContent = formatElapsed(elapsed);
+
+        const progressPercent = resolveProgressPercent(latest);
+        progressEl.textContent = `${progressPercent.toFixed(1)}%`;
+        progressFillEl.style.width = `${progressPercent.toFixed(1)}%`;
+        const targetSteps = state.summary?.target_steps;
+        if (typeof targetSteps === "number" && targetSteps > 0) {
+          const currentStep = latest ? latest.step : 0;
+          progressMetaEl.textContent = `${currentStep} / ${targetSteps} steps`;
+        } else {
+          progressMetaEl.textContent = `${latest ? latest.step : 0} / ? steps`;
+        }
+""",
+        label="dashboard html progress render",
+    )
+    return content
+
+
 def _obs_shape_toml(obs_shape: list[int]) -> str:
     return "[" + ", ".join(str(dim) for dim in obs_shape) + "]"
 
@@ -93,27 +503,25 @@ def render_worldflux_toml(context: dict[str, Any]) -> str:
 def render_train_py(context: dict[str, Any]) -> str:
     """Render ``train.py`` content."""
     del context
-    return TRAIN_PY if TRAIN_PY.endswith("\n") else TRAIN_PY + "\n"
+    return _ensure_trailing_newline(_patch_train_template(TRAIN_PY))
 
 
 def render_local_dashboard_py(context: dict[str, Any]) -> str:
     """Render ``local_dashboard.py`` content."""
     del context
-    return LOCAL_DASHBOARD_PY if LOCAL_DASHBOARD_PY.endswith("\n") else LOCAL_DASHBOARD_PY + "\n"
+    return _ensure_trailing_newline(_patch_local_dashboard_template(LOCAL_DASHBOARD_PY))
 
 
 def render_dashboard_index_html(context: dict[str, Any]) -> str:
     """Render ``dashboard/index.html`` content."""
     del context
-    return (
-        DASHBOARD_INDEX_HTML if DASHBOARD_INDEX_HTML.endswith("\n") else DASHBOARD_INDEX_HTML + "\n"
-    )
+    return _ensure_trailing_newline(_patch_dashboard_html_template(DASHBOARD_INDEX_HTML))
 
 
 def render_dataset_py(context: dict[str, Any]) -> str:
     """Render ``dataset.py`` content."""
     del context
-    return DATASET_PY if DATASET_PY.endswith("\n") else DATASET_PY + "\n"
+    return _ensure_trailing_newline(_patch_dataset_template(DATASET_PY))
 
 
 def render_inference_py(context: dict[str, Any]) -> str:
