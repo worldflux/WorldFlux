@@ -63,6 +63,26 @@ def test_generate_project_creates_expected_files(tmp_path: Path) -> None:
     assert "uv run python inference.py" in readme_content
     assert "Dashboard:" in readme_content
 
+    dataset_content = (target / "dataset.py").read_text(encoding="utf-8")
+    assert "warnings.warn(" not in dataset_content
+    assert 'print(f"[dataset] {message}")' in dataset_content
+
+    train_content = (target / "train.py").read_text(encoding="utf-8")
+    assert "dashboard_buffer.set_target_steps(total_steps)" in train_content
+    assert "Live gameplay unavailable" in train_content
+    assert "Interrupted while waiting for dashboard shutdown." in train_content
+    assert "except KeyboardInterrupt:" in train_content
+
+    dashboard_backend = (target / "local_dashboard.py").read_text(encoding="utf-8")
+    assert "def set_target_steps(self, total_steps: int) -> None:" in dashboard_backend
+    assert '"progress_percent": progress_percent' in dashboard_backend
+    assert '"target_steps": target_steps' in dashboard_backend
+
+    dashboard_frontend = (target / "dashboard/index.html").read_text(encoding="utf-8")
+    assert 'data-metric="progress"' in dashboard_frontend
+    assert 'id="progress-fill"' in dashboard_frontend
+    assert "resolveProgressPercent" in dashboard_frontend
+
 
 def test_generate_project_rejects_non_empty_directory_without_force(tmp_path: Path) -> None:
     target = tmp_path / "existing"
