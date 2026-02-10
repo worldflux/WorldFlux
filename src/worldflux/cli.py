@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import importlib.util
 import shutil
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +26,10 @@ from worldflux.scaffold import generate_project
 
 app = typer.Typer(help="WorldFlux command-line interface.")
 console = Console()
+ATARI_OPTIONAL_DEPENDENCIES: tuple[tuple[str, str], ...] = (
+    ("gymnasium", "gymnasium"),
+    ("ale_py", "ale-py"),
+)
 
 ENVIRONMENT_OPTIONS = {
     "atari": {
@@ -389,18 +396,117 @@ def _resolve_python_launcher() -> str:
     Resolve a runnable Python launcher command for the current environment.
 
     Preference order:
-    1) uv run python (works even when `python` is not on PATH)
+    1) Current interpreter when running from `uv tool` (ensures `worldflux` import works)
     2) python
     3) python3
     4) py (Windows launcher)
+    5) uv run python
+    6) current interpreter path
     """
-    if shutil.which("uv"):
-        return "uv run python"
+    normalized_executable = sys.executable.replace("\\", "/")
+    if "/uv/tools/" in normalized_executable:
+        return sys.executable
+
     for candidate in ("python", "python3", "py"):
         if shutil.which(candidate):
             return candidate
-    # Fallback for display only.
-    return "python"
+    if shutil.which("uv"):
+        return "uv run python"
+    return sys.executable
+
+
+def _missing_atari_dependency_packages() -> list[str]:
+    missing: list[str] = []
+    for module_name, package_name in ATARI_OPTIONAL_DEPENDENCIES:
+        if importlib.util.find_spec(module_name) is None:
+            missing.append(package_name)
+    return missing
+
+
+def _is_interactive_terminal() -> bool:
+    stdin = getattr(sys, "stdin", None)
+    stdout = getattr(sys, "stdout", None)
+    return bool(stdin and stdout and stdin.isatty() and stdout.isatty())
+
+
+def _confirm_optional_dependency_install(packages: list[str]) -> bool:
+    package_list = ", ".join(packages)
+    message = f"Install optional Atari dependencies now? ({package_list})"
+    try:
+        from InquirerPy import inquirer
+    except ModuleNotFoundError:
+        return bool(Confirm.ask(message, default=True))
+    return bool(inquirer.confirm(message=message, default=True).execute())
+
+
+def _install_packages_with_pip(packages: list[str]) -> bool:
+    if not packages:
+        return True
+
+    cmd = [sys.executable, "-m", "pip", "install", *packages]
+    console.print(
+        f"[cyan]Installing optional dependencies:[/cyan] [bold]{', '.join(packages)}[/bold]"
+    )
+    completed = subprocess.run(cmd, check=False)
+    if completed.returncode == 0:
+        return True
+
+    if shutil.which("uv") is None:
+        return False
+
+    console.print("[yellow]pip is unavailable. Retrying with uv pip.[/yellow]")
+    uv_python = sys.executable
+
+    uv_install = subprocess.run(
+        [
+            "uv",
+            "pip",
+            "install",
+            "--python",
+            uv_python,
+            "--break-system-packages",
+            *packages,
+        ],
+        check=False,
+    )
+    return uv_install.returncode == 0
+
+
+def _handle_optional_atari_dependency_install(context: dict[str, Any]) -> None:
+    if str(context.get("environment", "")).strip().lower() != "atari":
+        return
+
+    missing_packages = _missing_atari_dependency_packages()
+    if not missing_packages:
+        return
+
+    install_command = f"{sys.executable} -m pip install {' '.join(missing_packages)}"
+    uv_install_command = (
+        f'uv pip install --python "{sys.executable}" '
+        "--break-system-packages " + " ".join(missing_packages)
+    )
+    console.print(
+        f"[yellow]Optional Atari dependencies are missing:[/yellow] {', '.join(missing_packages)}"
+    )
+    console.print("[dim]Without them, live gameplay falls back to random replay data.[/dim]")
+
+    if not _is_interactive_terminal():
+        console.print(f"[dim]Install later with: {install_command}[/dim]")
+        if shutil.which("uv"):
+            console.print(f"[dim]Or with uv: {uv_install_command}[/dim]")
+        return
+
+    if not _confirm_optional_dependency_install(missing_packages):
+        console.print(f"[yellow]Skipped install.[/yellow] You can run: {install_command}")
+        return
+
+    if _install_packages_with_pip(missing_packages):
+        console.print("[green]Optional Atari dependencies installed successfully.[/green]")
+    else:
+        console.print("[yellow]Install failed. Training can continue in fallback mode.[/yellow]")
+        console.print(f"[dim]Retry with: {install_command}[/dim]")
+        if shutil.which("uv"):
+            console.print(f"[dim]Or with uv: {uv_install_command}[/dim]")
 
 
 @app.command()
@@ -420,6 +526,7 @@ def init(
 
     try:
         context = _prompt_user_configuration()
+        _handle_optional_atari_dependency_install(context)
 
         if context["device"] == "cuda" and not torch.cuda.is_available():
             console.print("[yellow]CUDA is not available. Falling back to CPU.[/yellow]")
