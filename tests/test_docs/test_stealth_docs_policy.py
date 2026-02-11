@@ -11,10 +11,10 @@ def _read(path: str) -> str:
     return (REPO_ROOT / path).read_text(encoding="utf-8")
 
 
-def test_readme_uses_rtd_as_canonical_docs_host():
+def test_readme_uses_reachable_github_docs_host():
     readme = _read("README.md")
-    assert "https://worldflux.readthedocs.io/en/latest/" in readme
-    assert "https://github.com/worldflux/WorldFlux/tree/main/docs" not in readme
+    assert "https://github.com/worldflux/WorldFlux/tree/main/docs" in readme
+    assert "https://worldflux.readthedocs.io/en/latest/" not in readme
 
 
 def test_public_docs_include_benchmark_and_comparison_guides():
