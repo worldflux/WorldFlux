@@ -11,9 +11,9 @@ def _read(path: str) -> str:
     return (REPO_ROOT / path).read_text(encoding="utf-8")
 
 
-def test_readme_uses_pages_docs_host():
+def test_readme_uses_custom_docs_host():
     readme = _read("README.md")
-    assert "https://worldflux.github.io/WorldFlux/" in readme
+    assert "https://worldflux.ai/" in readme
     assert "https://github.com/worldflux/WorldFlux/tree/main/docs" not in readme
     assert "https://worldflux.readthedocs.io/en/latest/" not in readme
 
