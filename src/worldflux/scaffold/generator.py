@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from .templates import (
     render_dashboard_index_html,
@@ -33,25 +33,42 @@ def _validate_context_with_pydantic(context: dict[str, Any]) -> dict[str, Any] |
     except ModuleNotFoundError:
         return None
 
-    class _ScaffoldContextModel(BaseModel):
-        project_name: StrictStr
-        environment: StrictStr
-        model: StrictStr
-        model_type: StrictStr
-        obs_shape: list[StrictInt]
-        action_dim: StrictInt
-        hidden_dim: StrictInt
-        device: StrictStr
-
+    schema_model: type[BaseModel]
+    if hasattr(BaseModel, "model_config"):
         # pydantic v2
-        model_config = {"extra": "forbid"}
+        class _ScaffoldContextModelV2(BaseModel):
+            project_name: StrictStr
+            environment: StrictStr
+            model: StrictStr
+            model_type: StrictStr
+            obs_shape: list[StrictInt]
+            action_dim: StrictInt
+            hidden_dim: StrictInt
+            device: StrictStr
 
+            model_config = {"extra": "forbid"}
+
+        schema_model = _ScaffoldContextModelV2
+
+    else:
         # pydantic v1
-        class Config:
-            extra = "forbid"
+        class _ScaffoldContextModelV1(BaseModel):
+            project_name: StrictStr
+            environment: StrictStr
+            model: StrictStr
+            model_type: StrictStr
+            obs_shape: list[StrictInt]
+            action_dim: StrictInt
+            hidden_dim: StrictInt
+            device: StrictStr
+
+            class Config:
+                extra = "forbid"
+
+        schema_model = _ScaffoldContextModelV1
 
     try:
-        validated = _ScaffoldContextModel(**context)
+        validated = schema_model(**context)
     except ValidationError as exc:
         messages = []
         for err in exc.errors():
@@ -61,9 +78,10 @@ def _validate_context_with_pydantic(context: dict[str, Any]) -> dict[str, Any] |
         joined = "; ".join(messages) if messages else str(exc)
         raise ValueError(f"Invalid scaffold context schema: {joined}") from exc
 
-    if hasattr(validated, "model_dump"):
-        return dict(validated.model_dump())
-    return dict(validated.dict())
+    validated_any = cast(Any, validated)
+    if hasattr(validated_any, "model_dump"):
+        return dict(validated_any.model_dump())
+    return dict(validated_any.dict())
 
 
 def _validate_context(context: dict[str, Any]) -> None:
