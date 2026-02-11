@@ -272,9 +272,9 @@ uv run python examples/train_dreamer.py --data trajectories.npz --steps 100000
 
 ## Documentation
 
-- [Full Documentation](https://worldflux.github.io/WorldFlux/) - Guides and API reference
-- [API Reference](https://worldflux.github.io/WorldFlux/api/factory/) - Contract and symbol-level docs
-- [Reference](https://worldflux.github.io/WorldFlux/reference/benchmarks/) - Operational and quality docs
+- [Full Documentation](https://worldflux.ai/) - Guides and API reference
+- [API Reference](https://worldflux.ai/api/factory/) - Contract and symbol-level docs
+- [Reference](https://worldflux.ai/reference/benchmarks/) - Operational and quality docs
 
 ## Community
 
