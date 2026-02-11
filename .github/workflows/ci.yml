@@ -238,17 +238,22 @@ jobs:
       - name: Build docs (strict)
         run: uv run mkdocs build --strict
 
+      - name: Prepare lychee args
+        id: lychee_args
+        run: |
+          set -euo pipefail
+          base_args="--verbose --no-progress --max-concurrency 8 --max-retries 2 --retry-wait-time 2 --accept 200,206,301,302,303,307,308,403,429 README.md CONTRIBUTING.md CHANGELOG.md SECURITY.md CODE_OF_CONDUCT.md docs spaces"
+          if curl -fsSI --max-time 10 https://worldflux.ai/ >/dev/null; then
+            echo "args=${base_args}" >> "${GITHUB_OUTPUT}"
+          else
+            echo "::warning::worldflux.ai is not reachable from this runner; excluding custom-domain links for this run."
+            echo "args=${base_args} --exclude ^https://(www\\.)?worldflux\\.ai(?:/.*)?$" >> "${GITHUB_OUTPUT}"
+          fi
+
       - name: Check external links (all markdown targets)
         uses: lycheeverse/lychee-action@v2
         with:
-          args: >-
-            --verbose --no-progress
-            --max-concurrency 8
-            --max-retries 2
-            --retry-wait-time 2
-            --accept 200,206,301,302,303,307,308,403,429
-            README.md CONTRIBUTING.md CHANGELOG.md SECURITY.md CODE_OF_CONDUCT.md
-            docs spaces
+          args: ${{ steps.lychee_args.outputs.args }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
