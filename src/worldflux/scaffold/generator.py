@@ -27,7 +27,51 @@ REQUIRED_CONTEXT_KEYS = (
 )
 
 
+def _validate_context_with_pydantic(context: dict[str, Any]) -> dict[str, Any] | None:
+    try:
+        from pydantic import BaseModel, StrictInt, StrictStr, ValidationError
+    except ModuleNotFoundError:
+        return None
+
+    class _ScaffoldContextModel(BaseModel):
+        project_name: StrictStr
+        environment: StrictStr
+        model: StrictStr
+        model_type: StrictStr
+        obs_shape: list[StrictInt]
+        action_dim: StrictInt
+        hidden_dim: StrictInt
+        device: StrictStr
+
+        # pydantic v2
+        model_config = {"extra": "forbid"}
+
+        # pydantic v1
+        class Config:
+            extra = "forbid"
+
+    try:
+        validated = _ScaffoldContextModel(**context)
+    except ValidationError as exc:
+        messages = []
+        for err in exc.errors():
+            location = ".".join(str(part) for part in err.get("loc", ()))
+            message = str(err.get("msg", "invalid value"))
+            messages.append(f"{location}: {message}")
+        joined = "; ".join(messages) if messages else str(exc)
+        raise ValueError(f"Invalid scaffold context schema: {joined}") from exc
+
+    if hasattr(validated, "model_dump"):
+        return dict(validated.model_dump())
+    return dict(validated.dict())
+
+
 def _validate_context(context: dict[str, Any]) -> None:
+    schema_validated = _validate_context_with_pydantic(context)
+    if schema_validated is not None:
+        context.clear()
+        context.update(schema_validated)
+
     missing = [key for key in REQUIRED_CONTEXT_KEYS if key not in context]
     if missing:
         raise ValueError(f"Missing scaffold context keys: {', '.join(missing)}")

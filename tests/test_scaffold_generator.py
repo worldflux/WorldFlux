@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import builtins
 from pathlib import Path
 
 import pytest
@@ -127,3 +128,31 @@ def test_generate_project_rejects_file_target(tmp_path: Path) -> None:
 
     with pytest.raises(FileExistsError, match="is a file"):
         generate_project(target, _context(), force=False)
+
+
+def test_generate_project_falls_back_when_pydantic_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    real_import = builtins.__import__
+
+    def _fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "pydantic":
+            raise ModuleNotFoundError("pydantic missing")
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", _fake_import)
+    target = tmp_path / "no-pydantic"
+    created = generate_project(target, _context(), force=False)
+    assert created
+
+
+def test_generate_project_rejects_schema_coercion_when_pydantic_available(
+    tmp_path: Path,
+) -> None:
+    pytest.importorskip("pydantic")
+    context = _context()
+    context["action_dim"] = "6"  # type: ignore[assignment]
+
+    with pytest.raises(ValueError, match="Invalid scaffold context schema"):
+        generate_project(tmp_path / "invalid-schema", context, force=False)

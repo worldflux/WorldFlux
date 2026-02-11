@@ -6,6 +6,7 @@ import inspect
 import logging
 import math
 import os
+import time
 from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -47,6 +48,9 @@ class TrainingState:
         self.num_batches: int = 0
         self.should_stop: bool = False
         self.metrics: dict[str, float] = {}
+        self.train_start_time: float | None = None
+        self.train_end_time: float | None = None
+        self.ttfi_sec: float | None = None
 
     def reset_epoch(self) -> None:
         """Reset per-epoch statistics."""
@@ -209,8 +213,8 @@ class Trainer:
         """Fetch the next batch from a provider or iterator."""
         if hasattr(data, "sample"):
             request = BatchRequest(
-                batch_size=self.config.batch_size,
-                seq_len=self.config.sequence_length,
+                batch_size=self.config.effective_batch_size(),
+                seq_len=self.config.effective_sequence_length(),
                 device=self.device,
             )
             batch = self._sample_from_provider(cast(BatchProvider | BatchProviderV2, data), request)
@@ -364,7 +368,9 @@ class Trainer:
         Returns:
             Trained model.
         """
-        total_steps = num_steps or self.config.total_steps
+        total_steps = (
+            int(num_steps) if num_steps is not None else self.config.effective_total_steps()
+        )
 
         # Resume from checkpoint if specified
         if resume_from:
@@ -372,8 +378,13 @@ class Trainer:
 
         logger.info(f"Starting training for {total_steps} steps")
         logger.info(f"Device: {self.device}")
-        logger.info(f"Batch size: {self.config.batch_size}")
-        logger.info(f"Sequence length: {self.config.sequence_length}")
+        logger.info(f"Batch size: {self.config.effective_batch_size()}")
+        logger.info(f"Sequence length: {self.config.effective_sequence_length()}")
+        logger.info(f"Instant mode: {self.config.instant_mode}")
+
+        self.state.train_start_time = time.time()
+        self.state.train_end_time = None
+        self.state.ttfi_sec = None
 
         self.callbacks.on_train_begin(self)
 
@@ -385,6 +396,9 @@ class Trainer:
                     raise TrainingError(
                         f"Training step failed at step {self.state.global_step}: {e}"
                     ) from e
+
+                if self.state.ttfi_sec is None and self.state.train_start_time is not None:
+                    self.state.ttfi_sec = max(0.0, time.time() - self.state.train_start_time)
 
                 self.state.global_step += 1
 
@@ -399,12 +413,35 @@ class Trainer:
         except KeyboardInterrupt:
             logger.info("Training interrupted by user")
 
+        self.state.train_end_time = time.time()
         self.callbacks.on_train_end(self)
 
         # Save final checkpoint
         self.save_checkpoint(os.path.join(self.config.output_dir, "checkpoint_final.pt"))
 
+        if self.state.ttfi_sec is not None:
+            logger.info(f"Time to first iteration: {self.state.ttfi_sec:.3f}s")
+
         return self.model
+
+    def runtime_profile(self) -> dict[str, float | None]:
+        """Return lightweight runtime profiling metrics for DX instrumentation."""
+        start = self.state.train_start_time
+        end = self.state.train_end_time
+        elapsed: float | None
+        if start is None:
+            elapsed = None
+        else:
+            end_time = end if end is not None else time.time()
+            elapsed = max(0.0, end_time - start)
+        throughput: float | None = None
+        if elapsed and elapsed > 0:
+            throughput = float(self.state.global_step) / elapsed
+        return {
+            "ttfi_sec": self.state.ttfi_sec,
+            "elapsed_sec": elapsed,
+            "throughput_steps_per_sec": throughput,
+        }
 
     def _check_for_nan_inf(self, losses: dict[str, torch.Tensor], step: int) -> None:
         """

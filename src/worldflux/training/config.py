@@ -41,6 +41,10 @@ class TrainingConfig:
     total_steps: int = 100_000
     batch_size: int = 16
     sequence_length: int = 50
+    instant_mode: bool = False
+    instant_total_steps: int = 8
+    instant_batch_size: int = 8
+    instant_sequence_length: int = 10
 
     # Optimizer
     learning_rate: float = 3e-4
@@ -95,6 +99,18 @@ class TrainingConfig:
         if self.sequence_length <= 0:
             raise ConfigurationError(
                 f"sequence_length must be positive, got {self.sequence_length}"
+            )
+        if self.instant_total_steps <= 0:
+            raise ConfigurationError(
+                f"instant_total_steps must be positive, got {self.instant_total_steps}"
+            )
+        if self.instant_batch_size <= 0:
+            raise ConfigurationError(
+                f"instant_batch_size must be positive, got {self.instant_batch_size}"
+            )
+        if self.instant_sequence_length <= 0:
+            raise ConfigurationError(
+                f"instant_sequence_length must be positive, got {self.instant_sequence_length}"
             )
         if self.learning_rate <= 0:
             raise ConfigurationError(f"learning_rate must be positive, got {self.learning_rate}")
@@ -169,6 +185,24 @@ class TrainingConfig:
         d.update(kwargs)
         return TrainingConfig.from_dict(d)
 
+    def effective_total_steps(self) -> int:
+        """Total steps used by trainer under current mode."""
+        if self.instant_mode:
+            return self.instant_total_steps
+        return self.total_steps
+
+    def effective_batch_size(self) -> int:
+        """Batch size used by trainer under current mode."""
+        if self.instant_mode:
+            return self.instant_batch_size
+        return self.batch_size
+
+    def effective_sequence_length(self) -> int:
+        """Sequence length used by trainer under current mode."""
+        if self.instant_mode:
+            return self.instant_sequence_length
+        return self.sequence_length
+
     def __repr__(self) -> str:
         """Return a detailed string representation."""
         return (
@@ -176,6 +210,7 @@ class TrainingConfig:
             f"total_steps={self.total_steps}, "
             f"batch_size={self.batch_size}, "
             f"seq_len={self.sequence_length}, "
+            f"instant_mode={self.instant_mode}, "
             f"lr={self.learning_rate}, "
             f"device={self.device!r})"
         )

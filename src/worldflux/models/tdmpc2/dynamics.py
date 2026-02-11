@@ -4,6 +4,11 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 
+_DYNAMICS_NAN_FILL = 0.0
+_DYNAMICS_INPUT_CLAMP = 1e4
+_DYNAMICS_DELTA_MAX_NORM = 10.0
+_DYNAMICS_EPS = 1e-6
+
 
 class Dynamics(nn.Module):
     """Dynamics model with optional task embedding.
@@ -72,10 +77,50 @@ class Dynamics(nn.Module):
         Returns:
             Predicted latent delta of shape [batch, latent_dim].
         """
-        if self.task_embedding is not None and task_id is not None:
-            task_emb = self.task_embedding(task_id)
+        z = torch.nan_to_num(
+            z, nan=_DYNAMICS_NAN_FILL, posinf=_DYNAMICS_INPUT_CLAMP, neginf=-_DYNAMICS_INPUT_CLAMP
+        ).clamp(-_DYNAMICS_INPUT_CLAMP, _DYNAMICS_INPUT_CLAMP)
+        action = torch.nan_to_num(
+            action,
+            nan=_DYNAMICS_NAN_FILL,
+            posinf=_DYNAMICS_INPUT_CLAMP,
+            neginf=-_DYNAMICS_INPUT_CLAMP,
+        ).clamp(-_DYNAMICS_INPUT_CLAMP, _DYNAMICS_INPUT_CLAMP)
+
+        if self.task_embedding is not None:
+            if task_id is None:
+                task_emb = torch.zeros(
+                    z.shape[0],
+                    self.task_dim,
+                    dtype=z.dtype,
+                    device=z.device,
+                )
+            else:
+                bounded_task_id = task_id.long().clamp(min=0, max=self.num_tasks - 1)
+                task_emb = self.task_embedding(bounded_task_id).to(dtype=z.dtype)
             dynamics_input = torch.cat([z, action, task_emb], dim=-1)
         else:
             dynamics_input = torch.cat([z, action], dim=-1)
 
-        return self.mlp(dynamics_input)
+        dynamics_input = torch.nan_to_num(
+            dynamics_input,
+            nan=_DYNAMICS_NAN_FILL,
+            posinf=_DYNAMICS_INPUT_CLAMP,
+            neginf=-_DYNAMICS_INPUT_CLAMP,
+        ).clamp(-_DYNAMICS_INPUT_CLAMP, _DYNAMICS_INPUT_CLAMP)
+
+        delta = self.mlp(dynamics_input)
+        delta = torch.nan_to_num(
+            delta,
+            nan=_DYNAMICS_NAN_FILL,
+            posinf=_DYNAMICS_INPUT_CLAMP,
+            neginf=-_DYNAMICS_INPUT_CLAMP,
+        )
+
+        # Limit residual update magnitude to avoid exploding latent transitions.
+        delta_norm = delta.norm(dim=-1, keepdim=True)
+        scale = torch.clamp(
+            _DYNAMICS_DELTA_MAX_NORM / (delta_norm + _DYNAMICS_EPS),
+            max=1.0,
+        )
+        return delta * scale
