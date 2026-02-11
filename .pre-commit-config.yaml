@@ -34,7 +34,7 @@ repos:
     hooks:
       - id: pytest
         name: pytest
-        entry: pytest tests/ -x -q --tb=short
+        entry: uv run pytest tests/ -x -q --tb=short
         language: system
         pass_filenames: false
         stages: [pre-push]
