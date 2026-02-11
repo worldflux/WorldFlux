@@ -105,6 +105,13 @@ def test_check_gradients_raises_training_error_on_nan(tmp_path: Path) -> None:
         trainer._check_gradients(step=1)
 
 
+def test_check_gradients_raises_training_error_on_inf(tmp_path: Path) -> None:
+    trainer = _trainer(tmp_path)
+    trainer.model.linear.weight.grad = torch.full_like(trainer.model.linear.weight, float("inf"))
+    with pytest.raises(TrainingError, match="Inf gradient"):
+        trainer._check_gradients(step=1)
+
+
 def test_next_batch_rejects_provider_with_invalid_return_type(tmp_path: Path) -> None:
     trainer = _trainer(tmp_path)
 
@@ -197,3 +204,95 @@ def test_checkpoint_roundtrip_preserves_scheduler_and_scaler_state(tmp_path: Pat
 
     restored = Trainer(_MiniModel(), config, callbacks=[])
     restored.load_checkpoint(str(checkpoint_path))
+
+
+def test_runtime_profile_handles_uninitialized_and_active_windows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    trainer = _trainer(tmp_path)
+
+    profile = trainer.runtime_profile()
+    assert profile["elapsed_sec"] is None
+    assert profile["throughput_steps_per_sec"] is None
+
+    trainer.state.global_step = 5
+    trainer.state.train_start_time = 10.0
+    trainer.state.train_end_time = 10.0
+    profile = trainer.runtime_profile()
+    assert profile["elapsed_sec"] == 0.0
+    assert profile["throughput_steps_per_sec"] is None
+
+    trainer.state.train_end_time = None
+    monkeypatch.setattr("worldflux.training.trainer.time.time", lambda: 14.0)
+    profile = trainer.runtime_profile()
+    assert profile["elapsed_sec"] == 4.0
+    assert profile["throughput_steps_per_sec"] == 1.25
+
+
+def test_train_wraps_runtime_error_from_train_step(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    trainer = _trainer(tmp_path)
+
+    def _raise_runtime_error(_data: object) -> None:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(trainer, "_train_step", _raise_runtime_error)
+    with pytest.raises(TrainingError, match="Training step failed at step 0: boom"):
+        trainer.train([], num_steps=1)
+
+
+def test_train_handles_keyboard_interrupt_and_returns_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    trainer = _trainer(tmp_path)
+
+    def _raise_interrupt(_data: object) -> None:
+        raise KeyboardInterrupt()
+
+    monkeypatch.setattr(trainer, "_train_step", _raise_interrupt)
+    returned = trainer.train([], num_steps=1)
+
+    assert returned is trainer.model
+    assert trainer.state.train_end_time is not None
+    assert (tmp_path / "checkpoint_final.pt").exists()
+
+
+def test_train_resume_path_calls_load_checkpoint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    trainer = _trainer(tmp_path)
+    calls: list[str] = []
+
+    def _load(path: str) -> None:
+        calls.append(path)
+
+    def _stop_after_first_step(_data: object) -> None:
+        trainer.state.should_stop = True
+
+    monkeypatch.setattr(trainer, "load_checkpoint", _load)
+    monkeypatch.setattr(trainer, "_train_step", _stop_after_first_step)
+    trainer.train([], num_steps=1, resume_from="resume.pt")
+
+    assert calls == ["resume.pt"]
+
+
+def test_train_step_advances_scheduler_when_enabled(tmp_path: Path) -> None:
+    config = TrainingConfig(
+        total_steps=2,
+        batch_size=2,
+        sequence_length=1,
+        output_dir=str(tmp_path),
+        device="cpu",
+        scheduler="constant",
+    )
+    trainer = Trainer(_MiniModel(), config, callbacks=[])
+    assert trainer.scheduler is not None
+    last_epoch = trainer.scheduler.last_epoch
+
+    class _Provider:
+        def sample(self, batch_size: int, seq_len: int | None = None, device: str = "cpu"):
+            return Batch(obs=torch.randn(batch_size, 4, device=device))
+
+    trainer._train_step(_Provider())
+    assert trainer.scheduler.last_epoch == last_epoch + 1
