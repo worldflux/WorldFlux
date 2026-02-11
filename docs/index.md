@@ -25,6 +25,15 @@ WorldFlux provides a unified Python interface for world models used in reinforce
 
 ## Quick Start
 
+```bash
+uv sync --extra dev
+uv run python examples/quickstart_cpu_success.py --quick
+```
+
+Official CPU-success docs: [CPU Success Path](getting-started/cpu-success.md)
+
+### API Glimpse
+
 ```python
 from worldflux import create_world_model
 import torch
@@ -68,6 +77,8 @@ print(trajectory.rewards.shape)
 
     [:octicons-arrow-right-24: Quick Start](getting-started/quickstart.md)
 
+    [:octicons-arrow-right-24: CPU Success Path](getting-started/cpu-success.md)
+
 -   **API Reference**
 
     ---
@@ -86,11 +97,19 @@ print(trajectory.rewards.shape)
 
     Operational documentation and project quality checks.
 
+    [:octicons-arrow-right-24: Benchmarks](reference/benchmarks.md)
+
+    [:octicons-arrow-right-24: Unified Comparison](reference/unified-comparison.md)
+
     [:octicons-arrow-right-24: Documentation Stack](reference/docs-stack.md)
 
     [:octicons-arrow-right-24: Release Checklist](reference/release-checklist.md)
 
+    [:octicons-arrow-right-24: Publishing](reference/publishing.md)
+
     [:octicons-arrow-right-24: Troubleshooting](reference/troubleshooting.md)
+
+    [:octicons-arrow-right-24: WASR Metrics](reference/wasr.md)
 
 </div>
 

@@ -132,6 +132,13 @@ uv run mkdocs build --strict
 
 ## Quick Start
 
+### CPU-First Success Path (Official)
+
+```bash
+uv sync --extra dev
+uv run python examples/quickstart_cpu_success.py --quick
+```
+
 ### Create a Model
 
 ```python
@@ -249,21 +256,25 @@ from worldflux.training.callbacks import (
 
 See the `examples/` directory:
 
+- `quickstart_cpu_success.py` - Official CPU-first success path
+- `compare_unified_training.py` - Same trainer/data contract for DreamerV3 and TD-MPC2
 - `worldflux_quickstart.ipynb` - Interactive Colab notebook
 - `train_dreamer.py` - Training example
 - `train_tdmpc2.py` - Training example
 - `visualize_imagination.py` - Imagination rollout visualization
 
 ```bash
-python examples/train_dreamer.py --test
-python examples/train_dreamer.py --data trajectories.npz --steps 100000
+uv run python examples/quickstart_cpu_success.py --quick
+uv run python examples/compare_unified_training.py --quick
+uv run python examples/train_dreamer.py --test
+uv run python examples/train_dreamer.py --data trajectories.npz --steps 100000
 ```
 
 ## Documentation
 
-- [Full Documentation](https://github.com/worldflux/WorldFlux/tree/main/docs) - Guides and API reference
-- [API Reference](https://github.com/worldflux/WorldFlux/tree/main/docs/api) - Contract and symbol-level docs
-- [Reference](https://github.com/worldflux/WorldFlux/tree/main/docs/reference) - Operational and quality docs
+- [Full Documentation](https://worldflux.readthedocs.io/en/latest/) - Guides and API reference
+- [API Reference](https://worldflux.readthedocs.io/en/latest/api/factory/) - Contract and symbol-level docs
+- [Reference](https://worldflux.readthedocs.io/en/latest/reference/quality-gates/) - Operational and quality docs
 
 ## Community
 
