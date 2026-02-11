@@ -68,6 +68,13 @@ from worldflux import create_world_model, list_models
 print(list_models())
 ```
 
+## CPU Success Check
+
+```bash
+uv sync --extra dev
+uv run python examples/quickstart_cpu_success.py --quick
+```
+
 ## GPU Support
 
 WorldFlux automatically uses CUDA if available:
