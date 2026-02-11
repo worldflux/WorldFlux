@@ -110,7 +110,7 @@ all = [
 
 [project.urls]
 Homepage = "https://github.com/worldflux/WorldFlux"
-Documentation = "https://github.com/worldflux/WorldFlux/tree/main/docs"
+Documentation = "https://worldflux.github.io/WorldFlux/"
 Repository = "https://github.com/worldflux/WorldFlux"
 Changelog = "https://github.com/worldflux/WorldFlux/blob/main/CHANGELOG.md"
 Issues = "https://github.com/worldflux/WorldFlux/issues"
