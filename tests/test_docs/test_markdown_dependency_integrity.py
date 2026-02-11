@@ -162,4 +162,4 @@ def test_markdown_does_not_include_deprecated_doc_hosts():
 
 def test_pyproject_documentation_url_matches_policy():
     pyproject = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    assert 'Documentation = "https://worldflux.github.io/WorldFlux/"' in pyproject
+    assert 'Documentation = "https://worldflux.ai/"' in pyproject
