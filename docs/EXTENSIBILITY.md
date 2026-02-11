@@ -127,6 +127,29 @@ Third-party packages can register through entry-point groups:
 
 Plugin manifests should provide compatibility metadata (`plugin_api_version`, `worldflux_version_range`, `capabilities`).
 
+### Minimal Installable Plugin Example
+
+This repository includes a minimal plugin package:
+
+- `examples/plugins/minimal_plugin`
+
+Install and run smoke validation:
+
+```bash
+uv pip install -e examples/plugins/minimal_plugin
+uv run python examples/plugins/smoke_minimal_plugin.py
+```
+
+The sample uses both entry-point groups:
+
+- `worldflux.models`
+- `worldflux.components`
+
+It registers:
+
+- model alias: `minimalplugin-dreamer`
+- component id: `minimal_plugin.zero_action_conditioner`
+
 ### Required Components by Family
 
 | Family | Required Components |
