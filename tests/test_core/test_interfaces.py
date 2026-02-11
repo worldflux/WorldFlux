@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import cast
 
 import torch
@@ -9,15 +10,23 @@ import torch
 from worldflux.core.interfaces import (
     ActionConditioner,
     AsyncDecoder,
+    AsyncDecoderAdapter,
     AsyncDynamicsModel,
+    AsyncDynamicsModelAdapter,
     AsyncObservationEncoder,
+    AsyncObservationEncoderAdapter,
     AsyncRolloutExecutor,
+    AsyncRolloutExecutorAdapter,
     ComponentSpec,
     Decoder,
     DynamicsModel,
     ObservationEncoder,
     RolloutEngine,
     RolloutExecutor,
+    ensure_async_decoder,
+    ensure_async_dynamics_model,
+    ensure_async_observation_encoder,
+    ensure_async_rollout_executor,
 )
 from worldflux.core.payloads import PLANNER_HORIZON_KEY, ActionPayload, ConditionPayload
 from worldflux.core.state import State
@@ -155,3 +164,58 @@ def test_dummy_components_work_together():
 
     assert "obs" in preds
     assert preds["obs"].shape == (2, 3)
+
+
+def test_async_adapters_wrap_sync_components() -> None:
+    obs = torch.randn(2, 3)
+    encoder = AsyncObservationEncoderAdapter(DummyEncoder())
+    state = asyncio.run(encoder.encode_async({"obs": obs}))
+    assert torch.allclose(state.tensors["latent"], obs)
+
+    dynamics = AsyncDynamicsModelAdapter(DummyDynamics())
+    next_state = asyncio.run(
+        dynamics.transition_async(
+            state,
+            {"action": torch.ones_like(obs)},
+            deterministic=False,
+        )
+    )
+    assert torch.allclose(next_state.tensors["latent"], obs + 1.0)
+
+    decoder = AsyncDecoderAdapter(DummyDecoder())
+    decoded = asyncio.run(decoder.decode_async(next_state))
+    assert torch.allclose(decoded["obs"], obs + 1.0)
+
+    rollout = AsyncRolloutExecutorAdapter(DummyRollout())
+    rolled = asyncio.run(
+        rollout.rollout_open_loop_async(
+            model=object(),
+            initial_state=state,
+            action_sequence=None,
+            conditions=None,
+            deterministic=False,
+        )
+    )
+    assert rolled is state
+
+
+def test_ensure_async_helpers_return_protocol_compatible_components() -> None:
+    sync_encoder = ensure_async_observation_encoder(DummyEncoder())
+    sync_dynamics = ensure_async_dynamics_model(DummyDynamics())
+    sync_decoder = ensure_async_decoder(DummyDecoder())
+    sync_rollout = ensure_async_rollout_executor(DummyRollout())
+
+    assert isinstance(sync_encoder, AsyncObservationEncoder)
+    assert isinstance(sync_dynamics, AsyncDynamicsModel)
+    assert isinstance(sync_decoder, AsyncDecoder)
+    assert isinstance(sync_rollout, AsyncRolloutExecutor)
+
+    async_encoder = DummyAsyncEncoder()
+    async_dynamics = DummyAsyncDynamics()
+    async_decoder = DummyAsyncDecoder()
+    async_rollout = DummyAsyncRollout()
+
+    assert ensure_async_observation_encoder(async_encoder) is async_encoder
+    assert ensure_async_dynamics_model(async_dynamics) is async_dynamics
+    assert ensure_async_decoder(async_decoder) is async_decoder
+    assert ensure_async_rollout_executor(async_rollout) is async_rollout
