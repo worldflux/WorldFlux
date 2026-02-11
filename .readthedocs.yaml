@@ -10,6 +10,7 @@ build:
 
 mkdocs:
   configuration: mkdocs.yml
+  # Strict warning handling is defined in mkdocs.yml (`strict: true`).
 
 python:
   install:
