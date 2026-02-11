@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "worldflux-minimal-plugin"
+version = "0.0.1"
+description = "Minimal WorldFlux plugin example"
+requires-python = ">=3.10"
+dependencies = ["worldflux"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[project.entry-points."worldflux.models"]
+minimal_plugin_models = "worldflux_minimal_plugin:register_models"
+
+[project.entry-points."worldflux.components"]
+minimal_plugin_components = "worldflux_minimal_plugin:register_components"

@@ -89,6 +89,7 @@ checkpoints/
 logs/
 runs/
 wandb/
+.worldflux/
 
 # Data files
 *.npz
