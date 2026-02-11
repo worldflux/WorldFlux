@@ -26,7 +26,7 @@ FORBIDDEN_CODE_SNIPPETS = (
 )
 
 FORBIDDEN_DOC_URL_PATTERNS = (
-    r"https://worldflux\.github\.io/WorldFlux(?:/|$)",
+    r"https://github\.com/worldflux/WorldFlux/tree/main/docs(?:/|$)",
     r"https://worldflux\.readthedocs\.io(?:/|$)",
 )
 
@@ -162,4 +162,4 @@ def test_markdown_does_not_include_deprecated_doc_hosts():
 
 def test_pyproject_documentation_url_matches_policy():
     pyproject = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    assert 'Documentation = "https://github.com/worldflux/WorldFlux/tree/main/docs"' in pyproject
+    assert 'Documentation = "https://worldflux.github.io/WorldFlux/"' in pyproject
