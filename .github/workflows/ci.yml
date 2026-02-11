@@ -62,10 +62,10 @@ jobs:
           cache-dependency-glob: pyproject.toml
 
       - name: Run ruff linter
-        run: uvx ruff check src/ tests/ examples/
+        run: uvx ruff check src/ tests/ examples/ benchmarks/ scripts/
 
       - name: Run ruff formatter check
-        run: uvx ruff format --check src/ tests/ examples/
+        run: uvx ruff format --check src/ tests/ examples/ benchmarks/ scripts/
 
   typecheck:
     runs-on: ubuntu-latest
@@ -114,6 +114,12 @@ jobs:
       - name: Test TD-MPC2 example
         run: uv run python examples/train_tdmpc2.py --test
 
+      - name: Test CPU-first success example
+        run: uv run python examples/quickstart_cpu_success.py --quick
+
+      - name: Test unified comparison example
+        run: uv run python examples/compare_unified_training.py --quick
+
       - name: Test JEPA example
         run: uv run python examples/train_jepa.py --steps 5 --batch-size 4 --obs-dim 8
 
@@ -125,6 +131,21 @@ jobs:
 
       - name: Test CEM planner example
         run: uv run python examples/plan_cem.py --horizon 3 --action-dim 2
+
+      - name: Install minimal plugin example
+        run: uv pip install -e examples/plugins/minimal_plugin
+
+      - name: Test minimal plugin smoke
+        run: uv run python examples/plugins/smoke_minimal_plugin.py
+
+      - name: Benchmark quick smoke (DreamerV3)
+        run: uv run python benchmarks/benchmark_dreamerv3_atari.py --quick --seed 42
+
+      - name: Benchmark quick smoke (TD-MPC2)
+        run: uv run python benchmarks/benchmark_tdmpc2_mujoco.py --quick --seed 42
+
+      - name: Benchmark quick smoke (Diffusion)
+        run: uv run python benchmarks/benchmark_diffusion_imagination.py --quick --seed 42
 
   security:
     runs-on: ubuntu-latest

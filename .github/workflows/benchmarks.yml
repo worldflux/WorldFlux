@@ -1,0 +1,42 @@
+name: Benchmarks
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * 0"
+
+jobs:
+  full-benchmarks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
+
+      - name: Install dependencies
+        run: uv sync --extra dev --extra training
+
+      - name: Run DreamerV3 full benchmark
+        run: uv run python benchmarks/benchmark_dreamerv3_atari.py --full --seed 42
+
+      - name: Run TD-MPC2 full benchmark
+        run: uv run python benchmarks/benchmark_tdmpc2_mujoco.py --full --seed 42
+
+      - name: Run diffusion full benchmark
+        run: uv run python benchmarks/benchmark_diffusion_imagination.py --full --seed 42
+
+      - name: Upload benchmark artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-artifacts
+          path: outputs/benchmarks/
