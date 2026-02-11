@@ -7,6 +7,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -35,6 +37,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
+      contents: read
       id-token: write
     steps:
       - name: Download artifacts
@@ -51,6 +54,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: testpypi
     permissions:
+      contents: read
       id-token: write
     steps:
       - name: Download artifacts
