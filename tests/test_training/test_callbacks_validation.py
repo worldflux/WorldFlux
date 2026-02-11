@@ -13,7 +13,9 @@ import pytest
 from worldflux.training import TrainingConfig
 from worldflux.training.callbacks import (
     CheckpointCallback,
+    DiagnosisCallback,
     EarlyStoppingCallback,
+    HeartbeatCallback,
     LoggingCallback,
     ProgressCallback,
 )
@@ -53,6 +55,20 @@ def test_early_stopping_callback_rejects_invalid_values() -> None:
         EarlyStoppingCallback(patience=0)
     with pytest.raises(ValueError, match="min_delta"):
         EarlyStoppingCallback(min_delta=-1e-3)
+
+
+def test_heartbeat_callback_rejects_invalid_interval() -> None:
+    with pytest.raises(ValueError, match="interval_steps"):
+        HeartbeatCallback(interval_steps=0)
+
+
+def test_diagnosis_callback_rejects_invalid_thresholds() -> None:
+    with pytest.raises(ValueError, match="check_interval"):
+        DiagnosisCallback(check_interval=0)
+    with pytest.raises(ValueError, match="gradient_min_norm"):
+        DiagnosisCallback(gradient_min_norm=-1.0)
+    with pytest.raises(ValueError, match="latent_std_min"):
+        DiagnosisCallback(latent_std_min=-1.0)
 
 
 def test_logging_callback_logs_metrics_without_wandb(tmp_path: Path) -> None:

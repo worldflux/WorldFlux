@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import logging
+import math
 import time
 from abc import ABC
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+
+import torch
+
+from worldflux.telemetry.wasr import make_run_id, write_event
 
 if TYPE_CHECKING:
     from .trainer import Trainer
@@ -345,3 +350,202 @@ class ProgressCallback(Callback):
             if metrics:
                 postfix = {k: f"{v:.4f}" for k, v in metrics.items()}
                 self._pbar.set_postfix(postfix)
+
+
+class HeartbeatCallback(Callback):
+    """Periodic anonymous telemetry heartbeat for successful training progress."""
+
+    def __init__(
+        self,
+        interval_steps: int = 100,
+        scenario: str = "trainer",
+        metrics_path: str | Path | None = None,
+        run_id: str | None = None,
+    ) -> None:
+        if interval_steps <= 0:
+            raise ValueError(f"interval_steps must be positive, got {interval_steps}")
+        self.interval_steps = interval_steps
+        self.scenario = scenario
+        self.metrics_path = Path(metrics_path) if metrics_path is not None else None
+        self.run_id = run_id or make_run_id()
+        self._start_time: float | None = None
+
+    @staticmethod
+    def _safe_float(value: Any) -> float | None:
+        if value is None:
+            return None
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return None
+        if not math.isfinite(number):
+            return None
+        return number
+
+    def on_train_begin(self, trainer: Trainer) -> None:
+        self._start_time = time.time()
+        if trainer.state.train_start_time is not None:
+            self._start_time = trainer.state.train_start_time
+
+    def _current_duration(self) -> float:
+        if self._start_time is None:
+            return 0.0
+        return max(0.0, time.time() - self._start_time)
+
+    def on_step_end(self, trainer: Trainer) -> None:
+        step = int(trainer.state.global_step)
+        if step <= 0 or step % self.interval_steps != 0:
+            return
+
+        profile_fn = getattr(trainer, "runtime_profile", None)
+        throughput: float | None = None
+        if callable(profile_fn):
+            profile = profile_fn()
+            throughput = self._safe_float(profile.get("throughput_steps_per_sec"))
+
+        metrics = trainer.state.metrics
+        flops = self._safe_float(metrics.get("flops_estimate") or metrics.get("flops"))
+        watts = self._safe_float(metrics.get("watts_estimate") or metrics.get("power_watts"))
+        flops_per_watt: float | None = None
+        if flops is not None and watts is not None and watts > 0:
+            flops_per_watt = flops / watts
+
+        write_event(
+            event="heartbeat",
+            scenario=self.scenario,
+            success=True,
+            duration_sec=self._current_duration(),
+            ttfi_sec=float(trainer.state.ttfi_sec or 0.0),
+            artifacts={},
+            error="",
+            run_id=self.run_id,
+            path=self.metrics_path,
+            epoch=int(trainer.state.epoch),
+            step=step,
+            throughput_steps_per_sec=throughput,
+            flops_estimate=flops,
+            watts_estimate=watts,
+            flops_per_watt=flops_per_watt,
+        )
+
+
+class DiagnosisCallback(Callback):
+    """Detect common training pathologies and emit remediation suggestions."""
+
+    def __init__(
+        self,
+        check_interval: int = 100,
+        gradient_min_norm: float = 1e-8,
+        latent_std_min: float = 1e-6,
+        scenario: str = "trainer",
+        metrics_path: str | Path | None = None,
+        run_id: str | None = None,
+    ) -> None:
+        if check_interval <= 0:
+            raise ValueError(f"check_interval must be positive, got {check_interval}")
+        if gradient_min_norm < 0:
+            raise ValueError(f"gradient_min_norm must be non-negative, got {gradient_min_norm}")
+        if latent_std_min < 0:
+            raise ValueError(f"latent_std_min must be non-negative, got {latent_std_min}")
+
+        self.check_interval = check_interval
+        self.gradient_min_norm = gradient_min_norm
+        self.latent_std_min = latent_std_min
+        self.scenario = scenario
+        self.metrics_path = Path(metrics_path) if metrics_path is not None else None
+        self.run_id = run_id or make_run_id()
+        self._start_time: float | None = None
+        self.last_suggestions: list[str] = []
+
+    def on_train_begin(self, trainer: Trainer) -> None:
+        self._start_time = time.time()
+        if trainer.state.train_start_time is not None:
+            self._start_time = trainer.state.train_start_time
+
+    def _current_duration(self) -> float:
+        if self._start_time is None:
+            return 0.0
+        return max(0.0, time.time() - self._start_time)
+
+    def _detect_gradient_issues(self, trainer: Trainer) -> list[str]:
+        suggestions: list[str] = []
+        grad_norms: list[float] = []
+        has_nan_or_inf = False
+
+        for param in trainer.model.parameters():
+            if param.grad is None:
+                continue
+            grad = param.grad.detach()
+            if torch.isnan(grad).any() or torch.isinf(grad).any():
+                has_nan_or_inf = True
+                break
+            grad_norms.append(float(torch.norm(grad).item()))
+
+        if has_nan_or_inf:
+            suggestions.append(
+                "Detected NaN/Inf gradients. Try lower learning rate or stronger gradient clipping."
+            )
+            return suggestions
+
+        if grad_norms and max(grad_norms) < self.gradient_min_norm:
+            suggestions.append(
+                "Detected vanishing gradients. Consider normalization changes or shorter horizons."
+            )
+
+        return suggestions
+
+    def _detect_metric_issues(self, trainer: Trainer) -> list[str]:
+        suggestions: list[str] = []
+        metrics = trainer.state.metrics
+
+        loss = metrics.get("loss")
+        if loss is not None:
+            loss_value = float(loss)
+            if not math.isfinite(loss_value):
+                suggestions.append(
+                    "Loss is non-finite. Validate inputs and reduce optimizer aggressiveness."
+                )
+
+        latent_keys = ("latent_std", "z_std", "latent_variance", "z_var")
+        for key in latent_keys:
+            value = metrics.get(key)
+            if value is None:
+                continue
+            value_f = float(value)
+            if math.isfinite(value_f) and value_f < self.latent_std_min:
+                suggestions.append(
+                    "Latent collapse indicator detected. Increase latent regularization or capacity."
+                )
+                break
+
+        return suggestions
+
+    def on_step_end(self, trainer: Trainer) -> None:
+        step = int(trainer.state.global_step)
+        if step <= 0 or step % self.check_interval != 0:
+            return
+
+        suggestions = [
+            *self._detect_gradient_issues(trainer),
+            *self._detect_metric_issues(trainer),
+        ]
+        self.last_suggestions = suggestions
+        if not suggestions:
+            return
+
+        joined = " | ".join(suggestions)
+        logger.warning("Training diagnostics at step %s: %s", step, joined)
+        write_event(
+            event="diagnostic",
+            scenario=self.scenario,
+            success=False,
+            duration_sec=self._current_duration(),
+            ttfi_sec=float(trainer.state.ttfi_sec or 0.0),
+            artifacts={},
+            error=joined,
+            run_id=self.run_id,
+            path=self.metrics_path,
+            epoch=int(trainer.state.epoch),
+            step=step,
+            suggestions=suggestions,
+        )
