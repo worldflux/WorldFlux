@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from worldflux.telemetry.wasr import (
+    OPTIONAL_EVENT_FIELDS,
     REQUIRED_EVENT_FIELDS,
     default_metrics_path,
     read_events,
@@ -34,6 +35,8 @@ def test_write_event_and_read_events_roundtrip(tmp_path: Path) -> None:
     )
 
     for key in REQUIRED_EVENT_FIELDS:
+        assert key in payload
+    for key in OPTIONAL_EVENT_FIELDS:
         assert key in payload
 
     events = read_events(metrics_path)

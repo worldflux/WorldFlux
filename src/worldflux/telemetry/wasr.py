@@ -20,12 +20,33 @@ REQUIRED_EVENT_FIELDS = (
     "artifacts",
     "error",
 )
+OPTIONAL_EVENT_FIELDS = (
+    "epoch",
+    "step",
+    "throughput_steps_per_sec",
+    "flops_estimate",
+    "watts_estimate",
+    "flops_per_watt",
+    "suggestions",
+)
 
 
 def _coerce_artifacts(artifacts: dict[str, str] | None) -> dict[str, str]:
     if artifacts is None:
         return {}
     return {str(k): str(v) for k, v in artifacts.items()}
+
+
+def _coerce_optional_float(value: float | int | None) -> float | None:
+    if value is None:
+        return None
+    return float(value)
+
+
+def _coerce_optional_int(value: int | None) -> int | None:
+    if value is None:
+        return None
+    return int(value)
 
 
 def default_metrics_path() -> Path:
@@ -53,6 +74,13 @@ def write_event(
     run_id: str | None = None,
     timestamp: float | None = None,
     path: str | Path | None = None,
+    epoch: int | None = None,
+    step: int | None = None,
+    throughput_steps_per_sec: float | None = None,
+    flops_estimate: float | None = None,
+    watts_estimate: float | None = None,
+    flops_per_watt: float | None = None,
+    suggestions: list[str] | None = None,
 ) -> dict[str, Any]:
     """Append one telemetry event as JSON Lines and return the event payload."""
     payload: dict[str, Any] = {
@@ -65,6 +93,13 @@ def write_event(
         "ttfi_sec": float(ttfi_sec),
         "artifacts": _coerce_artifacts(artifacts),
         "error": str(error) if error else "",
+        "epoch": _coerce_optional_int(epoch),
+        "step": _coerce_optional_int(step),
+        "throughput_steps_per_sec": _coerce_optional_float(throughput_steps_per_sec),
+        "flops_estimate": _coerce_optional_float(flops_estimate),
+        "watts_estimate": _coerce_optional_float(watts_estimate),
+        "flops_per_watt": _coerce_optional_float(flops_per_watt),
+        "suggestions": [str(item) for item in suggestions] if suggestions else [],
     }
 
     target = Path(path) if path is not None else default_metrics_path()
