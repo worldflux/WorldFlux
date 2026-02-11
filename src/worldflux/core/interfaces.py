@@ -29,6 +29,13 @@ class ObservationEncoder(Protocol):
 
 
 @runtime_checkable
+class AsyncObservationEncoder(Protocol):
+    """Asynchronous observation encoder abstraction."""
+
+    async def encode_async(self, observations: dict[str, Tensor]) -> State: ...
+
+
+@runtime_checkable
 class ActionConditioner(Protocol):
     """Action conditioning abstraction used by dynamics/generators."""
 
@@ -53,6 +60,18 @@ class DynamicsModel(Protocol):
 
 
 @runtime_checkable
+class AsyncDynamicsModel(Protocol):
+    """Asynchronous dynamics transition abstraction."""
+
+    async def transition_async(
+        self,
+        state: State,
+        conditioned: dict[str, Tensor],
+        deterministic: bool = False,
+    ) -> State: ...
+
+
+@runtime_checkable
 class Decoder(Protocol):
     """Optional decoder abstraction."""
 
@@ -62,10 +81,35 @@ class Decoder(Protocol):
 
 
 @runtime_checkable
+class AsyncDecoder(Protocol):
+    """Asynchronous decoder abstraction."""
+
+    async def decode_async(
+        self,
+        state: State,
+        conditions: ConditionPayload | None = None,
+    ) -> dict[str, Tensor]: ...
+
+
+@runtime_checkable
 class RolloutExecutor(Protocol):
     """Open-loop rollout execution abstraction."""
 
     def rollout_open_loop(
+        self,
+        model: Any,
+        initial_state: State,
+        action_sequence: ActionSequence | Tensor | None,
+        conditions: ConditionPayload | None = None,
+        deterministic: bool = False,
+    ): ...
+
+
+@runtime_checkable
+class AsyncRolloutExecutor(Protocol):
+    """Asynchronous open-loop rollout execution abstraction."""
+
+    async def rollout_open_loop_async(
         self,
         model: Any,
         initial_state: State,

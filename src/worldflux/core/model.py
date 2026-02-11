@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import inspect
 import json
 import os
 import warnings
@@ -20,6 +22,10 @@ from .batch import Batch
 from .exceptions import CapabilityError, ValidationError
 from .interfaces import (
     ActionConditioner,
+    AsyncDecoder,
+    AsyncDynamicsModel,
+    AsyncObservationEncoder,
+    AsyncRolloutExecutor,
     Decoder,
     DynamicsModel,
     ObservationEncoder,
@@ -337,6 +343,7 @@ class WorldModel(nn.Module, ABC):
                 f"{self.__class__.__name__}.encode(...) is not implemented and no observation_encoder is attached"
             )
         world_input = self._coerce_world_input(obs)
+        self._validate_input_modalities(world_input.observations)
         return self.observation_encoder.encode(world_input.observations)
 
     def transition(
@@ -371,6 +378,126 @@ class WorldModel(nn.Module, ABC):
             conditioned["action"] = action_tensor
 
         return self.dynamics_model.transition(state, conditioned, deterministic=deterministic)
+
+    @staticmethod
+    async def _run_component_async(
+        component: object,
+        async_name: str,
+        sync_name: str,
+        *args,
+        **kwargs,
+    ):
+        async_fn = getattr(component, async_name, None)
+        if callable(async_fn):
+            maybe_awaitable = async_fn(*args, **kwargs)
+            if inspect.isawaitable(maybe_awaitable):
+                return await maybe_awaitable
+            return maybe_awaitable
+
+        sync_fn = getattr(component, sync_name, None)
+        if callable(sync_fn):
+            return await asyncio.to_thread(sync_fn, *args, **kwargs)
+        raise NotImplementedError(
+            f"Component {type(component).__name__} must implement {async_name} or {sync_name}"
+        )
+
+    def _validate_input_modalities(self, observations: dict[str, Tensor]) -> None:
+        contract = self.io_contract()
+        required = tuple(contract.effective_input_spec.modalities.keys())
+        missing = [key for key in required if key not in observations]
+        if missing:
+            raise ValidationError(
+                f"Input observations are missing required modalities: {missing}. "
+                f"Declared modalities: {list(required)}"
+            )
+
+    async def async_encode(
+        self,
+        obs: Tensor | dict[str, Tensor] | WorldModelInput,
+        deterministic: bool = False,
+    ) -> State:
+        """Asynchronous non-blocking variant of ``encode``."""
+        del deterministic
+        if self.observation_encoder is None:
+            raise NotImplementedError(
+                f"{self.__class__.__name__}.async_encode(...) requires observation_encoder"
+            )
+        world_input = self._coerce_world_input(obs)
+        self._validate_input_modalities(world_input.observations)
+        encoder = self.observation_encoder
+        if isinstance(encoder, AsyncObservationEncoder) or hasattr(encoder, "encode_async"):
+            return await self._run_component_async(
+                encoder, "encode_async", "encode", world_input.observations
+            )
+        return await asyncio.to_thread(encoder.encode, world_input.observations)
+
+    async def async_transition(
+        self,
+        state: State,
+        action: ActionPayload | Tensor | None,
+        conditions: ConditionPayload | None = None,
+        deterministic: bool = False,
+    ) -> State:
+        """Asynchronous non-blocking variant of ``transition``."""
+        if self.dynamics_model is None:
+            raise NotImplementedError(
+                f"{self.__class__.__name__}.async_transition(...) requires dynamics_model"
+            )
+
+        contract = self.io_contract()
+        action_spec = contract.action_spec
+        action_payload = self.coerce_action_payload(action, kind=action_spec.kind)
+        if action_payload is not None:
+            self._validate_action_payload(action_payload)
+        condition_payload = self.coerce_condition_payload(conditions)
+        self._validate_condition_payload(condition_payload)
+        conditioned: dict[str, Tensor] = {}
+
+        if self.action_conditioner is not None:
+            conditioned.update(
+                self.action_conditioner.condition(state, action_payload, condition_payload)
+            )
+
+        action_tensor = self.action_tensor_or_none(action_payload, validate_contract=False)
+        if action_tensor is not None and "action" not in conditioned:
+            conditioned["action"] = action_tensor
+
+        dynamics_model = self.dynamics_model
+        if isinstance(dynamics_model, AsyncDynamicsModel) or hasattr(
+            dynamics_model, "transition_async"
+        ):
+            return await self._run_component_async(
+                dynamics_model,
+                "transition_async",
+                "transition",
+                state,
+                conditioned,
+                deterministic=deterministic,
+            )
+        return await asyncio.to_thread(dynamics_model.transition, state, conditioned, deterministic)
+
+    async def async_decode(
+        self,
+        state: State,
+        conditions: ConditionPayload | None = None,
+    ) -> ModelOutput:
+        """Asynchronous non-blocking variant of ``decode``."""
+        condition_payload = self.coerce_condition_payload(conditions)
+        self._validate_condition_payload(condition_payload)
+        if self.decoder_module is None:
+            raise CapabilityError(f"{self.__class__.__name__} does not expose a decoder component")
+        decoder_module = self.decoder_module
+        if isinstance(decoder_module, AsyncDecoder) or hasattr(decoder_module, "decode_async"):
+            preds = await self._run_component_async(
+                decoder_module,
+                "decode_async",
+                "decode",
+                state,
+                conditions=condition_payload,
+            )
+        else:
+            preds = await asyncio.to_thread(decoder_module.decode, state, condition_payload)
+        return ModelOutput(predictions=preds, state=state)
 
     def update(
         self,
@@ -544,6 +671,119 @@ class WorldModel(nn.Module, ABC):
             )
             states.append(state)
             decoded = self.decode(state, conditions=condition_payload)
+            if "reward" in decoded.predictions:
+                rewards.append(decoded.predictions["reward"])
+            if "continue" in decoded.predictions:
+                continues.append(decoded.predictions["continue"])
+
+        rewards_t = torch.stack(rewards, dim=0).squeeze(-1) if rewards else None
+        continues_t = torch.stack(continues, dim=0).squeeze(-1) if continues else None
+
+        if actions_tensor is None:
+            batch = initial_state.batch_size
+            actions_tensor = torch.zeros(horizon, batch, 0, device=initial_state.device)
+
+        return Trajectory(
+            states=states,
+            actions=actions_tensor,
+            rewards=rewards_t,
+            continues=continues_t,
+        )
+
+    async def async_rollout(
+        self,
+        initial_state: State,
+        action_sequence: ActionSequence | ActionPayload | Tensor | None,
+        conditions: ConditionPayload | None = None,
+        deterministic: bool = False,
+        mode: str = "autoregressive",
+    ) -> Trajectory:
+        """Asynchronous non-blocking variant of ``rollout``."""
+        api_version = self._get_api_version()
+        if mode != "autoregressive":
+            msg = (
+                "rollout(..., mode=...) is deprecated in v0.2 and will be removed in v0.3. "
+                "Use planner strategies for re-planning/tree-search."
+            )
+            if api_version == "v3":
+                raise ValueError(msg)
+            warnings.warn(msg, DeprecationWarning, stacklevel=2)
+
+        condition_payload = self.coerce_condition_payload(conditions)
+        self._validate_condition_payload(condition_payload)
+
+        if isinstance(action_sequence, ActionPayload):
+            action_sequence = normalize_planned_action(action_sequence, api_version=api_version)
+
+        if self.rollout_executor is not None:
+            executor = self.rollout_executor
+            if isinstance(executor, AsyncRolloutExecutor) or hasattr(
+                executor, "rollout_open_loop_async"
+            ):
+                return await self._run_component_async(
+                    executor,
+                    "rollout_open_loop_async",
+                    "rollout_open_loop",
+                    self,
+                    initial_state,
+                    action_sequence,
+                    conditions=condition_payload,
+                    deterministic=deterministic,
+                )
+            return await asyncio.to_thread(
+                executor.rollout_open_loop,
+                self,
+                initial_state,
+                action_sequence,
+                condition_payload,
+                deterministic,
+            )
+        if self.rollout_engine is not None:
+            warnings.warn(
+                "rollout_engine is deprecated in v0.2; attach rollout_executor instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            engine_sequence = (
+                action_sequence.tensor
+                if isinstance(action_sequence, ActionSequence)
+                else action_sequence
+            )
+            return await asyncio.to_thread(
+                self.rollout_engine.rollout,
+                self,
+                initial_state,
+                engine_sequence,
+                condition_payload,
+                deterministic,
+                "autoregressive",
+            )
+
+        if isinstance(action_sequence, Tensor):
+            horizon = int(action_sequence.shape[0])
+            actions_tensor: Tensor | None = action_sequence
+        elif isinstance(action_sequence, ActionSequence) and action_sequence.tensor is not None:
+            horizon = int(action_sequence.tensor.shape[0])
+            actions_tensor = action_sequence.tensor
+        elif isinstance(action_sequence, ActionSequence) and action_sequence.payloads is not None:
+            horizon = len(action_sequence.payloads)
+            actions_tensor = None
+        else:
+            horizon = 0
+            actions_tensor = None
+
+        states = [initial_state]
+        rewards = []
+        continues = []
+
+        state = initial_state
+        for t in range(horizon):
+            action_t = self._action_from_sequence(action_sequence, t)
+            state = await self.async_transition(
+                state, action_t, conditions=condition_payload, deterministic=deterministic
+            )
+            states.append(state)
+            decoded = await self.async_decode(state, conditions=condition_payload)
             if "reward" in decoded.predictions:
                 rewards.append(decoded.predictions["reward"])
             if "continue" in decoded.predictions:

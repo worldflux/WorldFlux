@@ -8,6 +8,10 @@ import torch
 
 from worldflux.core.interfaces import (
     ActionConditioner,
+    AsyncDecoder,
+    AsyncDynamicsModel,
+    AsyncObservationEncoder,
+    AsyncRolloutExecutor,
     ComponentSpec,
     Decoder,
     DynamicsModel,
@@ -74,6 +78,39 @@ class DummyRollout:
         return initial_state
 
 
+class DummyAsyncEncoder:
+    async def encode_async(self, observations):
+        obs = observations["obs"]
+        return State(tensors={"latent": obs})
+
+
+class DummyAsyncDynamics:
+    async def transition_async(self, state, conditioned, deterministic=False):
+        del deterministic
+        latent = state.tensors["latent"]
+        action = conditioned.get("action", torch.zeros_like(latent))
+        return State(tensors={"latent": latent + action})
+
+
+class DummyAsyncDecoder:
+    async def decode_async(self, state, conditions=None):
+        del conditions
+        return {"obs": state.tensors["latent"]}
+
+
+class DummyAsyncRollout:
+    async def rollout_open_loop_async(
+        self,
+        model,
+        initial_state,
+        action_sequence,
+        conditions=None,
+        deterministic=False,
+    ):
+        del model, action_sequence, conditions, deterministic
+        return initial_state
+
+
 class DummyPlanner:
     def plan(self, model, state, conditions=None):
         del model, state, conditions
@@ -92,10 +129,14 @@ def test_component_spec_fields():
 
 def test_protocol_runtime_compatibility():
     assert isinstance(DummyEncoder(), ObservationEncoder)
+    assert isinstance(DummyAsyncEncoder(), AsyncObservationEncoder)
     assert isinstance(DummyConditioner(), ActionConditioner)
     assert isinstance(DummyDynamics(), DynamicsModel)
+    assert isinstance(DummyAsyncDynamics(), AsyncDynamicsModel)
     assert isinstance(DummyDecoder(), Decoder)
+    assert isinstance(DummyAsyncDecoder(), AsyncDecoder)
     assert isinstance(DummyRollout(), RolloutExecutor)
+    assert isinstance(DummyAsyncRollout(), AsyncRolloutExecutor)
     assert isinstance(DummyRollout(), RolloutEngine)
     assert isinstance(DummyPlanner(), Planner)
 
