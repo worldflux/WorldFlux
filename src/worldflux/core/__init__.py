@@ -40,6 +40,10 @@ from .exceptions import (
 )
 from .interfaces import (
     ActionConditioner,
+    AsyncDecoder,
+    AsyncDynamicsModel,
+    AsyncObservationEncoder,
+    AsyncRolloutExecutor,
     ComponentSpec,
     Decoder,
     DynamicsModel,
@@ -113,10 +117,14 @@ __all__ = [
     "is_namespaced_extra_key",
     "ComponentSpec",
     "ObservationEncoder",
+    "AsyncObservationEncoder",
     "DynamicsModel",
+    "AsyncDynamicsModel",
     "ActionConditioner",
     "Decoder",
+    "AsyncDecoder",
     "RolloutExecutor",
+    "AsyncRolloutExecutor",
     "RolloutEngine",
     # Specs
     "ModalityKind",
