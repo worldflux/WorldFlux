@@ -46,6 +46,9 @@ jobs:
       - name: Build docs (strict)
         run: uv run mkdocs build --strict
 
+      - name: Ensure custom domain file
+        run: echo "worldflux.ai" > site/CNAME
+
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4
         with:
