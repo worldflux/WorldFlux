@@ -247,7 +247,7 @@ jobs:
             echo "args=${base_args}" >> "${GITHUB_OUTPUT}"
           else
             echo "::warning::worldflux.ai is not reachable from this runner; excluding custom-domain links for this run."
-            echo "args=${base_args} --exclude ^https://(www\\.)?worldflux\\.ai(?:/.*)?$" >> "${GITHUB_OUTPUT}"
+            echo "args=${base_args} --exclude worldflux\\.ai" >> "${GITHUB_OUTPUT}"
           fi
 
       - name: Check external links (all markdown targets)
