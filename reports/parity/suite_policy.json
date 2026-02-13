@@ -1,0 +1,13 @@
+{
+  "schema_version": "worldflux.parity.policy.v1",
+  "families": {
+    "dreamerv3": {
+      "stage": "required",
+      "suites": ["dreamer_atari100k"]
+    },
+    "tdmpc2": {
+      "stage": "required",
+      "suites": ["tdmpc2_dmcontrol39"]
+    }
+  }
+}
