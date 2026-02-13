@@ -392,6 +392,16 @@ def _run_pair_command(
         "workdir": str(workdir),
     }
     command = source.command_template.format(**context)
+    try:
+        command_args = shlex.split(command, posix=True)
+    except ValueError as exc:
+        raise ParityError(
+            f"Invalid command_template for campaign source {source.name!r}: {exc}"
+        ) from exc
+    if not command_args:
+        raise ParityError(
+            f"campaign source {source.name!r} rendered an empty command from command_template"
+        )
     rendered_env = os.environ.copy()
     rendered_env.update(source.env)
     pair_output.parent.mkdir(parents=True, exist_ok=True)
@@ -401,10 +411,9 @@ def _run_pair_command(
         return
 
     subprocess.run(
-        command,
+        command_args,
         cwd=workdir,
         env=rendered_env,
-        shell=True,
         check=True,
     )
 

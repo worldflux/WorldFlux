@@ -6,6 +6,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 from worldflux.parity import (
     CampaignRunOptions,
     export_campaign_source,
@@ -13,6 +15,7 @@ from worldflux.parity import (
     parse_seed_csv,
     run_campaign,
 )
+from worldflux.parity.errors import ParityError
 
 
 def _write_json(path: Path, payload: object) -> None:
@@ -148,6 +151,47 @@ def test_campaign_runs_command_template(tmp_path: Path) -> None:
     payload = json.loads(output_path.read_text(encoding="utf-8"))
     keys = {(row["task"], row["seed"]) for row in payload["scores"]}
     assert keys == {("task_x", 1), ("task_x", 2)}
+
+
+def test_campaign_command_template_with_unbalanced_quote_fails(tmp_path: Path) -> None:
+    output_path = tmp_path / "worldflux.json"
+    campaign_path = tmp_path / "campaign.yaml"
+    command_template = "python -c 'print(1) --task {task}"
+    _write_json(
+        campaign_path,
+        {
+            "schema_version": "worldflux.parity.campaign.v1",
+            "suite_id": "command_suite_invalid",
+            "family": "tdmpc2",
+            "default_step": 10,
+            "default_seeds": [1],
+            "tasks": ["task_x"],
+            "sources": {
+                "worldflux": {
+                    "command_template": command_template,
+                    "result_format": "canonical_json",
+                    "output_path": str(output_path),
+                }
+            },
+        },
+    )
+
+    spec = load_campaign_spec(campaign_path)
+    with pytest.raises(ParityError, match="Invalid command_template"):
+        run_campaign(
+            spec,
+            CampaignRunOptions(
+                mode="worldflux",
+                seeds=(1,),
+                device="cpu",
+                output=output_path,
+                oracle_output=None,
+                resume=False,
+                dry_run=False,
+                workdir=tmp_path,
+                pair_output_root=tmp_path / "pairs",
+            ),
+        )
 
 
 def test_campaign_export_helper(tmp_path: Path) -> None:
