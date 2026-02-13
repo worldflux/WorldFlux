@@ -5,7 +5,79 @@ on:
     types: [published]
 
 jobs:
+  verify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
+
+      - name: Install dependencies
+        run: uv sync --extra dev --extra docs
+
+      - name: Validate release metadata
+        run: uv run python scripts/check_release_metadata.py --tag "${{ github.event.release.tag_name }}"
+
+      - name: Validate release checklist gate wiring
+        run: uv run python scripts/check_release_checklist_gate.py
+
+      - name: Run public contract freeze + parity tests
+        run: uv run pytest -q tests/test_public_contract_freeze.py tests/test_parity/
+
+      - name: Validate fixed parity artifacts (release gate)
+        run: |
+          uv run python scripts/validate_parity_artifacts.py \
+            --run reports/parity/runs/dreamer_atari100k.json \
+            --run reports/parity/runs/tdmpc2_dmcontrol39.json \
+            --aggregate reports/parity/aggregate.json \
+            --lock reports/parity/upstream_lock.json \
+            --required-suite dreamer_atari100k \
+            --required-suite tdmpc2_dmcontrol39 \
+            --max-missing-pairs 0
+
+      - name: Build docs (strict)
+        run: uv run mkdocs build --strict
+
+      - name: Run security checks
+        run: |
+          uv run --with bandit bandit -r src/worldflux/ -ll
+          uv run --with pip-audit pip-audit
+
+      - name: Generate verification report artifact
+        run: |
+          uv run python scripts/generate_verification_report.py \
+            --check release_metadata=pass \
+            --check release_checklist_gate=pass \
+            --check public_contract_freeze=pass \
+            --check parity_harness_tests=pass \
+            --check parity_release_gate=pass \
+            --check docs_strict=pass \
+            --check security_bandit=pass \
+            --check security_pip_audit=pass \
+            --parity-aggregate reports/parity/aggregate.json \
+            --upstream-lock reports/parity/upstream_lock.json \
+            --output-json reports/release/verification-report.json \
+            --output-md reports/release/verification-report.md
+
+      - name: Upload verification report
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification-report
+          path: reports/release/
+
   build:
+    needs: verify
     runs-on: ubuntu-latest
     permissions:
       contents: read
