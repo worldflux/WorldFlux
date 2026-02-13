@@ -10,21 +10,28 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: "3.11"
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
         with:
           enable-cache: true
           cache-dependency-glob: pyproject.toml
 
       - name: Install dependencies
         run: uv sync --extra dev --extra docs
+
+      - name: Validate docs domain TLS and HTTPS
+        run: |
+          uv run python scripts/check_docs_domain_tls.py \
+            --host worldflux.ai \
+            --url https://worldflux.ai/ \
+            --expected-san worldflux.ai
 
       - name: Validate release metadata
         run: uv run python scripts/check_release_metadata.py --tag "${{ github.event.release.tag_name }}"
@@ -59,6 +66,7 @@ jobs:
           uv run python scripts/generate_verification_report.py \
             --check release_metadata=pass \
             --check release_checklist_gate=pass \
+            --check docs_domain_tls=pass \
             --check public_contract_freeze=pass \
             --check parity_harness_tests=pass \
             --check parity_release_gate=pass \
@@ -71,7 +79,7 @@ jobs:
             --output-md reports/release/verification-report.md
 
       - name: Upload verification report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: verification-report
           path: reports/release/
@@ -82,15 +90,15 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: "3.11"
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
         with:
           enable-cache: true
           cache-dependency-glob: pyproject.toml
@@ -98,8 +106,11 @@ jobs:
       - name: Build package
         run: uv run --with build python -m build
 
+      - name: Check package
+        run: uv run --with twine twine check dist/*
+
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: dist
           path: dist/
@@ -113,13 +124,13 @@ jobs:
       id-token: write
     steps:
       - name: Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: dist
           path: dist/
 
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e
 
   publish-testpypi:
     needs: build
@@ -130,13 +141,12 @@ jobs:
       id-token: write
     steps:
       - name: Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: dist
           path: dist/
 
       - name: Publish to TestPyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e
         with:
           repository-url: https://test.pypi.org/legacy/
-        continue-on-error: true
