@@ -1,0 +1,52 @@
+{
+  "schema_version": "worldflux.parity.campaign.v1",
+  "suite_id": "dreamer_atari100k",
+  "family": "dreamerv3",
+  "default_step": 110000,
+  "default_seeds": [0, 1, 2, 3, 4],
+  "tasks": [
+    "atari_alien",
+    "atari_amidar",
+    "atari_assault",
+    "atari_asterix",
+    "atari_bank_heist",
+    "atari_battle_zone",
+    "atari_boxing",
+    "atari_breakout",
+    "atari_chopper_command",
+    "atari_crazy_climber",
+    "atari_demon_attack",
+    "atari_freeway",
+    "atari_frostbite",
+    "atari_gopher",
+    "atari_hero",
+    "atari_jamesbond",
+    "atari_kangaroo",
+    "atari_krull",
+    "atari_kung_fu_master",
+    "atari_ms_pacman",
+    "atari_pong",
+    "atari_private_eye",
+    "atari_qbert",
+    "atari_road_runner",
+    "atari_seaquest",
+    "atari_up_n_down"
+  ],
+  "sources": {
+    "oracle": {
+      "adapter": "dreamerv3",
+      "repo": "https://github.com/danijar/dreamerv3",
+      "commit": "b65cf81a6fb13625af8722127459283f899a35d9",
+      "input_path": "../../artifacts/upstream/dreamerv3/scores/atari100k-dreamerv3.json.gz",
+      "input_format": "dreamerv3_scores_json_gz",
+      "output_path": "../../reports/parity/oracle/dreamer_atari100k.json"
+    },
+    "worldflux": {
+      "adapter": "dreamerv3",
+      "repo": "https://github.com/worldflux/WorldFlux",
+      "input_path": "../../reports/parity/worldflux/dreamer_atari100k.json",
+      "input_format": "canonical_json",
+      "output_path": "../../reports/parity/worldflux/dreamer_atari100k.json"
+    }
+  }
+}

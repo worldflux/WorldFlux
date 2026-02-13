@@ -24,13 +24,25 @@ except ModuleNotFoundError as exc:  # pragma: no cover - optional dependency gua
 
 import torch
 
-from worldflux.parity import aggregate_runs, render_markdown_report, run_suite
+from worldflux.parity import (
+    CampaignRunOptions,
+    aggregate_runs,
+    export_campaign_source,
+    load_campaign_spec,
+    parse_seed_csv,
+    render_campaign_summary,
+    render_markdown_report,
+    run_campaign,
+    run_suite,
+)
 from worldflux.parity.errors import ParityError
 from worldflux.scaffold import generate_project
 
 app = typer.Typer(help="WorldFlux command-line interface.")
 parity_app = typer.Typer(help="Run upstream parity harness and reports.")
+parity_campaign_app = typer.Typer(help="Run reproducible parity campaigns.")
 app.add_typer(parity_app, name="parity")
+parity_app.add_typer(parity_campaign_app, name="campaign")
 console = Console()
 ATARI_OPTIONAL_DEPENDENCIES: tuple[tuple[str, str], ...] = (
     ("gymnasium", "gymnasium"),
@@ -733,3 +745,198 @@ def parity_report(
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(markdown, encoding="utf-8")
     console.print(f"[green]Wrote parity report:[/green] {output.resolve()}")
+
+
+def _resolve_campaign_seeds(
+    spec_default: tuple[int, ...], seeds_option: str | None
+) -> tuple[int, ...]:
+    parsed = parse_seed_csv(seeds_option)
+    if parsed:
+        return parsed
+    if spec_default:
+        return spec_default
+    raise ParityError("No seeds provided. Pass --seeds or define campaign.default_seeds.")
+
+
+@parity_campaign_app.command("run")
+def parity_campaign_run(
+    campaign: Path = typer.Argument(..., help="Path to campaign specification file."),
+    mode: str = typer.Option(
+        "worldflux",
+        "--mode",
+        help="Execution mode: worldflux | oracle | both.",
+    ),
+    seeds: str | None = typer.Option(
+        None,
+        "--seeds",
+        help="Comma-separated seeds (e.g. 0,1,2). Uses campaign.default_seeds when omitted.",
+    ),
+    device: str = typer.Option(
+        "cpu",
+        "--device",
+        help="Device string propagated to command template placeholders.",
+    ),
+    output: Path | None = typer.Option(
+        None,
+        "--output",
+        help="Override worldflux output path.",
+    ),
+    oracle_output: Path | None = typer.Option(
+        None,
+        "--oracle-output",
+        help="Override oracle output path.",
+    ),
+    workdir: Path = typer.Option(
+        Path.cwd(),
+        "--workdir",
+        help="Working directory for command template execution.",
+    ),
+    pair_output_root: Path | None = typer.Option(
+        None,
+        "--pair-output-root",
+        help="Directory for per-task/seed temporary command outputs.",
+    ),
+    resume: bool = typer.Option(
+        True,
+        "--resume/--no-resume",
+        help="Reuse existing canonical outputs and skip already available task/seed pairs.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run/--no-dry-run",
+        help="Print command templates without executing them.",
+    ),
+) -> None:
+    """Run parity campaign and emit canonical artifacts."""
+    try:
+        spec = load_campaign_spec(campaign)
+        run_options = CampaignRunOptions(
+            mode=mode,
+            seeds=_resolve_campaign_seeds(spec.default_seeds, seeds),
+            device=device,
+            output=output.resolve() if output is not None else None,
+            oracle_output=oracle_output.resolve() if oracle_output is not None else None,
+            resume=resume,
+            dry_run=dry_run,
+            workdir=workdir.resolve(),
+            pair_output_root=pair_output_root.resolve() if pair_output_root is not None else None,
+        )
+        summary = run_campaign(spec, run_options)
+    except (ParityError, ValueError, OSError, subprocess.CalledProcessError) as exc:
+        console.print(f"[bold red]Parity campaign failed:[/bold red] {exc}")
+        raise typer.Exit(code=1) from None
+
+    console.print(
+        Panel.fit(
+            render_campaign_summary(summary),
+            title="Parity Campaign",
+            border_style="cyan",
+        )
+    )
+
+
+@parity_campaign_app.command("resume")
+def parity_campaign_resume(
+    campaign: Path = typer.Argument(..., help="Path to campaign specification file."),
+    mode: str = typer.Option(
+        "worldflux",
+        "--mode",
+        help="Execution mode: worldflux | oracle | both.",
+    ),
+    seeds: str | None = typer.Option(
+        None,
+        "--seeds",
+        help="Comma-separated seeds (e.g. 0,1,2). Uses campaign.default_seeds when omitted.",
+    ),
+    device: str = typer.Option(
+        "cpu",
+        "--device",
+        help="Device string propagated to command template placeholders.",
+    ),
+    output: Path | None = typer.Option(
+        None,
+        "--output",
+        help="Override worldflux output path.",
+    ),
+    oracle_output: Path | None = typer.Option(
+        None,
+        "--oracle-output",
+        help="Override oracle output path.",
+    ),
+    workdir: Path = typer.Option(
+        Path.cwd(),
+        "--workdir",
+        help="Working directory for command template execution.",
+    ),
+    pair_output_root: Path | None = typer.Option(
+        None,
+        "--pair-output-root",
+        help="Directory for per-task/seed temporary command outputs.",
+    ),
+) -> None:
+    """Resume parity campaign generation from existing outputs."""
+    parity_campaign_run(
+        campaign=campaign,
+        mode=mode,
+        seeds=seeds,
+        device=device,
+        output=output,
+        oracle_output=oracle_output,
+        workdir=workdir,
+        pair_output_root=pair_output_root,
+        resume=True,
+        dry_run=False,
+    )
+
+
+@parity_campaign_app.command("export")
+def parity_campaign_export(
+    campaign: Path = typer.Argument(..., help="Path to campaign specification file."),
+    source: str = typer.Option(
+        "worldflux",
+        "--source",
+        help="Source to export: worldflux | oracle.",
+    ),
+    seeds: str | None = typer.Option(
+        None,
+        "--seeds",
+        help="Comma-separated seeds (e.g. 0,1,2). Uses campaign.default_seeds when omitted.",
+    ),
+    output: Path | None = typer.Option(
+        None,
+        "--output",
+        help="Override output path for exported canonical artifact.",
+    ),
+    resume: bool = typer.Option(
+        True,
+        "--resume/--no-resume",
+        help="Reuse existing canonical output rows when output already exists.",
+    ),
+) -> None:
+    """Export canonical artifact from campaign input source without command execution."""
+    source_normalized = source.strip().lower()
+    if source_normalized not in {"worldflux", "oracle"}:
+        console.print("[bold red]--source must be one of: worldflux, oracle[/bold red]")
+        raise typer.Exit(code=1)
+
+    try:
+        spec = load_campaign_spec(campaign)
+        resolved_seeds = _resolve_campaign_seeds(spec.default_seeds, seeds)
+        summary = export_campaign_source(
+            spec,
+            source_name=source_normalized,
+            seeds=resolved_seeds,
+            output_path=output.resolve() if output is not None else None,
+            resume=resume,
+        )
+    except (ParityError, ValueError, OSError) as exc:
+        console.print(f"[bold red]Parity campaign export failed:[/bold red] {exc}")
+        raise typer.Exit(code=1) from None
+
+    console.print(
+        Panel.fit(
+            render_campaign_summary(summary),
+            title="Parity Campaign Export",
+            border_style="blue",
+        )
+    )
