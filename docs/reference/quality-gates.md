@@ -28,6 +28,8 @@ All PRs must pass:
   - `uv run python benchmarks/benchmark_tdmpc2_mujoco.py --quick --seed 42`
   - `uv run python benchmarks/benchmark_diffusion_imagination.py --quick --seed 42`
 - **Docs build**: `uv run mkdocs build --strict`
+- **Docs domain TLS gate**:
+  - `uv run python scripts/check_docs_domain_tls.py --host worldflux.ai --url https://worldflux.ai/ --expected-san worldflux.ai`
 - **Critical coverage threshold**: `uv run python scripts/check_critical_coverage.py --report coverage.xml`
 - **Planner boundary tests**: verify planner/dynamics decoupling invariants
 - **Parity harness smoke**: `uv run pytest -q tests/test_parity/`
@@ -65,6 +67,7 @@ uv run pytest tests/
 uv run pytest -q tests/test_public_contract_freeze.py
 uv run pytest -q tests/test_parity/
 uv run python scripts/update_public_contract_snapshot.py --snapshot tests/fixtures/public_contract_snapshot.json
+uv run python scripts/check_docs_domain_tls.py --host worldflux.ai --url https://worldflux.ai/ --expected-san worldflux.ai
 uv run python scripts/check_critical_coverage.py --report coverage.xml
 uv run mkdocs build --strict
 ```

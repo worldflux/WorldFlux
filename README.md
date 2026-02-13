@@ -280,6 +280,9 @@ uv run python examples/train_dreamer.py --data trajectories.npz --steps 100000
 
 Join our [Discord](https://discord.gg/ZUBn9UEp2z) to discuss world models, get help, and connect with other researchers and developers.
 
+- Support channels and response paths: [SUPPORT.md](SUPPORT.md)
+- Community expectations and reporting: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+
 ## Security
 
 See [SECURITY.md](SECURITY.md) for security considerations, especially regarding loading model checkpoints from untrusted sources.
