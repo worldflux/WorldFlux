@@ -11,6 +11,7 @@ against pinned upstream oracle artifacts.
 Pinned upstream references are recorded in:
 
 - `reports/parity/upstream_lock.json`
+- `reports/parity/suite_policy.json`
 
 ## Statistical Rule
 
@@ -41,6 +42,37 @@ Render markdown report:
 worldflux parity report --aggregate reports/parity/aggregate.json --output reports/parity/report.md
 ```
 
+Run reproducible campaign export (source artifact -> canonical output):
+
+```bash
+worldflux parity campaign export benchmarks/parity/campaign/dreamer_atari100k.yaml \
+  --source worldflux \
+  --seeds 0,1,2,3,4 \
+  --output reports/parity/worldflux/dreamer_atari100k.json
+```
+
+Run campaign with command-template execution and resume support:
+
+```bash
+worldflux parity campaign run benchmarks/parity/campaign/tdmpc2_dmcontrol39.yaml \
+  --mode worldflux \
+  --device cuda \
+  --seeds 1,2,3 \
+  --resume
+```
+
+`campaign run` executes per task/seed commands only when `sources.<name>.command_template`
+is defined in the campaign spec. Otherwise it exports from existing `input_path` artifacts.
+
+Resume from partially completed outputs:
+
+```bash
+worldflux parity campaign resume benchmarks/parity/campaign/tdmpc2_dmcontrol39.yaml \
+  --mode both \
+  --device cuda \
+  --seeds 1,2,3
+```
+
 ## Input Formats
 
 Supported source formats:
@@ -51,6 +83,18 @@ Supported source formats:
 - `tdmpc2_results_csv_dir`
 
 Use suite files to pin expected upstream format/path and optionally override via CLI.
+
+Campaign specs are defined at:
+
+- `benchmarks/parity/campaign/dreamer_atari100k.yaml`
+- `benchmarks/parity/campaign/tdmpc2_dmcontrol39.yaml`
+
+These specs include:
+
+- canonical task set
+- default seed set
+- source artifact definitions (`oracle`, `worldflux`)
+- optional command templates for task/seed execution
 
 ## Artifact Fields (Backward Compatible Additions)
 
@@ -81,3 +125,25 @@ uv run python scripts/validate_parity_artifacts.py \
 ```
 
 If either suite fails non-inferiority, release is blocked.
+
+Release also validates suite governance policy:
+
+```bash
+uv run python scripts/check_parity_suite_coverage.py \
+  --policy reports/parity/suite_policy.json \
+  --lock reports/parity/upstream_lock.json \
+  --aggregate reports/parity/aggregate.json \
+  --enforce-pass
+```
+
+## Oracle Fetch (Pinned Commits)
+
+Use the helper to fetch upstream oracle artifacts at locked commits:
+
+```bash
+uv run bash scripts/parity/fetch_oracles.sh \
+  --oracle-root /root/oracles \
+  --dreamer-commit b65cf81a6fb13625af8722127459283f899a35d9 \
+  --tdmpc2-commit 8bbc14ebabdb32ea7ada5c801dc525d0dc73bafe \
+  --copy-to artifacts/upstream
+```

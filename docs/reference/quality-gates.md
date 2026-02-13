@@ -33,11 +33,15 @@ All PRs must pass:
 - **Critical coverage threshold**: `uv run python scripts/check_critical_coverage.py --report coverage.xml`
 - **Planner boundary tests**: verify planner/dynamics decoupling invariants
 - **Parity harness smoke**: `uv run pytest -q tests/test_parity/`
+- **Parity suite governance**:
+  - `uv run python scripts/check_parity_suite_coverage.py --policy reports/parity/suite_policy.json --lock reports/parity/upstream_lock.json`
 
 ## Release-only Parity Gate (Required on Release)
 
 - Fixed parity artifacts must validate before publish:
   - `uv run python scripts/validate_parity_artifacts.py --run reports/parity/runs/dreamer_atari100k.json --run reports/parity/runs/tdmpc2_dmcontrol39.json --aggregate reports/parity/aggregate.json --lock reports/parity/upstream_lock.json --required-suite dreamer_atari100k --required-suite tdmpc2_dmcontrol39 --max-missing-pairs 0`
+- Required-family suite policy must validate:
+  - `uv run python scripts/check_parity_suite_coverage.py --policy reports/parity/suite_policy.json --lock reports/parity/upstream_lock.json --aggregate reports/parity/aggregate.json --enforce-pass`
 - Release stops when either DreamerV3 or TD-MPC2 fails non-inferiority.
 
 ## Operational Reliability Checks
@@ -66,6 +70,7 @@ uv run mypy src/worldflux/
 uv run pytest tests/
 uv run pytest -q tests/test_public_contract_freeze.py
 uv run pytest -q tests/test_parity/
+uv run python scripts/check_parity_suite_coverage.py --policy reports/parity/suite_policy.json --lock reports/parity/upstream_lock.json
 uv run python scripts/update_public_contract_snapshot.py --snapshot tests/fixtures/public_contract_snapshot.json
 uv run python scripts/check_docs_domain_tls.py --host worldflux.ai --url https://worldflux.ai/ --expected-san worldflux.ai
 uv run python scripts/check_critical_coverage.py --report coverage.xml
