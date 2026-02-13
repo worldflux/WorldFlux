@@ -150,6 +150,9 @@ jobs:
       - name: Benchmark quick smoke (Diffusion)
         run: uv run python benchmarks/benchmark_diffusion_imagination.py --quick --seed 42
 
+      - name: Parity smoke (official vs worldflux adapters)
+        run: uv run pytest -q tests/test_scripts/test_end_to_end_parity_smoke.py
+
   security:
     runs-on: ubuntu-latest
     steps:
