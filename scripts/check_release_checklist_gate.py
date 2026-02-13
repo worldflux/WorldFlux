@@ -31,14 +31,17 @@ REQUIRED_CHECKLIST_SNIPPETS: tuple[str, ...] = (
     "release-ready notes for the tag",
     "Build succeeds",
     "scripts/validate_parity_artifacts.py",
+    "scripts/check_docs_domain_tls.py",
     "additive-only",
 )
 
 REQUIRED_RELEASE_SNIPPETS: tuple[str, ...] = (
     "scripts/validate_parity_artifacts.py",
+    "scripts/check_docs_domain_tls.py",
     "reports/parity/runs/dreamer_atari100k.json",
     "reports/parity/runs/tdmpc2_dmcontrol39.json",
     "reports/parity/aggregate.json",
+    "--check docs_domain_tls=pass",
     "--check parity_release_gate=pass",
 )
 

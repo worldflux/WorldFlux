@@ -30,6 +30,8 @@ Minimum criteria before tagging a public release.
 - [ ] Fixed parity artifacts pass release gate:
   - `uv run python scripts/validate_parity_artifacts.py --run reports/parity/runs/dreamer_atari100k.json --run reports/parity/runs/tdmpc2_dmcontrol39.json --aggregate reports/parity/aggregate.json --lock reports/parity/upstream_lock.json --required-suite dreamer_atari100k --required-suite tdmpc2_dmcontrol39 --max-missing-pairs 0`
 - [ ] Docs build passes in strict mode: `uv run mkdocs build --strict`
+- [ ] Docs domain TLS gate passes:
+  - `uv run python scripts/check_docs_domain_tls.py --host worldflux.ai --url https://worldflux.ai/ --expected-san worldflux.ai`
 - [ ] Security checks pass:
   - `uv run --with bandit bandit -r src/worldflux/ -ll`
   - `uv run --with pip-audit pip-audit`
