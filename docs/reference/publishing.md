@@ -7,6 +7,7 @@ WorldFlux uses PyPI Trusted Publishing (OIDC) from GitHub Actions.
 - Build artifacts in a dedicated build job.
 - Validate release metadata (`tag/version/changelog`) before build.
 - Validate fixed parity artifacts (`DreamerV3` + `TD-MPC2`) before build/publish.
+- Validate parity suite policy (`reports/parity/suite_policy.json`) against lock + aggregate before build/publish.
 - Generate verification report artifacts (`verification-report.json` / `.md`) and attach to release workflow artifacts.
 - Publish in separate jobs with `id-token: write`.
 - No PyPI API token/password is required in GitHub secrets.
@@ -33,13 +34,18 @@ For TestPyPI, repeat the same setup on TestPyPI and map the `testpypi` environme
 3. Validate release metadata locally:
    - `uv run python scripts/check_release_metadata.py --tag vX.Y.Z`
 4. (Optional) Run parity pipeline report generation:
+   - `uv run bash scripts/parity/fetch_oracles.sh --oracle-root /root/oracles --dreamer-commit <sha> --tdmpc2-commit <sha> --copy-to artifacts/upstream`
+   - `worldflux parity campaign run benchmarks/parity/campaign/dreamer_atari100k.yaml --mode worldflux --device cuda --seeds 0,1,2,3,4 --resume`
+   - `worldflux parity campaign run benchmarks/parity/campaign/tdmpc2_dmcontrol39.yaml --mode worldflux --device cuda --seeds 1,2,3 --resume`
    - `worldflux parity run ...`
    - `worldflux parity aggregate ...`
    - `worldflux parity report ...`
 5. Validate release parity gate against fixed artifacts:
    - `uv run python scripts/validate_parity_artifacts.py --run reports/parity/runs/dreamer_atari100k.json --run reports/parity/runs/tdmpc2_dmcontrol39.json --aggregate reports/parity/aggregate.json --lock reports/parity/upstream_lock.json --required-suite dreamer_atari100k --required-suite tdmpc2_dmcontrol39 --max-missing-pairs 0`
-6. Create a GitHub release tag.
-7. Publish workflow runs automatically on release publication.
+6. Validate suite policy gate:
+   - `uv run python scripts/check_parity_suite_coverage.py --policy reports/parity/suite_policy.json --lock reports/parity/upstream_lock.json --aggregate reports/parity/aggregate.json --enforce-pass`
+7. Create a GitHub release tag.
+8. Publish workflow runs automatically on release publication.
 
 ## Troubleshooting
 
@@ -49,3 +55,4 @@ For TestPyPI, repeat the same setup on TestPyPI and map the `testpypi` environme
 - Parity gate fail:
   - Check `reports/parity/aggregate.json` for `ci_upper_ratio > margin_ratio` or missing pairs.
   - Check `reports/parity/upstream_lock.json` commit pins match run artifacts.
+  - Check `reports/parity/suite_policy.json` required suites align with lock and aggregate.
