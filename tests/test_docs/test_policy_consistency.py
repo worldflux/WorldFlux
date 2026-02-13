@@ -19,11 +19,16 @@ def _read(path: str) -> str:
 def test_public_docs_include_cpu_success_and_benchmark_paths():
     readme = _read("README.md")
     index = _read("docs/index.md")
+    parity = _read("docs/reference/parity.md")
+    tutorial_policy = _read("docs/reference/tutorial-policy.md")
 
     assert "CPU-First Success Path" in readme
     assert "quickstart_cpu_success.py" in readme
     assert "(getting-started/cpu-success.md)" in index
     assert "(reference/benchmarks.md)" in index
+    assert "(reference/parity.md)" in index
+    assert "worldflux parity run" in parity
+    assert "Placeholder tutorial pages remain published" in tutorial_policy
 
 
 def test_quality_docs_reference_current_gate_commands():
