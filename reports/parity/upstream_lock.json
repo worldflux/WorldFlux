@@ -1,0 +1,18 @@
+{
+  "schema_version": "worldflux.parity.lock.v1",
+  "generated_at_utc": "2026-02-12T00:00:00Z",
+  "suites": {
+    "dreamer_atari100k": {
+      "repo": "https://github.com/danijar/dreamerv3",
+      "commit": "b65cf81a6fb13625af8722127459283f899a35d9",
+      "oracle_format": "dreamerv3_scores_json_gz",
+      "oracle_path": "artifacts/upstream/dreamerv3/scores/atari100k-dreamerv3.json.gz"
+    },
+    "tdmpc2_dmcontrol39": {
+      "repo": "https://github.com/nicklashansen/tdmpc2",
+      "commit": "8bbc14ebabdb32ea7ada5c801dc525d0dc73bafe",
+      "oracle_format": "tdmpc2_results_csv_dir",
+      "oracle_path": "artifacts/upstream/tdmpc2/results/tdmpc"
+    }
+  }
+}

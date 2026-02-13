@@ -10,6 +10,10 @@ All PRs must pass:
 - **Format**: `uvx ruff format --check src/ tests/ examples/ benchmarks/ scripts/`
 - **Typecheck**: `uv run mypy src/worldflux/`
 - **Unit tests**: `uv run pytest tests/`
+- **Public contract freeze**: `uv run pytest -q tests/test_public_contract_freeze.py`
+- **Public contract snapshot update (additive-only)**:
+  - `uv run python scripts/update_public_contract_snapshot.py --snapshot tests/fixtures/public_contract_snapshot.json`
+  - `breaking` classification blocks PR; only additive changes are auto-updated.
 - **Example smoke tests**:
   - `uv run python examples/quickstart_cpu_success.py --quick`
   - `uv run python examples/compare_unified_training.py --quick`
@@ -24,7 +28,15 @@ All PRs must pass:
   - `uv run python benchmarks/benchmark_tdmpc2_mujoco.py --quick --seed 42`
   - `uv run python benchmarks/benchmark_diffusion_imagination.py --quick --seed 42`
 - **Docs build**: `uv run mkdocs build --strict`
+- **Critical coverage threshold**: `uv run python scripts/check_critical_coverage.py --report coverage.xml`
 - **Planner boundary tests**: verify planner/dynamics decoupling invariants
+- **Parity harness smoke**: `uv run pytest -q tests/test_parity/`
+
+## Release-only Parity Gate (Required on Release)
+
+- Fixed parity artifacts must validate before publish:
+  - `uv run python scripts/validate_parity_artifacts.py --run reports/parity/runs/dreamer_atari100k.json --run reports/parity/runs/tdmpc2_dmcontrol39.json --aggregate reports/parity/aggregate.json --lock reports/parity/upstream_lock.json --required-suite dreamer_atari100k --required-suite tdmpc2_dmcontrol39 --max-missing-pairs 0`
+- Release stops when either DreamerV3 or TD-MPC2 fails non-inferiority.
 
 ## Operational Reliability Checks
 
@@ -50,5 +62,9 @@ uvx ruff check src/ tests/ examples/ benchmarks/ scripts/
 uvx ruff format --check src/ tests/ examples/ benchmarks/ scripts/
 uv run mypy src/worldflux/
 uv run pytest tests/
+uv run pytest -q tests/test_public_contract_freeze.py
+uv run pytest -q tests/test_parity/
+uv run python scripts/update_public_contract_snapshot.py --snapshot tests/fixtures/public_contract_snapshot.json
+uv run python scripts/check_critical_coverage.py --report coverage.xml
 uv run mkdocs build --strict
 ```

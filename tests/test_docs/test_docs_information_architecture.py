@@ -17,9 +17,14 @@ def test_mkdocs_nav_exposes_cpu_success_and_reference_guides():
     assert "    - Installation: getting-started/installation.md" in mkdocs
     assert "    - Quick Start: getting-started/quickstart.md" in mkdocs
     assert "    - CPU Success Path: getting-started/cpu-success.md" in mkdocs
+    assert "    - Core Concepts (Legacy): getting-started/concepts.md" in mkdocs
+    assert "- Tutorials:" in mkdocs
+    assert "    - Train First Model (Placeholder): tutorials/train-first-model.md" in mkdocs
 
     assert "- Reference:" in mkdocs
     assert "    - Benchmarks: reference/benchmarks.md" in mkdocs
+    assert "    - Parity Harness: reference/parity.md" in mkdocs
+    assert "    - Tutorial Placeholder Policy: reference/tutorial-policy.md" in mkdocs
     assert "    - Unified Comparison: reference/unified-comparison.md" in mkdocs
     assert "    - Publishing: reference/publishing.md" in mkdocs
     assert "    - WASR Metrics: reference/wasr.md" in mkdocs
@@ -33,6 +38,7 @@ def test_docs_index_exposes_primary_paths_for_cpu_success_and_reference():
     assert "(api/factory.md)" in index
     assert "(reference/benchmarks.md)" in index
     assert "(reference/unified-comparison.md)" in index
+    assert "(reference/parity.md)" in index
 
 
 def test_quickstart_points_to_cpu_path_and_api_guides():
