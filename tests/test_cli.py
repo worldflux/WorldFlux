@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import builtins
 import importlib.util
+import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -481,6 +482,270 @@ def test_print_logo_writes_banner_and_header(monkeypatch: pytest.MonkeyPatch) ->
     assert len(printed) == 4
     assert "WorldFlux CLI" in printed[1]
     assert "Panel" in printed[2]
+
+
+def test_parity_run_enforce_exits_non_zero_on_failed_verdict(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        cli,
+        "run_suite",
+        lambda *_args, **_kwargs: {
+            "suite": {"suite_id": "suite_a", "family": "dreamerv3"},
+            "stats": {
+                "pass_non_inferiority": False,
+                "sample_size": 20,
+                "mean_drop_ratio": 0.06,
+                "ci_upper_ratio": 0.07,
+                "margin_ratio": 0.05,
+            },
+        },
+    )
+
+    result = runner.invoke(cli.app, ["parity", "run", "suite.yaml", "--enforce"])
+    assert result.exit_code == 1
+    assert "Parity Run" in result.stdout
+
+
+def test_parity_run_reports_failure_message(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _raise(*_args, **_kwargs):
+        raise cli.ParityError("boom")
+
+    monkeypatch.setattr(cli, "run_suite", _raise)
+    result = runner.invoke(cli.app, ["parity", "run", "suite.yaml"])
+    assert result.exit_code == 1
+    assert "Parity run failed" in result.stdout
+
+
+def test_parity_aggregate_fails_when_no_artifacts_found() -> None:
+    with runner.isolated_filesystem():
+        result = runner.invoke(cli.app, ["parity", "aggregate", "--runs-glob", "missing/*.json"])
+    assert result.exit_code == 1
+    assert "No run artifacts found to aggregate" in result.stdout
+
+
+def test_parity_aggregate_enforce_exits_on_failed_aggregate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        cli,
+        "aggregate_runs",
+        lambda *_args, **_kwargs: {
+            "all_suites_pass": False,
+            "run_count": 2,
+            "suite_pass_count": 1,
+            "suite_fail_count": 1,
+        },
+    )
+
+    result = runner.invoke(
+        cli.app,
+        ["parity", "aggregate", "--run", "run_a.json", "--run", "run_b.json", "--enforce"],
+    )
+    assert result.exit_code == 1
+    assert "Parity Aggregate" in result.stdout
+
+
+def test_parity_report_writes_output_markdown(monkeypatch: pytest.MonkeyPatch) -> None:
+    with runner.isolated_filesystem():
+        aggregate = Path("aggregate.json")
+        output = Path("report.md")
+        aggregate.write_text("{}", encoding="utf-8")
+        monkeypatch.setattr(cli, "render_markdown_report", lambda _payload: "# Report\n")
+
+        result = runner.invoke(
+            cli.app,
+            ["parity", "report", "--aggregate", str(aggregate), "--output", str(output)],
+        )
+
+        assert result.exit_code == 0
+        assert output.exists()
+        assert output.read_text(encoding="utf-8") == "# Report\n"
+
+
+def test_parity_report_rejects_non_object_payload() -> None:
+    with runner.isolated_filesystem():
+        aggregate = Path("aggregate.json")
+        aggregate.write_text("[]", encoding="utf-8")
+        result = runner.invoke(cli.app, ["parity", "report", "--aggregate", str(aggregate)])
+    assert result.exit_code == 1
+    assert "Parity report failed" in result.stdout
+
+
+def test_resolve_campaign_seeds_prefers_cli_values() -> None:
+    assert cli._resolve_campaign_seeds((5, 6), "2,1,2") == (1, 2)
+
+
+def test_resolve_campaign_seeds_falls_back_to_spec_default() -> None:
+    assert cli._resolve_campaign_seeds((4, 9), None) == (4, 9)
+
+
+def test_resolve_campaign_seeds_raises_without_any_values() -> None:
+    with pytest.raises(cli.ParityError, match="No seeds provided"):
+        cli._resolve_campaign_seeds((), None)
+
+
+def test_parity_campaign_run_builds_run_options(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    captured: dict[str, object] = {}
+    spec = SimpleNamespace(default_seeds=(7, 8))
+
+    def _run_campaign(run_spec, run_options):
+        captured["spec"] = run_spec
+        captured["options"] = run_options
+        return {"suite_id": "campaign_suite"}
+
+    monkeypatch.setattr(cli, "load_campaign_spec", lambda _campaign: spec)
+    monkeypatch.setattr(cli, "run_campaign", _run_campaign)
+    monkeypatch.setattr(cli, "render_campaign_summary", lambda _summary: "campaign summary")
+
+    output = tmp_path / "worldflux.json"
+    oracle_output = tmp_path / "oracle.json"
+    workdir = tmp_path / "workdir"
+    pair_root = tmp_path / "pairs"
+
+    result = runner.invoke(
+        cli.app,
+        [
+            "parity",
+            "campaign",
+            "run",
+            str(tmp_path / "campaign.yaml"),
+            "--mode",
+            "both",
+            "--seeds",
+            "3,1,3",
+            "--device",
+            "cuda",
+            "--output",
+            str(output),
+            "--oracle-output",
+            str(oracle_output),
+            "--workdir",
+            str(workdir),
+            "--pair-output-root",
+            str(pair_root),
+            "--no-resume",
+            "--dry-run",
+        ],
+    )
+
+    assert result.exit_code == 0
+    options = captured["options"]
+    assert isinstance(options, cli.CampaignRunOptions)
+    assert options.mode == "both"
+    assert options.seeds == (1, 3)
+    assert options.device == "cuda"
+    assert options.output == output.resolve()
+    assert options.oracle_output == oracle_output.resolve()
+    assert options.resume is False
+    assert options.dry_run is True
+    assert options.workdir == workdir.resolve()
+    assert options.pair_output_root == pair_root.resolve()
+
+
+def test_parity_campaign_run_handles_subprocess_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        cli, "load_campaign_spec", lambda _campaign: SimpleNamespace(default_seeds=(1,))
+    )
+
+    def _raise(*_args, **_kwargs):
+        raise subprocess.CalledProcessError(1, ["failing-command"])
+
+    monkeypatch.setattr(cli, "run_campaign", _raise)
+    result = runner.invoke(cli.app, ["parity", "campaign", "run", str(tmp_path / "campaign.yaml")])
+    assert result.exit_code == 1
+    assert "Parity campaign failed" in result.stdout
+
+
+def test_parity_campaign_resume_delegates_to_run(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    captured: dict[str, object] = {}
+
+    def _run(**kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(cli, "parity_campaign_run", _run)
+    result = runner.invoke(
+        cli.app,
+        [
+            "parity",
+            "campaign",
+            "resume",
+            str(tmp_path / "campaign.yaml"),
+            "--mode",
+            "oracle",
+            "--seeds",
+            "4,2",
+            "--device",
+            "cuda",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["mode"] == "oracle"
+    assert captured["seeds"] == "4,2"
+    assert captured["device"] == "cuda"
+    assert captured["resume"] is True
+    assert captured["dry_run"] is False
+
+
+def test_parity_campaign_export_rejects_invalid_source(tmp_path: Path) -> None:
+    result = runner.invoke(
+        cli.app,
+        ["parity", "campaign", "export", str(tmp_path / "campaign.yaml"), "--source", "invalid"],
+    )
+    assert result.exit_code == 1
+    assert "--source must be one of" in result.stdout
+
+
+def test_parity_campaign_export_invokes_exporter(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    captured: dict[str, object] = {}
+    spec = SimpleNamespace(default_seeds=(9, 10))
+
+    def _export(run_spec, *, source_name: str, seeds, output_path, resume: bool):
+        captured["spec"] = run_spec
+        captured["source_name"] = source_name
+        captured["seeds"] = seeds
+        captured["output_path"] = output_path
+        captured["resume"] = resume
+        return {"suite_id": "campaign_suite"}
+
+    monkeypatch.setattr(cli, "load_campaign_spec", lambda _campaign: spec)
+    monkeypatch.setattr(cli, "export_campaign_source", _export)
+    monkeypatch.setattr(cli, "render_campaign_summary", lambda _summary: "campaign summary")
+
+    output_path = tmp_path / "export.json"
+    result = runner.invoke(
+        cli.app,
+        [
+            "parity",
+            "campaign",
+            "export",
+            str(tmp_path / "campaign.yaml"),
+            "--source",
+            "oracle",
+            "--seeds",
+            "2,2,1",
+            "--output",
+            str(output_path),
+            "--no-resume",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["source_name"] == "oracle"
+    assert captured["seeds"] == (1, 2)
+    assert captured["output_path"] == output_path.resolve()
+    assert captured["resume"] is False
 
 
 def test_cli_module_does_not_require_optional_cli_extra_hint() -> None:
