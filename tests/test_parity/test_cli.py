@@ -96,3 +96,53 @@ def test_parity_cli_run_aggregate_report(tmp_path: Path) -> None:
     assert report_result.exit_code == 0
     assert report_output.exists()
     assert "WorldFlux Parity Report" in report_output.read_text(encoding="utf-8")
+
+
+def test_parity_campaign_export_cli(tmp_path: Path) -> None:
+    source = tmp_path / "source.json"
+    campaign = tmp_path / "campaign.yaml"
+    output = tmp_path / "export.json"
+
+    _write_json(
+        source,
+        {
+            "scores": [
+                {"task": "task_a", "seed": 1, "step": 10, "score": 3.2},
+            ]
+        },
+    )
+    _write_json(
+        campaign,
+        {
+            "schema_version": "worldflux.parity.campaign.v1",
+            "suite_id": "cli_campaign",
+            "family": "tdmpc2",
+            "default_seeds": [1],
+            "tasks": ["task_a"],
+            "sources": {
+                "worldflux": {
+                    "input_path": str(source),
+                    "input_format": "canonical_json",
+                    "output_path": str(output),
+                }
+            },
+        },
+    )
+
+    result = runner.invoke(
+        cli.app,
+        [
+            "parity",
+            "campaign",
+            "export",
+            str(campaign),
+            "--source",
+            "worldflux",
+            "--output",
+            str(output),
+            "--seeds",
+            "1",
+        ],
+    )
+    assert result.exit_code == 0
+    assert output.exists()

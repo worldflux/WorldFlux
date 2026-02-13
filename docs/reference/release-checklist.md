@@ -29,6 +29,8 @@ Minimum criteria before tagging a public release.
   - `uv run pytest -q tests/test_parity/`
 - [ ] Fixed parity artifacts pass release gate:
   - `uv run python scripts/validate_parity_artifacts.py --run reports/parity/runs/dreamer_atari100k.json --run reports/parity/runs/tdmpc2_dmcontrol39.json --aggregate reports/parity/aggregate.json --lock reports/parity/upstream_lock.json --required-suite dreamer_atari100k --required-suite tdmpc2_dmcontrol39 --max-missing-pairs 0`
+- [ ] Parity suite policy coverage passes:
+  - `uv run python scripts/check_parity_suite_coverage.py --policy reports/parity/suite_policy.json --lock reports/parity/upstream_lock.json --aggregate reports/parity/aggregate.json --enforce-pass`
 - [ ] Docs build passes in strict mode: `uv run mkdocs build --strict`
 - [ ] Docs domain TLS gate passes:
   - `uv run python scripts/check_docs_domain_tls.py --host worldflux.ai --url https://worldflux.ai/ --expected-san worldflux.ai`
@@ -47,6 +49,8 @@ Minimum criteria before tagging a public release.
   - `uv run python scripts/check_release_metadata.py --tag vX.Y.Z`
 - [ ] Public contract snapshot policy is respected (additive-only auto update):
   - `uv run python scripts/update_public_contract_snapshot.py --snapshot tests/fixtures/public_contract_snapshot.json`
+- [ ] Parity suite policy is up to date for required families:
+  - `reports/parity/suite_policy.json` marks release-blocking families as `required`
 - [ ] Trusted Publishing setup is validated against [Publishing Guide](publishing.md)
 
 ## Recovery Runbook
@@ -63,3 +67,6 @@ Minimum criteria before tagging a public release.
   - Confirm suite upstream commit in `benchmarks/parity/*.yaml`.
   - Update `reports/parity/upstream_lock.json` intentionally in the same PR.
   - Re-run parity validation and ensure lock/runs match.
+- Suite policy mismatch:
+  - Confirm `reports/parity/suite_policy.json` required suites are present in lock and aggregate.
+  - Re-run `scripts/check_parity_suite_coverage.py` with `--enforce-pass`.

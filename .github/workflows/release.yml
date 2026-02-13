@@ -53,6 +53,14 @@ jobs:
             --required-suite tdmpc2_dmcontrol39 \
             --max-missing-pairs 0
 
+      - name: Validate parity suite policy coverage
+        run: |
+          uv run python scripts/check_parity_suite_coverage.py \
+            --policy reports/parity/suite_policy.json \
+            --lock reports/parity/upstream_lock.json \
+            --aggregate reports/parity/aggregate.json \
+            --enforce-pass
+
       - name: Build docs (strict)
         run: uv run mkdocs build --strict
 
@@ -70,6 +78,7 @@ jobs:
             --check public_contract_freeze=pass \
             --check parity_harness_tests=pass \
             --check parity_release_gate=pass \
+            --check parity_suite_policy=pass \
             --check docs_strict=pass \
             --check security_bandit=pass \
             --check security_pip_audit=pass \
