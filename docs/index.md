@@ -101,11 +101,15 @@ print(trajectory.rewards.shape)
 
     [:octicons-arrow-right-24: Unified Comparison](reference/unified-comparison.md)
 
+    [:octicons-arrow-right-24: Parity Harness](reference/parity.md)
+
     [:octicons-arrow-right-24: Documentation Stack](reference/docs-stack.md)
 
     [:octicons-arrow-right-24: Release Checklist](reference/release-checklist.md)
 
     [:octicons-arrow-right-24: Publishing](reference/publishing.md)
+
+    [:octicons-arrow-right-24: Tutorial Placeholder Policy](reference/tutorial-policy.md)
 
     [:octicons-arrow-right-24: Troubleshooting](reference/troubleshooting.md)
 
