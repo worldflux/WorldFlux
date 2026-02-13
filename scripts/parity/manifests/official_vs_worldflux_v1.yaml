@@ -1,0 +1,137 @@
+{
+  "schema_version": "parity.manifest.v1",
+  "defaults": {
+    "alpha": 0.05,
+    "equivalence_margin": 0.05,
+    "noninferiority_margin": 0.05,
+    "eps": 1e-8
+  },
+  "seed_policy": {
+    "mode": "auto_power",
+    "values": [],
+    "pilot_seeds": 10,
+    "min_seeds": 20,
+    "max_seeds": 50,
+    "power_target": 0.8
+  },
+  "tasks": [
+    {
+      "task_id": "atari100k_pong",
+      "family": "dreamerv3",
+      "required_metrics": [
+        "final_return_mean",
+        "auc_return"
+      ],
+      "official": {
+        "adapter": "official_dreamerv3",
+        "cwd": "../../..",
+        "timeout_sec": 86400,
+        "env": {},
+        "command": [
+          "python3",
+          "scripts/parity/wrappers/official_dreamerv3.py",
+          "--repo-root",
+          "../dreamerv3-official",
+          "--task-id",
+          "{task_id}",
+          "--seed",
+          "{seed}",
+          "--steps",
+          "110000",
+          "--device",
+          "{device}",
+          "--run-dir",
+          "{run_root}/executions/{task_id}/seed_{seed}/official",
+          "--metrics-out",
+          "{metrics_out}"
+        ]
+      },
+      "worldflux": {
+        "adapter": "worldflux_dreamerv3_native",
+        "cwd": "../../..",
+        "timeout_sec": 86400,
+        "env": {},
+        "command": [
+          "python3",
+          "scripts/parity/wrappers/worldflux_dreamerv3_native.py",
+          "--repo-root",
+          ".",
+          "--task-id",
+          "{task_id}",
+          "--seed",
+          "{seed}",
+          "--steps",
+          "110000",
+          "--device",
+          "{device}",
+          "--eval-interval",
+          "5000",
+          "--run-dir",
+          "{run_root}/executions/{task_id}/seed_{seed}/worldflux",
+          "--metrics-out",
+          "{metrics_out}"
+        ]
+      }
+    },
+    {
+      "task_id": "dog-run",
+      "family": "tdmpc2",
+      "required_metrics": [
+        "final_return_mean",
+        "auc_return"
+      ],
+      "official": {
+        "adapter": "official_tdmpc2",
+        "cwd": "../../..",
+        "timeout_sec": 172800,
+        "env": {},
+        "command": [
+          "python3",
+          "scripts/parity/wrappers/official_tdmpc2.py",
+          "--repo-root",
+          "../tdmpc2-official",
+          "--task-id",
+          "{task_id}",
+          "--seed",
+          "{seed}",
+          "--steps",
+          "7000000",
+          "--eval-freq",
+          "50000",
+          "--device",
+          "{device}",
+          "--run-dir",
+          "{run_root}/executions/{task_id}/seed_{seed}/official",
+          "--metrics-out",
+          "{metrics_out}"
+        ]
+      },
+      "worldflux": {
+        "adapter": "worldflux_tdmpc2_native",
+        "cwd": "../../..",
+        "timeout_sec": 172800,
+        "env": {},
+        "command": [
+          "python3",
+          "scripts/parity/wrappers/worldflux_tdmpc2_native.py",
+          "--repo-root",
+          ".",
+          "--task-id",
+          "{task_id}",
+          "--seed",
+          "{seed}",
+          "--steps",
+          "7000000",
+          "--device",
+          "{device}",
+          "--eval-interval",
+          "50000",
+          "--run-dir",
+          "{run_root}/executions/{task_id}/seed_{seed}/worldflux",
+          "--metrics-out",
+          "{metrics_out}"
+        ]
+      }
+    }
+  ]
+}
