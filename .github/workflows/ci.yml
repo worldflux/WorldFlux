@@ -345,9 +345,80 @@ jobs:
             tests/test_integration/test_legacy_bridge_v02.py::test_planner_sequence_field_errors_in_v3 \
             tests/test_factory.py::TestCreateWorldModel::test_create_with_hybrid_action_rejected_in_v3
 
+  public-contract:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Update public contract snapshot (additive-only policy)
+        id: contract_update
+        run: |
+          uv run python scripts/update_public_contract_snapshot.py \
+            --snapshot tests/fixtures/public_contract_snapshot.json \
+            --result-json reports/public-contract/update-result.json
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          result = json.loads(
+              Path("reports/public-contract/update-result.json").read_text(encoding="utf-8")
+          )
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as f:
+              f.write(f"classification={result['classification']}\n")
+              f.write(f"updated={str(bool(result['updated'])).lower()}\n")
+          PY
+
+      - name: Auto-commit additive snapshot update on PR
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false && steps.contract_update.outputs.classification == 'additive' && steps.contract_update.outputs.updated == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tests/fixtures/public_contract_snapshot.json
+          if git diff --cached --quiet; then
+            echo "No snapshot diff to commit."
+            exit 0
+          fi
+          git commit -m "ci: auto-update public contract snapshot (additive)"
+          git push
+
+      - name: Run public contract freeze + parity harness tests
+        run: uv run pytest -q tests/test_public_contract_freeze.py tests/test_parity/
+
+  release-checklist:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Validate release-checklist gates are wired in CI
+        run: python scripts/check_release_checklist_gate.py
+
   build:
     runs-on: ubuntu-latest
-    needs: [test, lint, typecheck, test-examples, security, api-v2, legacy-bridge, docs, critical-hardening, planner-boundary, v3-migration]
+    needs: [test, lint, typecheck, test-examples, security, api-v2, legacy-bridge, docs, critical-hardening, planner-boundary, v3-migration, public-contract, release-checklist]
     steps:
       - uses: actions/checkout@v4
 
