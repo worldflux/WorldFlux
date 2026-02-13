@@ -24,6 +24,7 @@ REQUIRED_CI_SNIPPETS: tuple[str, ...] = (
     "bandit -r src/worldflux/ -ll",
     "pip-audit",
     "scripts/check_critical_coverage.py --report coverage.xml",
+    "scripts/check_parity_suite_coverage.py",
 )
 
 REQUIRED_CHECKLIST_SNIPPETS: tuple[str, ...] = (
@@ -33,6 +34,7 @@ REQUIRED_CHECKLIST_SNIPPETS: tuple[str, ...] = (
     "scripts/validate_parity_artifacts.py",
     "scripts/check_docs_domain_tls.py",
     "additive-only",
+    "suite_policy.json",
 )
 
 REQUIRED_RELEASE_SNIPPETS: tuple[str, ...] = (
@@ -41,8 +43,11 @@ REQUIRED_RELEASE_SNIPPETS: tuple[str, ...] = (
     "reports/parity/runs/dreamer_atari100k.json",
     "reports/parity/runs/tdmpc2_dmcontrol39.json",
     "reports/parity/aggregate.json",
+    "scripts/check_parity_suite_coverage.py",
+    "reports/parity/suite_policy.json",
     "--check docs_domain_tls=pass",
     "--check parity_release_gate=pass",
+    "--check parity_suite_policy=pass",
 )
 
 
