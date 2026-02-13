@@ -73,6 +73,11 @@ nav:
     - Installation: getting-started/installation.md
     - Quick Start: getting-started/quickstart.md
     - CPU Success Path: getting-started/cpu-success.md
+    - Core Concepts (Legacy): getting-started/concepts.md
+  - Tutorials:
+    - Train First Model (Placeholder): tutorials/train-first-model.md
+    - Dreamer vs TD-MPC2 (Placeholder): tutorials/dreamer-vs-tdmpc2.md
+    - Reproduce Dreamer/TD-MPC2 (Placeholder): tutorials/reproduce-dreamer-tdmpc2.md
   - API Reference:
     - Factory (Guide): api/factory.md
     - WorldModel Protocol (Guide): api/protocol.md
@@ -89,7 +94,9 @@ nav:
     - Extensibility: EXTENSIBILITY.md
     - OSS Quality Gates: reference/quality-gates.md
     - OSS Release Checklist: reference/release-checklist.md
+    - Parity Harness: reference/parity.md
     - Publishing: reference/publishing.md
+    - Tutorial Placeholder Policy: reference/tutorial-policy.md
     - Troubleshooting: reference/troubleshooting.md
     - Unified Comparison: reference/unified-comparison.md
     - WASR Metrics: reference/wasr.md
