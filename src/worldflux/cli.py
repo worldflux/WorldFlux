@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import glob
 import importlib.util
+import json
 import shutil
 import subprocess
 import sys
@@ -22,9 +24,13 @@ except ModuleNotFoundError as exc:  # pragma: no cover - optional dependency gua
 
 import torch
 
+from worldflux.parity import aggregate_runs, render_markdown_report, run_suite
+from worldflux.parity.errors import ParityError
 from worldflux.scaffold import generate_project
 
 app = typer.Typer(help="WorldFlux command-line interface.")
+parity_app = typer.Typer(help="Run upstream parity harness and reports.")
+app.add_typer(parity_app, name="parity")
 console = Console()
 ATARI_OPTIONAL_DEPENDENCIES: tuple[tuple[str, str], ...] = (
     ("gymnasium", "gymnasium"),
@@ -563,3 +569,167 @@ def init(
             border_style="green",
         )
     )
+
+
+@parity_app.command("run")
+def parity_run(
+    suite: Path = typer.Argument(..., help="Path to parity suite specification file."),
+    output: Path | None = typer.Option(
+        None,
+        "--output",
+        help="Output path for normalized run artifact.",
+    ),
+    candidate: Path | None = typer.Option(
+        None,
+        "--candidate",
+        help="Override worldflux source path defined in suite file.",
+    ),
+    candidate_format: str | None = typer.Option(
+        None,
+        "--candidate-format",
+        help="Override worldflux source format defined in suite file.",
+    ),
+    oracle: Path | None = typer.Option(
+        None,
+        "--oracle",
+        help="Override upstream/oracle source path defined in suite file.",
+    ),
+    oracle_format: str | None = typer.Option(
+        None,
+        "--oracle-format",
+        help="Override upstream/oracle source format defined in suite file.",
+    ),
+    upstream_lock: Path | None = typer.Option(
+        None,
+        "--upstream-lock",
+        help="Override upstream lock path used for suite_lock_ref metadata.",
+    ),
+    enforce: bool = typer.Option(
+        False,
+        "--enforce/--no-enforce",
+        help="Exit non-zero when non-inferiority verdict fails.",
+    ),
+) -> None:
+    """Run one parity suite and emit comparison artifact."""
+    try:
+        payload = run_suite(
+            suite,
+            output_path=output,
+            upstream_path=oracle,
+            upstream_format=oracle_format,
+            worldflux_path=candidate,
+            worldflux_format=candidate_format,
+            upstream_lock_path=upstream_lock,
+        )
+    except (ParityError, ValueError, OSError, json.JSONDecodeError) as exc:
+        console.print(f"[bold red]Parity run failed:[/bold red] {exc}")
+        raise typer.Exit(code=1) from None
+
+    suite_meta = payload["suite"]
+    stats = payload["stats"]
+    passed = bool(stats["pass_non_inferiority"])
+    verdict = "[bold green]PASS[/bold green]" if passed else "[bold red]FAIL[/bold red]"
+    console.print(
+        Panel.fit(
+            "\n".join(
+                [
+                    f"Suite: {suite_meta['suite_id']} ({suite_meta['family']})",
+                    f"Samples: {stats['sample_size']}",
+                    f"Mean drop ratio: {stats['mean_drop_ratio']:.6f}",
+                    f"Upper CI (one-sided): {stats['ci_upper_ratio']:.6f}",
+                    f"Margin: {stats['margin_ratio']:.6f}",
+                    f"Verdict: {verdict}",
+                ]
+            ),
+            title="Parity Run",
+            border_style="cyan",
+        )
+    )
+    if enforce and not passed:
+        raise typer.Exit(code=1)
+
+
+@parity_app.command("aggregate")
+def parity_aggregate(
+    run_paths: list[Path] = typer.Option(
+        [],
+        "--run",
+        help="Run artifact path (repeat to pass multiple files).",
+    ),
+    runs_glob: str = typer.Option(
+        "reports/parity/runs/*.json",
+        "--runs-glob",
+        help="Glob used when --run is omitted.",
+    ),
+    output: Path = typer.Option(
+        Path("reports/parity/aggregate.json"),
+        "--output",
+        help="Output path for aggregate artifact.",
+    ),
+    enforce: bool = typer.Option(
+        False,
+        "--enforce/--no-enforce",
+        help="Exit non-zero when any suite fails aggregate verdict.",
+    ),
+) -> None:
+    """Aggregate one or more parity run artifacts."""
+    paths = list(run_paths)
+    if not paths:
+        paths = [Path(path) for path in sorted(glob.glob(runs_glob))]
+    if not paths:
+        console.print("[bold red]No run artifacts found to aggregate.[/bold red]")
+        raise typer.Exit(code=1)
+
+    try:
+        payload = aggregate_runs(paths, output_path=output)
+    except (ParityError, ValueError, OSError, json.JSONDecodeError) as exc:
+        console.print(f"[bold red]Parity aggregate failed:[/bold red] {exc}")
+        raise typer.Exit(code=1) from None
+
+    passed = bool(payload["all_suites_pass"])
+    verdict = "[bold green]PASS[/bold green]" if passed else "[bold red]FAIL[/bold red]"
+    console.print(
+        Panel.fit(
+            "\n".join(
+                [
+                    f"Runs: {payload['run_count']}",
+                    f"Suite pass: {payload['suite_pass_count']}",
+                    f"Suite fail: {payload['suite_fail_count']}",
+                    f"Verdict: {verdict}",
+                    f"Written: {output.resolve()}",
+                ]
+            ),
+            title="Parity Aggregate",
+            border_style="blue",
+        )
+    )
+    if enforce and not passed:
+        raise typer.Exit(code=1)
+
+
+@parity_app.command("report")
+def parity_report(
+    aggregate: Path = typer.Option(
+        Path("reports/parity/aggregate.json"),
+        "--aggregate",
+        help="Aggregate parity artifact path.",
+    ),
+    output: Path = typer.Option(
+        Path("reports/parity/report.md"),
+        "--output",
+        help="Markdown report output path.",
+    ),
+) -> None:
+    """Render markdown report from aggregate parity artifact."""
+    try:
+        payload = json.loads(aggregate.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            raise ParityError("aggregate payload must be a JSON object")
+        markdown = render_markdown_report(payload)
+    except (ParityError, ValueError, OSError, json.JSONDecodeError) as exc:
+        console.print(f"[bold red]Parity report failed:[/bold red] {exc}")
+        raise typer.Exit(code=1) from None
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(markdown, encoding="utf-8")
+    console.print(f"[green]Wrote parity report:[/green] {output.resolve()}")
