@@ -12,9 +12,13 @@ Please read the full text at the link above.
 
 ## Enforcement
 
-Instances of unacceptable behavior may be reported to the project maintainers.
+Instances of unacceptable behavior may be reported to `yhyoda@worldflux.ai`.
 
 All complaints will be reviewed and investigated promptly and fairly.
+Reports are handled confidentially and shared only with maintainers who need the
+details to investigate and resolve the issue. Retaliation against anyone who files
+or participates in a report is prohibited. We will acknowledge new reports within
+48 hours.
 
 ## Attribution
 

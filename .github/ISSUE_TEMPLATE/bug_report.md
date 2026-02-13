@@ -1,6 +1,6 @@
 ---
 name: Bug Report
-about: Report a bug to help us improve WorldLoom
+about: Report a bug to help us improve WorldFlux
 title: '[BUG] '
 labels: bug
 assignees: ''
@@ -41,7 +41,7 @@ model = create_world_model("dreamerv3:size12m")
 - OS: [e.g., Ubuntu 22.04, macOS 14, Windows 11]
 - Python version: [e.g., 3.10.12]
 - PyTorch version: [e.g., 2.1.0]
-- WorldLoom version: [e.g., 0.1.0]
+- WorldFlux version: [e.g., 0.1.0]
 - CUDA version (if applicable): [e.g., 12.1]
 
 ## Additional Context
