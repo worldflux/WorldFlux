@@ -8,7 +8,7 @@ import json
 import math
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from statistics import NormalDist
 from typing import Any
@@ -339,7 +339,7 @@ def main() -> int:
 
     output: dict[str, Any] = {
         "schema_version": "parity.v1",
-        "generated_at": datetime.now(UTC).isoformat(),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
         "input": str(args.input),
         "config": {
             "metrics": metrics,

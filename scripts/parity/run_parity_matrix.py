@@ -12,7 +12,7 @@ import shlex
 import subprocess
 import time
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from statistics import NormalDist, pstdev
 from typing import Any
@@ -363,14 +363,14 @@ def _run_one(
     command_str = _shell_quote_command(formatted_command)
     with command_manifest.open("a", encoding="utf-8") as f:
         f.write(
-            f"{datetime.now(UTC).isoformat()}\t{task.task_id}\t{seed}\t{system}\t{command_str}\n"
+            f"{datetime.now(timezone.utc).isoformat()}\t{task.task_id}\t{seed}\t{system}\t{command_str}\n"
         )
 
     if context.dry_run:
         record = {
             "schema_version": "parity.v1",
             "run_id": context.run_id,
-            "timestamp": datetime.now(UTC).isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "task_id": task.task_id,
             "family": task.family,
             "seed": seed,
@@ -421,7 +421,7 @@ def _run_one(
                 record = {
                     "schema_version": "parity.v1",
                     "run_id": context.run_id,
-                    "timestamp": datetime.now(UTC).isoformat(),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
                     "task_id": task.task_id,
                     "family": task.family,
                     "seed": seed,
@@ -457,7 +457,7 @@ def _run_one(
     record = {
         "schema_version": "parity.v1",
         "run_id": context.run_id,
-        "timestamp": datetime.now(UTC).isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "task_id": task.task_id,
         "family": task.family,
         "seed": seed,
@@ -580,7 +580,7 @@ def _write_run_context(
     payload = {
         "schema_version": "parity.v1",
         "run_id": context.run_id,
-        "generated_at": datetime.now(UTC).isoformat(),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
         "manifest_path": str(context.manifest_path),
         "manifest_sha256": manifest_hash,
         "manifest_schema": manifest.schema_version,
@@ -614,7 +614,9 @@ def main() -> int:
     raw_manifest = _load_manifest(args.manifest)
     manifest = _parse_manifest(raw_manifest)
 
-    run_id = args.run_id.strip() or f"parity_{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}"
+    run_id = (
+        args.run_id.strip() or f"parity_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
+    )
     run_root = (args.output_dir / run_id).resolve()
     run_root.mkdir(parents=True, exist_ok=True)
 
@@ -743,7 +745,7 @@ def main() -> int:
     summary = {
         "schema_version": "parity.v1",
         "run_id": context.run_id,
-        "generated_at": datetime.now(UTC).isoformat(),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
         "total_records": len(entries),
         "success_records": success,
         "failed_records": failed,
