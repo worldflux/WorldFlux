@@ -38,6 +38,18 @@ def _patch_init_noninteractive(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(cli, "_print_logo", lambda: None)
     monkeypatch.setattr(cli, "_confirm_generation", lambda: True)
     monkeypatch.setattr(cli, "_handle_optional_atari_dependency_install", lambda _ctx: None)
+    monkeypatch.setattr(
+        cli,
+        "ensure_init_dependencies",
+        lambda _ctx: SimpleNamespace(
+            success=True,
+            skipped=True,
+            launcher=None,
+            message="bootstrap skipped",
+            retry_commands=(),
+            diagnostics=(),
+        ),
+    )
 
 
 def test_init_with_path_argument(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -62,9 +74,71 @@ def test_init_without_path_uses_project_name_directory(monkeypatch: pytest.Monke
         assert Path("auto-dir/train.py").exists()
 
 
+def test_init_exits_when_dependency_bootstrap_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(cli, "_prompt_user_configuration", lambda: _base_context("bootstrap-fail"))
+    monkeypatch.setattr(cli, "_print_logo", lambda: None)
+    monkeypatch.setattr(
+        cli,
+        "ensure_init_dependencies",
+        lambda _ctx: SimpleNamespace(
+            success=False,
+            skipped=False,
+            launcher=None,
+            message="deps failed",
+            retry_commands=("python -m venv ~/.worldflux/bootstrap/py311",),
+            diagnostics=("pip install failed",),
+        ),
+    )
+
+    with runner.isolated_filesystem():
+        result = runner.invoke(cli.app, ["init", "bootstrap-fail"])
+        assert result.exit_code == 1
+        assert "Dependency bootstrap failed" in result.stdout
+        assert "pip install failed" in result.stdout
+        assert not Path("bootstrap-fail").exists()
+
+
+def test_init_uses_bootstrap_launcher_in_next_steps(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        cli, "_prompt_user_configuration", lambda: _base_context("bootstrap-launcher")
+    )
+    monkeypatch.setattr(cli, "_print_logo", lambda: None)
+    monkeypatch.setattr(cli, "_confirm_generation", lambda: True)
+    monkeypatch.setattr(
+        cli,
+        "ensure_init_dependencies",
+        lambda _ctx: SimpleNamespace(
+            success=True,
+            skipped=False,
+            launcher="/tmp/bootstrap/bin/python",
+            message="deps ready",
+            retry_commands=(),
+            diagnostics=(),
+        ),
+    )
+
+    with runner.isolated_filesystem():
+        result = runner.invoke(cli.app, ["init"])
+        assert result.exit_code == 0
+        assert "/tmp/bootstrap/bin/python train.py" in result.stdout
+        assert "/tmp/bootstrap/bin/python inference.py" in result.stdout
+
+
 def test_init_shows_guided_intro_panel(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(cli, "_prompt_user_configuration", lambda: _base_context("intro-project"))
     monkeypatch.setattr(cli, "_confirm_generation", lambda: True)
+    monkeypatch.setattr(
+        cli,
+        "ensure_init_dependencies",
+        lambda _ctx: SimpleNamespace(
+            success=True,
+            skipped=True,
+            launcher=None,
+            message="bootstrap skipped",
+            retry_commands=(),
+            diagnostics=(),
+        ),
+    )
 
     with runner.isolated_filesystem():
         result = runner.invoke(cli.app, ["init", "intro-project"])
@@ -190,6 +264,18 @@ def test_init_decline_confirmation_returns_130_and_generates_nothing(
     monkeypatch.setattr(cli, "_prompt_user_configuration", lambda: _base_context("declined"))
     monkeypatch.setattr(cli, "_print_logo", lambda: None)
     monkeypatch.setattr(cli, "_confirm_generation", lambda: False)
+    monkeypatch.setattr(
+        cli,
+        "ensure_init_dependencies",
+        lambda _ctx: SimpleNamespace(
+            success=True,
+            skipped=True,
+            launcher=None,
+            message="bootstrap skipped",
+            retry_commands=(),
+            diagnostics=(),
+        ),
+    )
 
     with runner.isolated_filesystem():
         result = runner.invoke(cli.app, ["init", "declined"])

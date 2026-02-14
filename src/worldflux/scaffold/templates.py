@@ -646,7 +646,7 @@ def render_readme_md(context: dict[str, Any]) -> str:
         # 2) python
         # 3) python3
         # 4) py
-        uv run python train.py
+        {context.get("preferred_python_launcher", "uv run python")} train.py
         ```
 
         When training starts, a local dashboard URL is printed:
@@ -660,7 +660,7 @@ def render_readme_md(context: dict[str, Any]) -> str:
         Run inference or imagination checks:
 
         ```bash
-        uv run python inference.py
+        {context.get("preferred_python_launcher", "uv run python")} inference.py
         ```
 
         ## Project Files

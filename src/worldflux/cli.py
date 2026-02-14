@@ -24,6 +24,7 @@ except ModuleNotFoundError as exc:  # pragma: no cover - optional dependency gua
 
 import torch
 
+from worldflux.bootstrap_env import ensure_init_dependencies
 from worldflux.parity import (
     CampaignRunOptions,
     aggregate_runs,
@@ -544,7 +545,24 @@ def init(
 
     try:
         context = _prompt_user_configuration()
-        _handle_optional_atari_dependency_install(context)
+        deps_result = ensure_init_dependencies(context)
+        if deps_result.skipped:
+            console.print(f"[yellow]{deps_result.message}[/yellow]")
+        elif deps_result.success:
+            console.print(f"[green]{deps_result.message}[/green]")
+            if deps_result.launcher:
+                context["preferred_python_launcher"] = deps_result.launcher
+        else:
+            console.print(
+                f"[bold red]Dependency bootstrap failed:[/bold red] {deps_result.message}"
+            )
+            for line in deps_result.diagnostics:
+                console.print(f"[dim]{line}[/dim]")
+            if deps_result.retry_commands:
+                console.print("[yellow]Retry with:[/yellow]")
+                for command in deps_result.retry_commands:
+                    console.print(f"[dim]{command}[/dim]")
+            raise typer.Exit(code=1)
 
         if context["device"] == "cuda" and not torch.cuda.is_available():
             console.print("[yellow]CUDA is not available. Falling back to CPU.[/yellow]")
@@ -565,7 +583,7 @@ def init(
 
     resolved_target = target_path.resolve()
     console.print(f"\n[bold green]Project created:[/bold green] {resolved_target}")
-    launcher = _resolve_python_launcher()
+    launcher = str(context.get("preferred_python_launcher") or _resolve_python_launcher())
     next_steps = "\n".join(
         [
             f"1. cd {resolved_target}",
