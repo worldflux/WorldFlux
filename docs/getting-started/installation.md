@@ -19,6 +19,18 @@ Optional: install InquirerPy for enhanced prompt widgets.
 uv tool install --with inquirerpy worldflux
 ```
 
+`worldflux init` performs pre-init dependency assurance on Linux/macOS/Windows.
+Before generating files, it creates/uses a user-scoped bootstrap virtual environment
+and installs dependencies for the selected environment:
+
+- Linux/macOS default: `~/.worldflux/bootstrap/py<major><minor>`
+- Windows default: `%LOCALAPPDATA%/WorldFlux/bootstrap/py<major><minor>`
+
+You can override behavior with:
+
+- `WORLDFLUX_BOOTSTRAP_HOME`: override bootstrap root directory
+- `WORLDFLUX_INIT_ENSURE_DEPS=0`: disable auto-bootstrap (emergency bypass)
+
 ## From Source (Recommended)
 
 ```bash

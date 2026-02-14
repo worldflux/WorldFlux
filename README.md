@@ -93,6 +93,18 @@ Optional: enable the InquirerPy-powered prompt UI.
 uv tool install --with inquirerpy worldflux
 ```
 
+`worldflux init` now performs cross-platform pre-init dependency assurance.
+It provisions a user-scoped bootstrap virtual environment and installs the
+selected environment dependencies before scaffolding:
+
+- Linux/macOS default: `~/.worldflux/bootstrap/py<major><minor>`
+- Windows default: `%LOCALAPPDATA%/WorldFlux/bootstrap/py<major><minor>`
+
+Environment variables:
+
+- `WORLDFLUX_BOOTSTRAP_HOME`: override bootstrap root path
+- `WORLDFLUX_INIT_ENSURE_DEPS=0`: disable auto-bootstrap (emergency bypass)
+
 ### From Source (recommended)
 
 ```bash
