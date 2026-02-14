@@ -80,6 +80,13 @@ def test_generate_project_creates_expected_files(tmp_path: Path) -> None:
     assert "Interrupted while waiting for dashboard shutdown." in train_content
     assert "except KeyboardInterrupt:" in train_content
 
+    inference_content = (target / "inference.py").read_text(encoding="utf-8")
+    assert (
+        "def _unwrap_model_state_dict(payload: object) -> dict[str, torch.Tensor]:"
+        in inference_content
+    )
+    assert 'payload.get("model_state_dict")' in inference_content
+
     dashboard_backend = (target / "local_dashboard.py").read_text(encoding="utf-8")
     assert "def set_target_steps(self, total_steps: int) -> None:" in dashboard_backend
     assert '"progress_percent": progress_percent' in dashboard_backend
