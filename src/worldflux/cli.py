@@ -76,6 +76,23 @@ ENVIRONMENT_OPTIONS = {
 DEFAULT_TOTAL_STEPS = 100000
 DEFAULT_BATCH_SIZE = 16
 OBS_ACTION_GUIDE_URL = "https://worldflux.ai/reference/observation-action/"
+MODEL_CHOICE_IDS: tuple[str, str] = ("dreamer:ci", "tdmpc2:ci")
+MODEL_UI_CARDS: dict[str, dict[str, str]] = {
+    "dreamer:ci": {
+        "display_name": "Dreamer (CI preset)",
+        "best_for": "pixel and spatial observations",
+        "observation_fit": "image-like inputs such as 3,64,64",
+        "compute_profile": "heavier",
+        "tradeoff_note": "better when latent imagination quality matters more than speed",
+    },
+    "tdmpc2:ci": {
+        "display_name": "TD-MPC2 (CI preset)",
+        "best_for": "compact vector observations",
+        "observation_fit": "state vectors such as 39",
+        "compute_profile": "lighter",
+        "tradeoff_note": "better when you want a faster vector-control baseline",
+    },
+}
 
 ASCII_LOGO = r"""
 __        __         _     _ _____ _
@@ -138,6 +155,98 @@ def _resolve_model(environment: str, obs_shape: list[int]) -> tuple[str, str]:
     return "tdmpc2:ci", "tdmpc2"
 
 
+def _model_type_from_model_id(model_id: str) -> str:
+    if model_id.startswith("dreamer:"):
+        return "dreamer"
+    if model_id.startswith("tdmpc2:"):
+        return "tdmpc2"
+    raise ValueError(f"Unsupported model id: {model_id!r}")
+
+
+def _model_choice_order(recommended_model: str) -> list[str]:
+    if recommended_model not in MODEL_CHOICE_IDS:
+        return list(MODEL_CHOICE_IDS)
+    return [
+        recommended_model,
+        *[model_id for model_id in MODEL_CHOICE_IDS if model_id != recommended_model],
+    ]
+
+
+def _format_model_choice_label(model_id: str, *, recommended: bool) -> str:
+    card = MODEL_UI_CARDS[model_id]
+    recommendation = " (recommended)" if recommended else ""
+    return (
+        f"{model_id}{recommendation} - {card['display_name']} "
+        f"(best for: {card['best_for']}, compute: {card['compute_profile']})"
+    )
+
+
+def _print_model_choices(recommended_model: str) -> None:
+    lines: list[str] = []
+    for model_id in _model_choice_order(recommended_model):
+        card = MODEL_UI_CARDS[model_id]
+        suffix = " [recommended]" if model_id == recommended_model else ""
+        lines.extend(
+            [
+                f"[bold]{model_id}{suffix}[/bold] - {card['display_name']}",
+                f"Best for: {card['best_for']}",
+                f"Observation fit: {card['observation_fit']}",
+                f"Compute profile: {card['compute_profile']}",
+                f"Tradeoff: {card['tradeoff_note']}",
+                "",
+            ]
+        )
+    console.print(
+        Panel.fit(
+            "\n".join(lines).strip(),
+            title="Model Choices",
+            border_style="cyan",
+        )
+    )
+
+
+def _select_model_with_inquirer(inquirer: Any, recommended_model: str) -> str:
+    try:
+        return str(
+            inquirer.select(
+                message="Choose model (recommended is preselected):",
+                choices=[
+                    {
+                        "name": _format_model_choice_label(
+                            model_id, recommended=model_id == recommended_model
+                        ),
+                        "value": model_id,
+                    }
+                    for model_id in _model_choice_order(recommended_model)
+                ],
+                default=recommended_model,
+            ).execute()
+        )
+    except Exception as exc:  # pragma: no cover - defensive fallback
+        console.print(
+            f"[yellow]Model selection prompt failed ({exc}). "
+            f"Using recommended model: {recommended_model}[/yellow]"
+        )
+        return recommended_model
+
+
+def _select_model_with_rich(recommended_model: str) -> str:
+    try:
+        return str(
+            Prompt.ask(
+                "Choose model (recommended is preselected)",
+                choices=_model_choice_order(recommended_model),
+                default=recommended_model,
+            )
+        )
+    except Exception as exc:  # pragma: no cover - defensive fallback
+        console.print(
+            f"[yellow]Model selection prompt failed ({exc}). "
+            f"Using recommended model: {recommended_model}[/yellow]"
+        )
+        return recommended_model
+
+
 def _format_environment_choice(name: str) -> str:
     option = ENVIRONMENT_OPTIONS[name]
     recommendation = option["recommended_model"]
@@ -163,29 +272,40 @@ def _print_model_recommendation(
     obs_shape: list[int],
     model: str,
 ) -> None:
+    other_model = next(candidate for candidate in MODEL_CHOICE_IDS if candidate != model)
     if environment == "atari":
-        reason = (
-            "Atari tasks usually use image observations. "
-            "dreamer:ci is tuned for latent world models on pixels."
+        why_now = (
+            "This environment is image-based, and dreamer:ci is usually the safer first choice "
+            "for pixel observations."
         )
     elif environment == "mujoco":
-        reason = (
-            "MuJoCo tasks usually use compact state vectors. "
-            "tdmpc2:ci is tuned for vector-based control."
+        why_now = (
+            "This environment is vector-based, and tdmpc2:ci is usually the safer first choice "
+            "for compact state inputs."
         )
     elif len(obs_shape) >= 3:
-        reason = (
-            "Your custom observation has 3+ dimensions, which usually means "
-            "spatial/image-like input. dreamer:ci is recommended."
+        why_now = (
+            "Your observation has 3+ dimensions, which is usually spatial or image-like, "
+            "so dreamer:ci is recommended."
         )
     else:
-        reason = (
-            "Your custom observation is a compact vector. tdmpc2:ci is recommended for this setup."
+        why_now = "Your observation is a compact vector, so tdmpc2:ci is recommended."
+    if model == "dreamer:ci":
+        when_other = (
+            f"Choose {other_model} when your task is mostly vector observations "
+            "and you want a lighter setup."
+        )
+    else:
+        when_other = (
+            f"Choose {other_model} when your task is image-heavy "
+            "and latent imagination quality is the priority."
         )
     console.print(f"[bold green]Recommended model:[/bold green] {model}")
     console.print(
         Panel.fit(
-            f"[bold]Recommended model:[/bold] {model}\n[bold]Why:[/bold] {reason}",
+            f"[bold]Recommended model:[/bold] {model}\n"
+            f"[bold]Why recommended now:[/bold] {why_now}\n"
+            f"[bold]When to choose the other model:[/bold] {when_other}",
             title="Recommendation",
             border_style="magenta",
         )
@@ -193,6 +313,7 @@ def _print_model_recommendation(
 
 
 def _print_configuration_summary(context: dict[str, Any], target_path: Path, force: bool) -> None:
+    model_fit = MODEL_UI_CARDS.get(str(context["model"]), {}).get("best_for", "n/a")
     summary = "\n".join(
         [
             f"[bold]Project name:[/bold] {context['project_name']}",
@@ -203,6 +324,7 @@ def _print_configuration_summary(context: dict[str, Any], target_path: Path, for
             f"[bold]Total steps:[/bold] {context['training_total_steps']}",
             f"[bold]Batch size:[/bold] {context['training_batch_size']}",
             f"[bold]Model:[/bold] {context['model']}",
+            f"[bold]Model fit:[/bold] {model_fit}",
             f"[bold]Device:[/bold] {context['device']}",
             f"[bold]Target path:[/bold] {target_path.resolve()}",
             f"[bold]Overwrite existing files:[/bold] {'yes' if force else 'no'}",
@@ -299,6 +421,12 @@ def _prompt_with_inquirer() -> dict[str, Any] | None:
                 "Expected a positive integer like 6."
             )
 
+    recommended_model, _ = _resolve_model(environment, obs_shape)
+    _print_model_recommendation(environment, obs_shape, recommended_model)
+    _print_model_choices(recommended_model)
+    model = _select_model_with_inquirer(inquirer, recommended_model)
+    model_type = _model_type_from_model_id(model)
+
     while True:
         total_steps_value = (
             inquirer.text(
@@ -344,13 +472,10 @@ def _prompt_with_inquirer() -> dict[str, Any] | None:
         ).execute()
     )
 
-    model, model_type = _resolve_model(environment, obs_shape)
     device = "cuda" if use_gpu else "cpu"
     if use_gpu and not torch.cuda.is_available():
         console.print("[yellow]CUDA is not available. Falling back to CPU.[/yellow]")
         device = "cpu"
-
-    _print_model_recommendation(environment, obs_shape, model)
 
     return {
         "project_name": project_name,
@@ -429,6 +554,12 @@ def _prompt_with_rich() -> dict[str, Any]:
                 "Expected a positive integer like 6."
             )
 
+    recommended_model, _ = _resolve_model(environment, obs_shape)
+    _print_model_recommendation(environment, obs_shape, recommended_model)
+    _print_model_choices(recommended_model)
+    model = _select_model_with_rich(recommended_model)
+    model_type = _model_type_from_model_id(model)
+
     while True:
         total_steps_value = str(
             Prompt.ask(
@@ -465,13 +596,10 @@ def _prompt_with_rich() -> dict[str, Any]:
         "Prefer GPU for training? (recommended when CUDA is available)",
         default=torch.cuda.is_available(),
     )
-    model, model_type = _resolve_model(environment, obs_shape)
     device = "cuda" if use_gpu else "cpu"
     if use_gpu and not torch.cuda.is_available():
         console.print("[yellow]CUDA is not available. Falling back to CPU.[/yellow]")
         device = "cpu"
-
-    _print_model_recommendation(environment, obs_shape, model)
 
     return {
         "project_name": project_name,

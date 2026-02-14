@@ -148,6 +148,7 @@ def test_init_shows_guided_intro_panel(monkeypatch: pytest.MonkeyPatch) -> None:
         assert "Create a ready-to-run WorldFlux project" in result.stdout
         assert "Configuration Summary" in result.stdout
         assert cli.OBS_ACTION_GUIDE_URL in result.stdout
+        assert "Model fit:" in result.stdout
 
 
 def test_init_gpu_fallback_to_cpu(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -292,6 +293,52 @@ def test_resolve_model_rules() -> None:
     assert cli._resolve_model("mujoco", [39]) == ("tdmpc2:ci", "tdmpc2")
     assert cli._resolve_model("custom", [3, 64, 64]) == ("dreamer:ci", "dreamer")
     assert cli._resolve_model("custom", [39]) == ("tdmpc2:ci", "tdmpc2")
+
+
+def test_model_type_from_model_id() -> None:
+    assert cli._model_type_from_model_id("dreamer:ci") == "dreamer"
+    assert cli._model_type_from_model_id("tdmpc2:ci") == "tdmpc2"
+    with pytest.raises(ValueError):
+        cli._model_type_from_model_id("unknown:ci")
+
+
+def test_select_model_with_inquirer_uses_recommended_default() -> None:
+    captured: dict[str, object] = {}
+
+    def _select(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(execute=lambda: "dreamer:ci")
+
+    fake_inquirer = SimpleNamespace(select=_select)
+    selected = cli._select_model_with_inquirer(fake_inquirer, "dreamer:ci")
+
+    assert selected == "dreamer:ci"
+    assert captured["default"] == "dreamer:ci"
+    assert str(captured["message"]).startswith("Choose model")
+    choices = captured["choices"]
+    assert isinstance(choices, list)
+    assert choices[0]["value"] == "dreamer:ci"
+    assert choices[1]["value"] == "tdmpc2:ci"
+
+
+def test_select_model_with_rich_uses_recommended_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def _ask(*_args, **kwargs):
+        captured.update(kwargs)
+        return "tdmpc2:ci"
+
+    monkeypatch.setattr(cli.Prompt, "ask", staticmethod(_ask))
+    selected = cli._select_model_with_rich("tdmpc2:ci")
+
+    assert selected == "tdmpc2:ci"
+    assert captured["default"] == "tdmpc2:ci"
+    choices = captured["choices"]
+    assert isinstance(choices, list)
+    assert choices[0] == "tdmpc2:ci"
+    assert choices[1] == "dreamer:ci"
 
 
 def test_init_keyboard_interrupt_returns_130(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -506,19 +553,31 @@ def test_prompt_with_inquirer_retries_invalid_values_and_falls_back_to_cpu(
             "32",  # batch size (valid)
         ]
     )
+    select_answers = iter(
+        [
+            "custom",  # environment
+            "dreamer:ci",  # model selection
+        ]
+    )
     printed: list[str] = []
+    model_choices_called: list[str] = []
 
     def _text(*_args, **_kwargs):
         return SimpleNamespace(execute=lambda: next(text_answers))
 
     fake_inquirer = SimpleNamespace(
         text=_text,
-        select=lambda **_kwargs: SimpleNamespace(execute=lambda: "custom"),
+        select=lambda **_kwargs: SimpleNamespace(execute=lambda: next(select_answers)),
         confirm=lambda **_kwargs: SimpleNamespace(execute=lambda: True),
     )
     monkeypatch.setitem(sys.modules, "InquirerPy", SimpleNamespace(inquirer=fake_inquirer))
     monkeypatch.setattr(cli.torch.cuda, "is_available", lambda: False)
     monkeypatch.setattr(cli.console, "print", lambda message="": printed.append(str(message)))
+    monkeypatch.setattr(
+        cli,
+        "_print_model_choices",
+        lambda recommended_model: model_choices_called.append(recommended_model),
+    )
 
     config = cli._prompt_with_inquirer()
 
@@ -536,6 +595,44 @@ def test_prompt_with_inquirer_retries_invalid_values_and_falls_back_to_cpu(
     assert any("Invalid batch size" in message for message in printed)
     assert any("CUDA is not available" in message for message in printed)
     assert any("Recommended model" in message for message in printed)
+    assert model_choices_called == ["dreamer:ci"]
+
+
+def test_prompt_with_inquirer_allows_alternative_model_selection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    text_answers = iter(
+        [
+            "alt-project",
+            "3,64,64",
+            "6",
+            "100000",
+            "16",
+        ]
+    )
+    select_answers = iter(
+        [
+            "atari",
+            "tdmpc2:ci",
+        ]
+    )
+    monkeypatch.setattr(cli.torch.cuda, "is_available", lambda: True)
+
+    def _text(*_args, **_kwargs):
+        return SimpleNamespace(execute=lambda: next(text_answers))
+
+    fake_inquirer = SimpleNamespace(
+        text=_text,
+        select=lambda **_kwargs: SimpleNamespace(execute=lambda: next(select_answers)),
+        confirm=lambda **_kwargs: SimpleNamespace(execute=lambda: False),
+    )
+    monkeypatch.setitem(sys.modules, "InquirerPy", SimpleNamespace(inquirer=fake_inquirer))
+
+    config = cli._prompt_with_inquirer()
+
+    assert config is not None
+    assert config["model"] == "tdmpc2:ci"
+    assert config["model_type"] == "tdmpc2"
 
 
 def test_prompt_with_rich_retries_invalid_values_and_falls_back_to_cpu(
@@ -550,6 +647,7 @@ def test_prompt_with_rich_retries_invalid_values_and_falls_back_to_cpu(
             "39",  # observation shape (valid)
             "nan",  # action dim (invalid)
             "6",  # action dim (valid)
+            "tdmpc2:ci",  # selected model
             "0",  # total steps (invalid)
             "80000",  # total steps (valid)
             "oops",  # batch size (invalid)
@@ -557,12 +655,18 @@ def test_prompt_with_rich_retries_invalid_values_and_falls_back_to_cpu(
         ]
     )
     printed: list[str] = []
+    model_choices_called: list[str] = []
     monkeypatch.setattr(
         cli.Prompt, "ask", staticmethod(lambda *_args, **_kwargs: next(prompt_answers))
     )
     monkeypatch.setattr(cli.Confirm, "ask", staticmethod(lambda *_args, **_kwargs: True))
     monkeypatch.setattr(cli.torch.cuda, "is_available", lambda: False)
     monkeypatch.setattr(cli.console, "print", lambda message="": printed.append(str(message)))
+    monkeypatch.setattr(
+        cli,
+        "_print_model_choices",
+        lambda recommended_model: model_choices_called.append(recommended_model),
+    )
 
     config = cli._prompt_with_rich()
 
@@ -581,6 +685,7 @@ def test_prompt_with_rich_retries_invalid_values_and_falls_back_to_cpu(
     assert any("Invalid batch size" in message for message in printed)
     assert any("CUDA is not available" in message for message in printed)
     assert any("Recommended model" in message for message in printed)
+    assert model_choices_called == ["tdmpc2:ci"]
 
 
 def test_confirm_generation_uses_inquirer_when_available(
