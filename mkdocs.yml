@@ -90,6 +90,7 @@ nav:
   - Reference:
     - Benchmarks: reference/benchmarks.md
     - Configuration: reference/config.md
+    - Observation Shape and Action Dim: reference/observation-action.md
     - Docs Stack: reference/docs-stack.md
     - Extensibility: EXTENSIBILITY.md
     - OSS Quality Gates: reference/quality-gates.md

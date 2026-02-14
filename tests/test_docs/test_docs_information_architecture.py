@@ -23,6 +23,7 @@ def test_mkdocs_nav_exposes_cpu_success_and_reference_guides():
 
     assert "- Reference:" in mkdocs
     assert "    - Benchmarks: reference/benchmarks.md" in mkdocs
+    assert "    - Observation Shape and Action Dim: reference/observation-action.md" in mkdocs
     assert "    - Parity Harness: reference/parity.md" in mkdocs
     assert "    - Tutorial Placeholder Policy: reference/tutorial-policy.md" in mkdocs
     assert "    - Unified Comparison: reference/unified-comparison.md" in mkdocs
@@ -37,6 +38,7 @@ def test_docs_index_exposes_primary_paths_for_cpu_success_and_reference():
     assert "(getting-started/cpu-success.md)" in index
     assert "(api/factory.md)" in index
     assert "(reference/benchmarks.md)" in index
+    assert "(reference/observation-action.md)" in index
     assert "(reference/unified-comparison.md)" in index
     assert "(reference/parity.md)" in index
 
@@ -44,6 +46,7 @@ def test_docs_index_exposes_primary_paths_for_cpu_success_and_reference():
 def test_quickstart_points_to_cpu_path_and_api_guides():
     quickstart = _read("docs/getting-started/quickstart.md")
     assert "(cpu-success.md)" in quickstart
+    assert "(../reference/observation-action.md)" in quickstart
     assert "(../api/factory.md)" in quickstart
     assert "(../api/training.md)" in quickstart
     assert "(../api/protocol.md)" in quickstart
