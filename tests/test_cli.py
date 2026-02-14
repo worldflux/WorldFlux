@@ -41,7 +41,7 @@ def _patch_init_noninteractive(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         cli,
         "ensure_init_dependencies",
-        lambda _ctx: SimpleNamespace(
+        lambda _ctx, **_kwargs: SimpleNamespace(
             success=True,
             skipped=True,
             launcher=None,
@@ -80,7 +80,7 @@ def test_init_exits_when_dependency_bootstrap_fails(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(
         cli,
         "ensure_init_dependencies",
-        lambda _ctx: SimpleNamespace(
+        lambda _ctx, **_kwargs: SimpleNamespace(
             success=False,
             skipped=False,
             launcher=None,
@@ -107,7 +107,7 @@ def test_init_uses_bootstrap_launcher_in_next_steps(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(
         cli,
         "ensure_init_dependencies",
-        lambda _ctx: SimpleNamespace(
+        lambda _ctx, **_kwargs: SimpleNamespace(
             success=True,
             skipped=False,
             launcher="/tmp/bootstrap/bin/python",
@@ -130,7 +130,7 @@ def test_init_shows_guided_intro_panel(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         cli,
         "ensure_init_dependencies",
-        lambda _ctx: SimpleNamespace(
+        lambda _ctx, **_kwargs: SimpleNamespace(
             success=True,
             skipped=True,
             launcher=None,
@@ -158,6 +158,35 @@ def test_init_gpu_fallback_to_cpu(monkeypatch: pytest.MonkeyPatch) -> None:
         content = Path("gpu-fallback/worldflux.toml").read_text(encoding="utf-8")
         assert 'device = "cpu"' in content
         assert "CUDA is not available" in result.stdout
+
+
+def test_init_shows_bootstrap_progress_updates(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        cli, "_prompt_user_configuration", lambda: _base_context("progress-project")
+    )
+    monkeypatch.setattr(cli, "_print_logo", lambda: None)
+    monkeypatch.setattr(cli, "_confirm_generation", lambda: True)
+
+    def _ensure(_ctx, **kwargs):
+        progress_callback = kwargs.get("progress_callback")
+        assert callable(progress_callback)
+        progress_callback("Installing dependencies...")
+        return SimpleNamespace(
+            success=True,
+            skipped=False,
+            launcher=None,
+            message="deps ready",
+            retry_commands=(),
+            diagnostics=(),
+        )
+
+    monkeypatch.setattr(cli, "ensure_init_dependencies", _ensure)
+
+    with runner.isolated_filesystem():
+        result = runner.invoke(cli.app, ["init"])
+        assert result.exit_code == 0
+        assert "Preparing bootstrap dependencies before project generation" in result.stdout
+        assert "Installing dependencies..." in result.stdout
 
 
 def test_init_returns_non_zero_when_target_is_file(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -267,7 +296,7 @@ def test_init_decline_confirmation_returns_130_and_generates_nothing(
     monkeypatch.setattr(
         cli,
         "ensure_init_dependencies",
-        lambda _ctx: SimpleNamespace(
+        lambda _ctx, **_kwargs: SimpleNamespace(
             success=True,
             skipped=True,
             launcher=None,

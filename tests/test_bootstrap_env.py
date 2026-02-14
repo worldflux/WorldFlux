@@ -70,20 +70,26 @@ def test_ensure_init_dependencies_installs_worldflux_and_env_specs(
         python_executable=tmp_path / "bootstrap" / "py311" / "bin" / "python",
     )
     commands: list[list[str]] = []
+    stream_flags: list[bool] = []
     monkeypatch.setattr(bootstrap_env, "resolve_bootstrap_runtime", lambda: runtime)
-    monkeypatch.setattr(bootstrap_env, "_ensure_virtualenv", lambda _runtime: (True, ()))
+    monkeypatch.setattr(bootstrap_env, "_ensure_virtualenv", lambda _runtime, **_kwargs: (True, ()))
     monkeypatch.setattr(bootstrap_env, "_discover_local_worldflux_source_root", lambda: None)
     monkeypatch.setattr(bootstrap_env, "verify_modules", lambda *_args, **_kwargs: ())
     monkeypatch.setattr(
         bootstrap_env,
         "_run_command",
-        lambda args: (
-            commands.append(list(args))
+        lambda args, **kwargs: (
+            stream_flags.append(bool(kwargs.get("stream_output", False)))
+            or commands.append(list(args))
             or subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
         ),
     )
 
-    result = bootstrap_env.ensure_init_dependencies({"environment": "atari"})
+    progress_messages: list[str] = []
+    result = bootstrap_env.ensure_init_dependencies(
+        {"environment": "atari"},
+        progress_callback=progress_messages.append,
+    )
 
     assert result.success is True
     assert result.launcher == str(runtime.python_executable)
@@ -98,6 +104,8 @@ def test_ensure_init_dependencies_installs_worldflux_and_env_specs(
     assert "worldflux" in install_cmd
     assert "gymnasium" in install_cmd
     assert "ale-py" in install_cmd
+    assert stream_flags[-1] is True
+    assert any("Installing bootstrap dependencies" in message for message in progress_messages)
 
 
 def test_ensure_init_dependencies_installs_only_worldflux_for_custom(
@@ -113,13 +121,13 @@ def test_ensure_init_dependencies_installs_only_worldflux_for_custom(
     )
     commands: list[list[str]] = []
     monkeypatch.setattr(bootstrap_env, "resolve_bootstrap_runtime", lambda: runtime)
-    monkeypatch.setattr(bootstrap_env, "_ensure_virtualenv", lambda _runtime: (True, ()))
+    monkeypatch.setattr(bootstrap_env, "_ensure_virtualenv", lambda _runtime, **_kwargs: (True, ()))
     monkeypatch.setattr(bootstrap_env, "_discover_local_worldflux_source_root", lambda: None)
     monkeypatch.setattr(bootstrap_env, "verify_modules", lambda *_args, **_kwargs: ())
     monkeypatch.setattr(
         bootstrap_env,
         "_run_command",
-        lambda args: (
+        lambda args, **_kwargs: (
             commands.append(list(args))
             or subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
         ),
@@ -149,7 +157,7 @@ def test_ensure_init_dependencies_failure_on_venv_creation(
     monkeypatch.setattr(
         bootstrap_env,
         "_ensure_virtualenv",
-        lambda _runtime: (False, ("failed to create venv",)),
+        lambda _runtime, **_kwargs: (False, ("failed to create venv",)),
     )
 
     result = bootstrap_env.ensure_init_dependencies({"environment": "mujoco"})
