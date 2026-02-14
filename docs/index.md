@@ -99,6 +99,8 @@ print(trajectory.rewards.shape)
 
     [:octicons-arrow-right-24: Benchmarks](reference/benchmarks.md)
 
+    [:octicons-arrow-right-24: Observation Shape and Action Dim](reference/observation-action.md)
+
     [:octicons-arrow-right-24: Unified Comparison](reference/unified-comparison.md)
 
     [:octicons-arrow-right-24: Parity Harness](reference/parity.md)

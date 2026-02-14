@@ -39,6 +39,7 @@ reloaded = create_world_model("./my_model")
 ## 4) Next References
 
 - [CPU Success Path](cpu-success.md)
+- [Observation Shape and Action Dim](../reference/observation-action.md)
 - [Factory API Guide](../api/factory.md)
 - [Training API Guide](../api/training.md)
 - [Protocol API Guide](../api/protocol.md)
