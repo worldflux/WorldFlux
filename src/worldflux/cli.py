@@ -297,8 +297,7 @@ def _prompt_with_inquirer() -> dict[str, Any] | None:
         total_steps_value = (
             inquirer.text(
                 message=(
-                    "Total training steps (recommended "
-                    f"{DEFAULT_TOTAL_STEPS:,}, positive integer):"
+                    f"Total training steps (recommended {DEFAULT_TOTAL_STEPS:,}, positive integer):"
                 ),
                 default=str(DEFAULT_TOTAL_STEPS),
             )
@@ -317,7 +316,7 @@ def _prompt_with_inquirer() -> dict[str, Any] | None:
     while True:
         batch_size_value = (
             inquirer.text(
-                message=("Batch size (recommended " f"{DEFAULT_BATCH_SIZE}, positive integer):"),
+                message=(f"Batch size (recommended {DEFAULT_BATCH_SIZE}, positive integer):"),
                 default=str(DEFAULT_BATCH_SIZE),
             )
             .execute()
