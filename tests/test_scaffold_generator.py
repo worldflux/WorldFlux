@@ -20,6 +20,8 @@ def _context(
     action_dim: int = 6,
     hidden_dim: int = 32,
     device: str = "cpu",
+    training_total_steps: int = 100000,
+    training_batch_size: int = 16,
 ) -> dict[str, object]:
     return {
         "project_name": project_name,
@@ -28,6 +30,8 @@ def _context(
         "model_type": model_type,
         "obs_shape": obs_shape or [3, 64, 64],
         "action_dim": action_dim,
+        "training_total_steps": training_total_steps,
+        "training_batch_size": training_batch_size,
         "hidden_dim": hidden_dim,
         "device": device,
     }
@@ -55,6 +59,8 @@ def test_generate_project_creates_expected_files(tmp_path: Path) -> None:
     assert 'project_name = "my-world-model"' in toml_content
     assert 'model = "dreamer:ci"' in toml_content
     assert "obs_shape = [3, 64, 64]" in toml_content
+    assert "total_steps = 100000" in toml_content
+    assert "batch_size = 16" in toml_content
     assert 'source = "gym"' in toml_content
     assert "[gameplay]\nenabled = true" in toml_content
     assert "[online_collection]\nenabled = true" in toml_content
@@ -107,6 +113,8 @@ def test_generate_project_overwrites_when_force_enabled(tmp_path: Path) -> None:
             model_type="tdmpc2",
             obs_shape=[39],
             action_dim=4,
+            training_total_steps=75000,
+            training_batch_size=24,
             device="cpu",
         ),
         force=True,
@@ -117,6 +125,8 @@ def test_generate_project_overwrites_when_force_enabled(tmp_path: Path) -> None:
     assert 'model = "tdmpc2:ci"' in toml_content
     assert "obs_shape = [39]" in toml_content
     assert "action_dim = 4" in toml_content
+    assert "total_steps = 75000" in toml_content
+    assert "batch_size = 24" in toml_content
     assert 'source = "random"' in toml_content
     assert "[gameplay]\nenabled = false" in toml_content
     assert "[online_collection]\nenabled = false" in toml_content
@@ -156,3 +166,15 @@ def test_generate_project_rejects_schema_coercion_when_pydantic_available(
 
     with pytest.raises(ValueError, match="Invalid scaffold context schema"):
         generate_project(tmp_path / "invalid-schema", context, force=False)
+
+
+def test_generate_project_rejects_non_positive_training_total_steps(tmp_path: Path) -> None:
+    context = _context(training_total_steps=0)
+    with pytest.raises(ValueError, match="training_total_steps must be positive"):
+        generate_project(tmp_path / "invalid-total-steps", context, force=False)
+
+
+def test_generate_project_rejects_non_positive_training_batch_size(tmp_path: Path) -> None:
+    context = _context(training_batch_size=0)
+    with pytest.raises(ValueError, match="training_batch_size must be positive"):
+        generate_project(tmp_path / "invalid-batch-size", context, force=False)

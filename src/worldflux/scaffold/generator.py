@@ -25,6 +25,8 @@ REQUIRED_CONTEXT_KEYS = (
     "hidden_dim",
     "device",
 )
+DEFAULT_TOTAL_STEPS = 100000
+DEFAULT_BATCH_SIZE = 16
 
 
 def _validate_context_with_pydantic(context: dict[str, Any]) -> dict[str, Any] | None:
@@ -45,6 +47,8 @@ def _validate_context_with_pydantic(context: dict[str, Any]) -> dict[str, Any] |
             action_dim: StrictInt
             hidden_dim: StrictInt
             device: StrictStr
+            training_total_steps: StrictInt = DEFAULT_TOTAL_STEPS
+            training_batch_size: StrictInt = DEFAULT_BATCH_SIZE
 
             model_config = {"extra": "forbid"}
 
@@ -61,6 +65,8 @@ def _validate_context_with_pydantic(context: dict[str, Any]) -> dict[str, Any] |
             action_dim: StrictInt
             hidden_dim: StrictInt
             device: StrictStr
+            training_total_steps: StrictInt = DEFAULT_TOTAL_STEPS
+            training_batch_size: StrictInt = DEFAULT_BATCH_SIZE
 
             class Config:
                 extra = "forbid"
@@ -136,6 +142,16 @@ def _validate_context(context: dict[str, Any]) -> None:
     if device not in {"cpu", "cuda"}:
         raise ValueError(f"device must be 'cpu' or 'cuda', got {device!r}")
     context["device"] = device
+
+    training_total_steps = int(context.get("training_total_steps", DEFAULT_TOTAL_STEPS))
+    if training_total_steps <= 0:
+        raise ValueError(f"training_total_steps must be positive, got {training_total_steps}")
+    context["training_total_steps"] = training_total_steps
+
+    training_batch_size = int(context.get("training_batch_size", DEFAULT_BATCH_SIZE))
+    if training_batch_size <= 0:
+        raise ValueError(f"training_batch_size must be positive, got {training_batch_size}")
+    context["training_batch_size"] = training_batch_size
 
 
 def _validate_target_directory(target: Path, force: bool) -> None:
