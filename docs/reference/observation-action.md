@@ -45,5 +45,6 @@ Examples:
 ## Related Docs
 
 - [Quick Start](../getting-started/quickstart.md)
+- [Model Choice in `worldflux init`](../getting-started/quickstart.md#4-choosing-a-model-in-worldflux-init)
 - [Configuration Reference](config.md)
 - [Troubleshooting](troubleshooting.md)

@@ -35,6 +35,7 @@ def test_docs_index_exposes_primary_paths_for_cpu_success_and_reference():
     index = _read("docs/index.md")
     assert "(getting-started/installation.md)" in index
     assert "(getting-started/quickstart.md)" in index
+    assert "(getting-started/quickstart.md#4-choosing-a-model-in-worldflux-init)" in index
     assert "(getting-started/cpu-success.md)" in index
     assert "(api/factory.md)" in index
     assert "(reference/benchmarks.md)" in index
@@ -45,8 +46,19 @@ def test_docs_index_exposes_primary_paths_for_cpu_success_and_reference():
 
 def test_quickstart_points_to_cpu_path_and_api_guides():
     quickstart = _read("docs/getting-started/quickstart.md")
+    assert "Choosing a Model in `worldflux init`" in quickstart
+    assert "dreamer:ci" in quickstart
+    assert "tdmpc2:ci" in quickstart
     assert "(cpu-success.md)" in quickstart
     assert "(../reference/observation-action.md)" in quickstart
     assert "(../api/factory.md)" in quickstart
     assert "(../api/training.md)" in quickstart
     assert "(../api/protocol.md)" in quickstart
+
+
+def test_observation_action_page_links_model_choice_guidance():
+    observation_action = _read("docs/reference/observation-action.md")
+    assert (
+        "(../getting-started/quickstart.md#4-choosing-a-model-in-worldflux-init)"
+        in observation_action
+    )
