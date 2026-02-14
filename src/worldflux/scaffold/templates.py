@@ -438,6 +438,8 @@ def render_worldflux_toml(context: dict[str, Any]) -> str:
     environment = str(context["environment"]).strip().lower()
     model_type = str(context["model_type"]).strip().lower()
     gym_env = _default_gym_env(environment)
+    total_steps = max(1, int(context.get("training_total_steps", 100000)))
+    batch_size = max(1, int(context.get("training_batch_size", 16)))
 
     online_default = environment == "atari" and model_type.startswith("dreamer")
     data_source = "gym" if online_default else "random"
@@ -458,8 +460,8 @@ def render_worldflux_toml(context: dict[str, Any]) -> str:
         hidden_dim = {context["hidden_dim"]}
 
         [training]
-        total_steps = 100000
-        batch_size = 16
+        total_steps = {total_steps}
+        batch_size = {batch_size}
         sequence_length = 50
         learning_rate = 3e-4
         device = "{context["device"]}"
