@@ -117,10 +117,13 @@ uv run pytest tests/ --cov=worldflux --cov-report=html
 
 3. **Ensure all checks pass**
    ```bash
-   uv run pytest tests/ -v
-   uv run mypy src/worldflux/
-   uv run ruff check src/
+   uv run python scripts/run_local_ci_gate.py
    ```
+   - `pre-commit` now enforces the same local CI gate on every commit.
+   - Install hooks once per clone:
+     ```bash
+     uv run --with pre-commit pre-commit install --hook-type pre-commit --hook-type pre-push
+     ```
 
 4. **Submit a pull request**
    - Provide a clear description of the changes
