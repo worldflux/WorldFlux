@@ -533,6 +533,7 @@ def render_inference_py(context: dict[str, Any]) -> str:
             """
         from __future__ import annotations
 
+        from collections.abc import Mapping
         from pathlib import Path
 
         import torch
@@ -559,18 +560,32 @@ def render_inference_py(context: dict[str, Any]) -> str:
             return "tdmpc2:ci"
 
 
+        def _unwrap_model_state_dict(payload: object) -> dict[str, torch.Tensor]:
+            if isinstance(payload, Mapping):
+                nested = payload.get("model_state_dict")
+                if isinstance(nested, Mapping):
+                    return dict(nested)
+                if all(isinstance(key, str) for key in payload.keys()):
+                    return dict(payload)
+            raise RuntimeError(
+                "Unsupported checkpoint format. Expected a raw state_dict or a Trainer checkpoint "
+                "containing 'model_state_dict'."
+            )
+
+
         def try_load_checkpoint(model, checkpoint_path: Path) -> None:
             if not checkpoint_path.exists():
                 print(f"No checkpoint found at {checkpoint_path}. Running with fresh weights.")
                 return
             try:
-                state_dict = torch.load(
+                checkpoint_payload = torch.load(
                     checkpoint_path,
                     map_location=model.device,
                     weights_only=True,
                 )
             except TypeError:  # pragma: no cover - old torch fallback
-                state_dict = torch.load(checkpoint_path, map_location=model.device)
+                checkpoint_payload = torch.load(checkpoint_path, map_location=model.device)
+            state_dict = _unwrap_model_state_dict(checkpoint_payload)
             model.load_state_dict(state_dict)
             print(f"Loaded checkpoint: {checkpoint_path}")
 
