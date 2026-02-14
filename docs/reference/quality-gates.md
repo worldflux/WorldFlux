@@ -6,6 +6,7 @@ This document defines baseline quality checks for WorldFlux.
 
 All PRs must pass:
 
+- **Local all-in-one gate**: `uv run python scripts/run_local_ci_gate.py`
 - **Lint**: `uvx ruff check src/ tests/ examples/ benchmarks/ scripts/`
 - **Format**: `uvx ruff format --check src/ tests/ examples/ benchmarks/ scripts/`
 - **Typecheck**: `uv run mypy src/worldflux/`
@@ -64,6 +65,7 @@ All PRs must pass:
 ## Recommended Commands
 
 ```bash
+uv run python scripts/run_local_ci_gate.py
 uvx ruff check src/ tests/ examples/ benchmarks/ scripts/
 uvx ruff format --check src/ tests/ examples/ benchmarks/ scripts/
 uv run mypy src/worldflux/
