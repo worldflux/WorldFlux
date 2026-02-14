@@ -147,6 +147,7 @@ def test_init_shows_guided_intro_panel(monkeypatch: pytest.MonkeyPatch) -> None:
         assert result.exit_code == 0
         assert "Create a ready-to-run WorldFlux project" in result.stdout
         assert "Configuration Summary" in result.stdout
+        assert cli.OBS_ACTION_GUIDE_URL in result.stdout
 
 
 def test_init_gpu_fallback_to_cpu(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -75,6 +75,7 @@ ENVIRONMENT_OPTIONS = {
 }
 DEFAULT_TOTAL_STEPS = 100000
 DEFAULT_BATCH_SIZE = 16
+OBS_ACTION_GUIDE_URL = "https://worldflux.ai/reference/observation-action/"
 
 ASCII_LOGO = r"""
 __        __         _     _ _____ _
@@ -198,6 +199,7 @@ def _print_configuration_summary(context: dict[str, Any], target_path: Path, for
             f"[bold]Environment:[/bold] {context['environment']}",
             f"[bold]Observation shape:[/bold] {tuple(context['obs_shape'])}",
             f"[bold]Action dim:[/bold] {context['action_dim']}",
+            f"[bold]Shape/Action guide:[/bold] {OBS_ACTION_GUIDE_URL}",
             f"[bold]Total steps:[/bold] {context['training_total_steps']}",
             f"[bold]Batch size:[/bold] {context['training_batch_size']}",
             f"[bold]Model:[/bold] {context['model']}",
@@ -254,6 +256,10 @@ def _prompt_with_inquirer() -> dict[str, Any] | None:
         ],
         default="atari",
     ).execute()
+
+    console.print(
+        f"[dim]Need help with Observation shape or Action dim? {OBS_ACTION_GUIDE_URL}[/dim]"
+    )
 
     obs_default = ENVIRONMENT_OPTIONS[environment]["obs_shape"]
     while True:
@@ -383,6 +389,10 @@ def _prompt_with_rich() -> dict[str, Any]:
             choices=["atari", "mujoco", "custom"],
             default="atari",
         )
+    )
+
+    console.print(
+        f"[dim]Need help with Observation shape or Action dim? {OBS_ACTION_GUIDE_URL}[/dim]"
     )
 
     obs_default = ENVIRONMENT_OPTIONS[environment]["obs_shape"]
