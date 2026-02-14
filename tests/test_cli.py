@@ -29,6 +29,8 @@ def _base_context(project_name: str = "demo-project", device: str = "cpu") -> di
         "model_type": "dreamer",
         "obs_shape": [3, 64, 64],
         "action_dim": 6,
+        "training_total_steps": 100000,
+        "training_batch_size": 16,
         "hidden_dim": 32,
         "device": device,
     }
@@ -267,6 +269,23 @@ def test_parse_action_dim_accepts_positive_integer() -> None:
     assert cli._parse_action_dim("6") == 6
 
 
+@pytest.mark.parametrize(
+    ("raw", "field_name"),
+    [
+        ("0", "Total training steps"),
+        ("-1", "Batch size"),
+        ("abc", "Batch size"),
+    ],
+)
+def test_parse_positive_int_rejects_invalid_values(raw: str, field_name: str) -> None:
+    with pytest.raises(ValueError):
+        cli._parse_positive_int(raw, field_name=field_name)
+
+
+def test_parse_positive_int_accepts_positive_integer() -> None:
+    assert cli._parse_positive_int("64", field_name="Batch size") == 64
+
+
 def test_resolve_model_rules() -> None:
     assert cli._resolve_model("atari", [3, 64, 64]) == ("dreamer:ci", "dreamer")
     assert cli._resolve_model("mujoco", [39]) == ("tdmpc2:ci", "tdmpc2")
@@ -480,6 +499,10 @@ def test_prompt_with_inquirer_retries_invalid_values_and_falls_back_to_cpu(
             "3,64,64",  # observation shape (valid)
             "bad-action",  # action dim (invalid)
             "6",  # action dim (valid)
+            "0",  # total steps (invalid)
+            "120000",  # total steps (valid)
+            "bad-batch",  # batch size (invalid)
+            "32",  # batch size (valid)
         ]
     )
     printed: list[str] = []
@@ -502,10 +525,14 @@ def test_prompt_with_inquirer_retries_invalid_values_and_falls_back_to_cpu(
     assert config["project_name"] == "advanced-project"
     assert config["obs_shape"] == [3, 64, 64]
     assert config["action_dim"] == 6
+    assert config["training_total_steps"] == 120000
+    assert config["training_batch_size"] == 32
     assert config["model"] == "dreamer:ci"
     assert config["device"] == "cpu"
     assert any("Invalid observation shape" in message for message in printed)
     assert any("Invalid action dim" in message for message in printed)
+    assert any("Invalid total steps" in message for message in printed)
+    assert any("Invalid batch size" in message for message in printed)
     assert any("CUDA is not available" in message for message in printed)
     assert any("Recommended model" in message for message in printed)
 
@@ -522,6 +549,10 @@ def test_prompt_with_rich_retries_invalid_values_and_falls_back_to_cpu(
             "39",  # observation shape (valid)
             "nan",  # action dim (invalid)
             "6",  # action dim (valid)
+            "0",  # total steps (invalid)
+            "80000",  # total steps (valid)
+            "oops",  # batch size (invalid)
+            "24",  # batch size (valid)
         ]
     )
     printed: list[str] = []
@@ -537,12 +568,16 @@ def test_prompt_with_rich_retries_invalid_values_and_falls_back_to_cpu(
     assert config["project_name"] == "rich-project"
     assert config["obs_shape"] == [39]
     assert config["action_dim"] == 6
+    assert config["training_total_steps"] == 80000
+    assert config["training_batch_size"] == 24
     assert config["model"] == "tdmpc2:ci"
     assert config["device"] == "cpu"
     assert any("Project name cannot be empty" in message for message in printed)
     assert any("Choose your environment type" in message for message in printed)
     assert any("Invalid observation shape" in message for message in printed)
     assert any("Invalid action dim" in message for message in printed)
+    assert any("Invalid total steps" in message for message in printed)
+    assert any("Invalid batch size" in message for message in printed)
     assert any("CUDA is not available" in message for message in printed)
     assert any("Recommended model" in message for message in printed)
 

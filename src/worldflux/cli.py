@@ -73,6 +73,8 @@ ENVIRONMENT_OPTIONS = {
         "action_dim": 6,
     },
 }
+DEFAULT_TOTAL_STEPS = 100000
+DEFAULT_BATCH_SIZE = 16
 
 ASCII_LOGO = r"""
 __        __         _     _ _____ _
@@ -113,6 +115,16 @@ def _parse_action_dim(value: str) -> int:
     if action_dim <= 0:
         raise ValueError(f"Action dim must be positive. Got {action_dim}.")
     return action_dim
+
+
+def _parse_positive_int(value: str, *, field_name: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise ValueError(f"{field_name} must be an integer. Got {value!r}.") from exc
+    if parsed <= 0:
+        raise ValueError(f"{field_name} must be positive. Got {parsed}.")
+    return parsed
 
 
 def _resolve_model(environment: str, obs_shape: list[int]) -> tuple[str, str]:
@@ -186,6 +198,8 @@ def _print_configuration_summary(context: dict[str, Any], target_path: Path, for
             f"[bold]Environment:[/bold] {context['environment']}",
             f"[bold]Observation shape:[/bold] {tuple(context['obs_shape'])}",
             f"[bold]Action dim:[/bold] {context['action_dim']}",
+            f"[bold]Total steps:[/bold] {context['training_total_steps']}",
+            f"[bold]Batch size:[/bold] {context['training_batch_size']}",
             f"[bold]Model:[/bold] {context['model']}",
             f"[bold]Device:[/bold] {context['device']}",
             f"[bold]Target path:[/bold] {target_path.resolve()}",
@@ -279,6 +293,45 @@ def _prompt_with_inquirer() -> dict[str, Any] | None:
                 "Expected a positive integer like 6."
             )
 
+    while True:
+        total_steps_value = (
+            inquirer.text(
+                message=(
+                    "Total training steps (recommended "
+                    f"{DEFAULT_TOTAL_STEPS:,}, positive integer):"
+                ),
+                default=str(DEFAULT_TOTAL_STEPS),
+            )
+            .execute()
+            .strip()
+        )
+        try:
+            training_total_steps = _parse_positive_int(
+                total_steps_value,
+                field_name="Total training steps",
+            )
+            break
+        except ValueError as exc:
+            console.print(f"[bold red]Invalid total steps:[/bold red] {exc}")
+
+    while True:
+        batch_size_value = (
+            inquirer.text(
+                message=("Batch size (recommended " f"{DEFAULT_BATCH_SIZE}, positive integer):"),
+                default=str(DEFAULT_BATCH_SIZE),
+            )
+            .execute()
+            .strip()
+        )
+        try:
+            training_batch_size = _parse_positive_int(
+                batch_size_value,
+                field_name="Batch size",
+            )
+            break
+        except ValueError as exc:
+            console.print(f"[bold red]Invalid batch size:[/bold red] {exc}")
+
     use_gpu = bool(
         inquirer.confirm(
             message="Prefer GPU for training? (recommended when CUDA is available)",
@@ -301,6 +354,8 @@ def _prompt_with_inquirer() -> dict[str, Any] | None:
         "model_type": model_type,
         "obs_shape": obs_shape,
         "action_dim": action_dim,
+        "training_total_steps": training_total_steps,
+        "training_batch_size": training_batch_size,
         "hidden_dim": 32,
         "device": device,
     }
@@ -365,6 +420,38 @@ def _prompt_with_rich() -> dict[str, Any]:
                 "Expected a positive integer like 6."
             )
 
+    while True:
+        total_steps_value = str(
+            Prompt.ask(
+                f"Total training steps (recommended {DEFAULT_TOTAL_STEPS:,})",
+                default=str(DEFAULT_TOTAL_STEPS),
+            )
+        ).strip()
+        try:
+            training_total_steps = _parse_positive_int(
+                total_steps_value,
+                field_name="Total training steps",
+            )
+            break
+        except ValueError as exc:
+            console.print(f"[bold red]Invalid total steps:[/bold red] {exc}")
+
+    while True:
+        batch_size_value = str(
+            Prompt.ask(
+                f"Batch size (recommended {DEFAULT_BATCH_SIZE})",
+                default=str(DEFAULT_BATCH_SIZE),
+            )
+        ).strip()
+        try:
+            training_batch_size = _parse_positive_int(
+                batch_size_value,
+                field_name="Batch size",
+            )
+            break
+        except ValueError as exc:
+            console.print(f"[bold red]Invalid batch size:[/bold red] {exc}")
+
     use_gpu = Confirm.ask(
         "Prefer GPU for training? (recommended when CUDA is available)",
         default=torch.cuda.is_available(),
@@ -384,6 +471,8 @@ def _prompt_with_rich() -> dict[str, Any]:
         "model_type": model_type,
         "obs_shape": obs_shape,
         "action_dim": action_dim,
+        "training_total_steps": training_total_steps,
+        "training_batch_size": training_batch_size,
         "hidden_dim": 32,
         "device": device,
     }
