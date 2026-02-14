@@ -77,6 +77,8 @@ print(trajectory.rewards.shape)
 
     [:octicons-arrow-right-24: Quick Start](getting-started/quickstart.md)
 
+    [:octicons-arrow-right-24: Model Choice in `worldflux init`](getting-started/quickstart.md#4-choosing-a-model-in-worldflux-init)
+
     [:octicons-arrow-right-24: CPU Success Path](getting-started/cpu-success.md)
 
 -   **API Reference**
