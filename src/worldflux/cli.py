@@ -545,7 +545,12 @@ def init(
 
     try:
         context = _prompt_user_configuration()
-        deps_result = ensure_init_dependencies(context)
+        console.print("[cyan]Preparing bootstrap dependencies before project generation...[/cyan]")
+
+        def _bootstrap_progress(message: str) -> None:
+            console.print(f"[dim][bootstrap][/dim] {message}")
+
+        deps_result = ensure_init_dependencies(context, progress_callback=_bootstrap_progress)
         if deps_result.skipped:
             console.print(f"[yellow]{deps_result.message}[/yellow]")
         elif deps_result.success:

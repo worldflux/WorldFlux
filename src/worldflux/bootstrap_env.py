@@ -7,7 +7,7 @@ import os
 import shlex
 import subprocess
 import sys
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -16,6 +16,7 @@ BOOTSTRAP_HOME_ENV = "WORLDFLUX_BOOTSTRAP_HOME"
 INIT_ENSURE_DEPS_ENV = "WORLDFLUX_INIT_ENSURE_DEPS"
 _DISABLED_VALUES = {"0", "false", "no", "off"}
 _MAX_DIAGNOSTIC_LINES = 40
+ProgressCallback = Callable[[str], None]
 
 
 @dataclass(frozen=True)
@@ -112,8 +113,45 @@ def _trim_output(text: str) -> str:
     return "\n".join(lines[-_MAX_DIAGNOSTIC_LINES:])
 
 
-def _run_command(args: list[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(args, check=False, text=True, capture_output=True)
+def _emit_progress(callback: ProgressCallback | None, message: str) -> None:
+    if callback is None:
+        return
+    callback(message)
+
+
+def _run_command(
+    args: list[str],
+    *,
+    stream_output: bool = False,
+) -> subprocess.CompletedProcess[str]:
+    if not stream_output:
+        return subprocess.run(args, check=False, text=True, capture_output=True)
+
+    try:
+        process = subprocess.Popen(
+            args,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+    except OSError as exc:
+        return subprocess.CompletedProcess(args=args, returncode=1, stdout="", stderr=str(exc))
+
+    if process.stdout is None:
+        returncode = process.wait()
+        return subprocess.CompletedProcess(args=args, returncode=returncode, stdout="", stderr="")
+
+    lines: list[str] = []
+    for line in process.stdout:
+        print(line, end="", flush=True)
+        lines.append(line)
+    returncode = process.wait()
+    return subprocess.CompletedProcess(
+        args=args,
+        returncode=returncode,
+        stdout="".join(lines),
+        stderr="",
+    )
 
 
 def _is_bootstrap_disabled() -> bool:
@@ -169,14 +207,27 @@ def _install_targets(profile: DependencyProfile) -> tuple[tuple[str, ...], Path 
     return tuple(targets), source_root
 
 
-def _ensure_virtualenv(runtime: BootstrapRuntime) -> tuple[bool, tuple[str, ...]]:
+def _ensure_virtualenv(
+    runtime: BootstrapRuntime,
+    *,
+    progress_callback: ProgressCallback | None = None,
+) -> tuple[bool, tuple[str, ...]]:
     if runtime.python_executable.exists():
+        _emit_progress(
+            progress_callback, f"Using existing bootstrap environment: {runtime.venv_dir}"
+        )
         return True, ()
 
     runtime.venv_dir.parent.mkdir(parents=True, exist_ok=True)
     create_cmd = [str(sys.executable), "-m", "venv", str(runtime.venv_dir)]
+    _emit_progress(
+        progress_callback,
+        "Creating bootstrap environment (first run can take a bit): "
+        + _command_to_text(create_cmd),
+    )
     create_result = _run_command(create_cmd)
     if create_result.returncode == 0 and runtime.python_executable.exists():
+        _emit_progress(progress_callback, f"Created bootstrap environment: {runtime.venv_dir}")
         return True, ()
 
     diagnostics = [
@@ -220,7 +271,11 @@ def verify_modules(python_executable: Path, modules: tuple[str, ...]) -> tuple[s
     return modules
 
 
-def ensure_init_dependencies(context: Mapping[str, Any]) -> EnsureDepsResult:
+def ensure_init_dependencies(
+    context: Mapping[str, Any],
+    *,
+    progress_callback: ProgressCallback | None = None,
+) -> EnsureDepsResult:
     """Ensure worldflux + selected environment dependencies before project generation."""
     environment = _normalize_environment(context.get("environment", "custom"))
     profile = _resolve_dependency_profile(environment)
@@ -241,6 +296,7 @@ def ensure_init_dependencies(context: Mapping[str, Any]) -> EnsureDepsResult:
         )
 
     runtime = resolve_bootstrap_runtime()
+    _emit_progress(progress_callback, f"Resolved bootstrap runtime: {runtime.venv_dir}")
     install_targets, _source_root = _install_targets(profile)
 
     create_venv_cmd = [str(sys.executable), "-m", "venv", str(runtime.venv_dir)]
@@ -254,7 +310,10 @@ def ensure_init_dependencies(context: Mapping[str, Any]) -> EnsureDepsResult:
     ]
     retry_commands = (_command_to_text(create_venv_cmd), _command_to_text(install_cmd))
 
-    created, creation_diagnostics = _ensure_virtualenv(runtime)
+    created, creation_diagnostics = _ensure_virtualenv(
+        runtime,
+        progress_callback=progress_callback,
+    )
     if not created:
         return EnsureDepsResult(
             success=False,
@@ -267,7 +326,15 @@ def ensure_init_dependencies(context: Mapping[str, Any]) -> EnsureDepsResult:
             diagnostics=creation_diagnostics,
         )
 
-    install_result = _run_command(install_cmd)
+    package_summary = (
+        ", ".join(profile.pip_specs) if profile.pip_specs else "core dependencies only"
+    )
+    _emit_progress(
+        progress_callback,
+        f"Installing bootstrap dependencies ({package_summary}). This may take a few minutes...",
+    )
+    _emit_progress(progress_callback, "Install command: " + _command_to_text(install_cmd))
+    install_result = _run_command(install_cmd, stream_output=progress_callback is not None)
     if install_result.returncode != 0:
         diagnostics = tuple(
             item
@@ -292,6 +359,7 @@ def ensure_init_dependencies(context: Mapping[str, Any]) -> EnsureDepsResult:
         )
 
     required_modules = ("worldflux", *profile.import_modules)
+    _emit_progress(progress_callback, "Verifying imports: " + ", ".join(required_modules))
     missing_modules = verify_modules(runtime.python_executable, required_modules)
     if missing_modules:
         return EnsureDepsResult(
@@ -308,9 +376,7 @@ def ensure_init_dependencies(context: Mapping[str, Any]) -> EnsureDepsResult:
             diagnostics=(),
         )
 
-    package_summary = (
-        ", ".join(profile.pip_specs) if profile.pip_specs else "core dependencies only"
-    )
+    _emit_progress(progress_callback, "Dependency bootstrap completed successfully.")
     return EnsureDepsResult(
         success=True,
         profile=profile,
