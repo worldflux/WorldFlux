@@ -24,6 +24,12 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--eval-window", type=int, default=10)
     parser.add_argument("--eval-interval", type=int, default=5_000)
     parser.add_argument("--eval-episodes", type=int, default=4)
+    parser.add_argument(
+        "--policy-mode",
+        type=str,
+        default="diagnostic_random",
+        choices=["diagnostic_random", "parity_candidate"],
+    )
     parser.add_argument("--timeout-sec", type=int, default=0)
     parser.add_argument("--python-executable", type=str, default="python3")
     parser.add_argument("--train-command", type=str, default="")
@@ -53,6 +59,7 @@ def main() -> int:
         "eval_interval": args.eval_interval,
         "eval_episodes": args.eval_episodes,
         "eval_window": args.eval_window,
+        "policy_mode": args.policy_mode,
     }
 
     command: str | list[str]
@@ -82,6 +89,8 @@ def main() -> int:
             str(args.eval_episodes),
             "--eval-window",
             str(args.eval_window),
+            "--policy-mode",
+            str(args.policy_mode),
         ]
         if args.mock:
             command.append("--mock")
