@@ -1,0 +1,49 @@
+schema_version: parity.suite.v2
+suite_id: <family>-<suite>
+family: <family>
+primary_metric: final_return_mean
+secondary_metrics:
+  - auc_return
+higher_is_better: true
+effect_transform: paired_log_ratio
+equivalence_margin: 0.05
+noninferiority_margin: 0.05
+alpha: 0.05
+holm_scope: all_metrics
+seed_policy:
+  mode: auto_power
+  values: []
+  pilot_seeds: 10
+  min_seeds: 20
+  max_seeds: 50
+  power_target: 0.8
+train_budget:
+  steps: 100000
+eval_protocol:
+  eval_interval: 5000
+  eval_episodes: 4
+  eval_window: 10
+validity_requirements:
+  policy_mode: parity_candidate
+  environment_backend: auto
+  forbidden_shortcuts:
+    - mode=mock
+    - policy=random
+tasks:
+  - task_id: <task-id>
+    official:
+      adapter: <official-adapter>
+      cwd: .
+      command: ["python3", "scripts/parity/wrappers/<official-wrapper>.py"]
+      env: {}
+      source:
+        commit: <official-fixed-sha>
+        artifact_path: <official-artifacts>
+    worldflux:
+      adapter: <worldflux-adapter>
+      cwd: .
+      command: ["python3", "scripts/parity/wrappers/<worldflux-wrapper>.py"]
+      env: {}
+      source:
+        commit: <worldflux-fixed-sha>
+        artifact_path: <worldflux-artifacts>
