@@ -71,11 +71,46 @@ def _render(report: dict[str, Any]) -> str:
         f"- All metrics parity: **{_fmt_bool(global_block.get('parity_pass_all_metrics'))}**"
     )
     lines.append(
+        f"- Final verdict (all-metrics + completeness): **{_fmt_bool(global_block.get('parity_pass_final'))}**"
+    )
+    lines.append(f"- Validity gate: **{_fmt_bool(global_block.get('validity_pass'))}**")
+    lines.append(
+        f"- Missing pairs: `{global_block.get('missing_pairs', '-')}` "
+        f"(strict-failed: `{global_block.get('strict_mode_failed', '-')}`)"
+    )
+    lines.append(
         "- Task pass counts: "
         f"primary `{global_block.get('tasks_pass_primary', 0)}` / `{global_block.get('tasks_total', 0)}`, "
         f"all-metrics `{global_block.get('tasks_pass_all_metrics', 0)}` / `{global_block.get('tasks_total', 0)}`"
     )
     lines.append("")
+
+    completeness = report.get("completeness", {})
+    if isinstance(completeness, dict):
+        lines.append("## Matrix Completeness")
+        lines.append("")
+        lines.append(
+            f"- Expected pairs: `{completeness.get('expected_pairs', '-')}`, "
+            f"missing: `{completeness.get('missing_pairs', '-')}`"
+        )
+        lines.append(
+            f"- Task-seed pairs: `{completeness.get('task_seed_count', '-')}`, "
+            f"complete task-seed pairs: `{completeness.get('complete_task_seed_pairs', '-')}`"
+        )
+        lines.append("")
+
+    validity = report.get("validity", {})
+    if isinstance(validity, dict):
+        lines.append("## Validity Gate")
+        lines.append("")
+        lines.append(
+            f"- Proof mode: `{validity.get('proof_mode', '-')}`, pass: **{_fmt_bool(validity.get('pass'))}**"
+        )
+        lines.append(
+            f"- Required policy mode: `{validity.get('required_policy_mode', '-')}`, "
+            f"issues: `{validity.get('issue_count', '-')}`"
+        )
+        lines.append("")
 
     lines.append("## Per-Metric Results")
     lines.append("")
@@ -110,6 +145,8 @@ def _render(report: dict[str, Any]) -> str:
     lines.append("- TOST on paired log-ratio with equivalence bounds ±5%.")
     lines.append("- One-sided non-inferiority bound at -5%.")
     lines.append("- Holm correction applied to multiple hypotheses.")
+    lines.append("- Validity gate must pass in proof mode (no mock/random shortcuts).")
+    lines.append("- Final pass requires all-metrics pass, zero missing pairs, and validity pass.")
 
     return "\n".join(lines) + "\n"
 

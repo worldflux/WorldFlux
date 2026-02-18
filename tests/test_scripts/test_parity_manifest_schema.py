@@ -81,3 +81,20 @@ def test_parse_manifest_rejects_unsupported_adapter() -> None:
 
     with pytest.raises(RuntimeError, match="Unsupported adapter"):
         mod._parse_manifest(manifest)
+
+
+def test_full_manifest_includes_65_tasks() -> None:
+    mod = _load_module()
+    full_manifest_path = (
+        Path(__file__).resolve().parents[2]
+        / "scripts"
+        / "parity"
+        / "manifests"
+        / "official_vs_worldflux_full_v1.yaml"
+    )
+    parsed = mod._parse_manifest(mod._load_manifest(full_manifest_path))
+
+    assert len(parsed.tasks) == 65
+    families = {task.family for task in parsed.tasks}
+    assert families == {"dreamerv3", "tdmpc2"}
+    assert len({task.task_id for task in parsed.tasks}) == 65

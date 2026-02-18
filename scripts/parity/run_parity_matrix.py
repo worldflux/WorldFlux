@@ -1,21 +1,31 @@
 #!/usr/bin/env python3
+# ruff: noqa: E402
 """Run official-vs-WorldFlux parity experiments from a manifest."""
 
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import hashlib
 import json
 import math
 import os
 import shlex
 import subprocess
+import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from statistics import NormalDist, pstdev
 from typing import Any
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from contract_schema import load_suite_contract
+from suite_registry import build_default_registry
 
 SUPPORTED_ADAPTERS: set[str] = {
     "official_dreamerv3",
@@ -37,6 +47,8 @@ class CommandSpec:
     command: str | list[str]
     env: dict[str, str]
     timeout_sec: int | None
+    source_commit: str | None
+    source_artifact_path: str | None
 
 
 @dataclass(frozen=True)
@@ -44,6 +56,17 @@ class TaskSpec:
     task_id: str
     family: str
     required_metrics: tuple[str, ...]
+    primary_metric: str
+    secondary_metrics: tuple[str, ...]
+    higher_is_better: bool
+    effect_transform: str
+    equivalence_margin: float
+    noninferiority_margin: float
+    alpha: float
+    holm_scope: str
+    train_budget: dict[str, Any]
+    eval_protocol: dict[str, Any]
+    validity_requirements: dict[str, Any]
     official: CommandSpec
     worldflux: CommandSpec
 
@@ -61,7 +84,20 @@ class SeedPolicy:
 @dataclass(frozen=True)
 class Manifest:
     schema_version: str
+    suite_id: str
+    family: str
     defaults: dict[str, Any]
+    train_budget: dict[str, Any]
+    eval_protocol: dict[str, Any]
+    validity_requirements: dict[str, Any]
+    primary_metric: str
+    secondary_metrics: tuple[str, ...]
+    higher_is_better: bool
+    effect_transform: str
+    equivalence_margin: float
+    noninferiority_margin: float
+    alpha: float
+    holm_scope: str
     seed_policy: SeedPolicy
     tasks: tuple[TaskSpec, ...]
 
@@ -75,6 +111,9 @@ class RunContext:
     worldflux_sha: str
     dry_run: bool
     max_retries: int
+    task_filter: tuple[str, ...]
+    shard_index: int
+    num_shards: int
 
 
 def _parse_args() -> argparse.Namespace:
@@ -93,6 +132,24 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--power-target", type=float, default=None)
     parser.add_argument("--equivalence-margin", type=float, default=None)
     parser.add_argument("--alpha", type=float, default=None)
+    parser.add_argument(
+        "--task-filter",
+        type=str,
+        default="",
+        help="Comma-separated task filters. Supports exact IDs and fnmatch patterns.",
+    )
+    parser.add_argument(
+        "--shard-index",
+        type=int,
+        default=0,
+        help="Shard index for distributed execution (0-based).",
+    )
+    parser.add_argument(
+        "--num-shards",
+        type=int,
+        default=1,
+        help="Total shard count for distributed execution.",
+    )
     return parser.parse_args()
 
 
@@ -157,12 +214,25 @@ def _parse_command_spec(raw: Any, *, name: str) -> CommandSpec:
         if not isinstance(timeout, int) or timeout <= 0:
             raise RuntimeError(f"{name}.timeout_sec must be a positive integer when provided.")
 
+    source = obj.get("source", None)
+    source_commit: str | None = None
+    source_artifact_path: str | None = None
+    if source is not None:
+        source_obj = _require_object(source, name=f"{name}.source")
+        source_commit = _require_string(source_obj.get("commit"), name=f"{name}.source.commit")
+        source_artifact_path = _require_string(
+            source_obj.get("artifact_path"),
+            name=f"{name}.source.artifact_path",
+        )
+
     return CommandSpec(
         adapter=adapter,
         cwd=cwd,
         command=command,
         env=dict(env),
         timeout_sec=timeout,
+        source_commit=source_commit,
+        source_artifact_path=source_artifact_path,
     )
 
 
@@ -198,48 +268,83 @@ def _parse_seed_policy(raw: Any) -> SeedPolicy:
 
 
 def _parse_manifest(raw: dict[str, Any]) -> Manifest:
-    schema = _require_string(raw.get("schema_version"), name="schema_version")
-    if schema != "parity.manifest.v1":
-        raise RuntimeError(f"Unsupported schema_version '{schema}'. Expected 'parity.manifest.v1'.")
-
-    defaults = _require_object(raw.get("defaults", {}), name="defaults")
-    seed_policy = _parse_seed_policy(raw.get("seed_policy", {}))
-
-    tasks_raw = raw.get("tasks")
-    if not isinstance(tasks_raw, list) or not tasks_raw:
-        raise RuntimeError("tasks must be a non-empty list.")
+    contract = load_suite_contract(raw, supported_adapters=SUPPORTED_ADAPTERS)
 
     tasks: list[TaskSpec] = []
-    seen_ids: set[str] = set()
-    for idx, task_raw in enumerate(tasks_raw):
-        name = f"tasks[{idx}]"
-        task_obj = _require_object(task_raw, name=name)
-        task_id = _require_string(task_obj.get("task_id"), name=f"{name}.task_id")
-        if task_id in seen_ids:
-            raise RuntimeError(f"Duplicate task_id: {task_id}")
-        seen_ids.add(task_id)
-
-        family = _require_string(task_obj.get("family"), name=f"{name}.family")
-        metrics_raw = task_obj.get("required_metrics", ["final_return_mean", "auc_return"])
-        if not isinstance(metrics_raw, list) or not all(isinstance(v, str) for v in metrics_raw):
-            raise RuntimeError(f"{name}.required_metrics must be list[str]")
-
-        official = _parse_command_spec(task_obj.get("official"), name=f"{name}.official")
-        worldflux = _parse_command_spec(task_obj.get("worldflux"), name=f"{name}.worldflux")
+    for task in contract.tasks:
         tasks.append(
             TaskSpec(
-                task_id=task_id,
-                family=family,
-                required_metrics=tuple(metrics_raw),
-                official=official,
-                worldflux=worldflux,
+                task_id=task.task_id,
+                family=task.family,
+                required_metrics=task.required_metrics,
+                primary_metric=task.primary_metric,
+                secondary_metrics=task.secondary_metrics,
+                higher_is_better=task.higher_is_better,
+                effect_transform=task.effect_transform,
+                equivalence_margin=task.equivalence_margin,
+                noninferiority_margin=task.noninferiority_margin,
+                alpha=task.alpha,
+                holm_scope=task.holm_scope,
+                train_budget=dict(task.train_budget),
+                eval_protocol=dict(task.eval_protocol),
+                validity_requirements=dict(task.validity_requirements),
+                official=CommandSpec(
+                    adapter=task.official.adapter,
+                    cwd=task.official.cwd,
+                    command=task.official.command,
+                    env=dict(task.official.env),
+                    timeout_sec=task.official.timeout_sec,
+                    source_commit=(
+                        task.official.source.commit if task.official.source is not None else None
+                    ),
+                    source_artifact_path=(
+                        task.official.source.artifact_path
+                        if task.official.source is not None
+                        else None
+                    ),
+                ),
+                worldflux=CommandSpec(
+                    adapter=task.worldflux.adapter,
+                    cwd=task.worldflux.cwd,
+                    command=task.worldflux.command,
+                    env=dict(task.worldflux.env),
+                    timeout_sec=task.worldflux.timeout_sec,
+                    source_commit=(
+                        task.worldflux.source.commit if task.worldflux.source is not None else None
+                    ),
+                    source_artifact_path=(
+                        task.worldflux.source.artifact_path
+                        if task.worldflux.source is not None
+                        else None
+                    ),
+                ),
             )
         )
 
     return Manifest(
-        schema_version=schema,
-        defaults=dict(defaults),
-        seed_policy=seed_policy,
+        schema_version=contract.schema_version,
+        suite_id=contract.suite_id,
+        family=contract.family,
+        defaults=dict(contract.defaults),
+        train_budget=dict(contract.train_budget),
+        eval_protocol=dict(contract.eval_protocol),
+        validity_requirements=dict(contract.validity_requirements),
+        primary_metric=contract.primary_metric,
+        secondary_metrics=contract.secondary_metrics,
+        higher_is_better=contract.higher_is_better,
+        effect_transform=contract.effect_transform,
+        equivalence_margin=contract.equivalence_margin,
+        noninferiority_margin=contract.noninferiority_margin,
+        alpha=contract.alpha,
+        holm_scope=contract.holm_scope,
+        seed_policy=SeedPolicy(
+            mode=contract.seed_policy.mode,
+            values=contract.seed_policy.values,
+            pilot_seeds=contract.seed_policy.pilot_seeds,
+            min_seeds=contract.seed_policy.min_seeds,
+            max_seeds=contract.seed_policy.max_seeds,
+            power_target=contract.seed_policy.power_target,
+        ),
         tasks=tuple(tasks),
     )
 
@@ -382,6 +487,18 @@ def _run_one(
             "attempt": 0,
             "max_retries": context.max_retries,
             "metrics": {},
+            "primary_metric": task.primary_metric,
+            "secondary_metrics": list(task.secondary_metrics),
+            "effect_transform": task.effect_transform,
+            "higher_is_better": task.higher_is_better,
+            "equivalence_margin": task.equivalence_margin,
+            "noninferiority_margin": task.noninferiority_margin,
+            "alpha": task.alpha,
+            "holm_scope": task.holm_scope,
+            "eval_protocol": task.eval_protocol,
+            "validity_requirements": task.validity_requirements,
+            "source_commit": spec.source_commit,
+            "source_artifact_path": spec.source_artifact_path,
             "success": False,
             "command": command_str,
             "cwd": str(formatted_cwd),
@@ -418,6 +535,18 @@ def _run_one(
 
             if proc.returncode == 0:
                 metrics = _load_metrics(metrics_path, task.required_metrics)
+                metadata = metrics.get("metadata", {}) if isinstance(metrics, dict) else {}
+                policy_mode = (
+                    str(metadata.get("policy_mode", "")) if isinstance(metadata, dict) else ""
+                )
+                policy_impl = (
+                    str(metadata.get("policy_impl", "")) if isinstance(metadata, dict) else ""
+                )
+                eval_protocol_hash = (
+                    str(metadata.get("eval_protocol_hash", ""))
+                    if isinstance(metadata, dict)
+                    else ""
+                )
                 record = {
                     "schema_version": "parity.v1",
                     "run_id": context.run_id,
@@ -434,6 +563,21 @@ def _run_one(
                     "attempt": attempt,
                     "max_retries": context.max_retries,
                     "metrics": metrics,
+                    "primary_metric": task.primary_metric,
+                    "secondary_metrics": list(task.secondary_metrics),
+                    "effect_transform": task.effect_transform,
+                    "higher_is_better": task.higher_is_better,
+                    "equivalence_margin": task.equivalence_margin,
+                    "noninferiority_margin": task.noninferiority_margin,
+                    "alpha": task.alpha,
+                    "holm_scope": task.holm_scope,
+                    "eval_protocol": task.eval_protocol,
+                    "validity_requirements": task.validity_requirements,
+                    "source_commit": spec.source_commit,
+                    "source_artifact_path": spec.source_artifact_path,
+                    "policy_mode": policy_mode,
+                    "policy_impl": policy_impl,
+                    "eval_protocol_hash": eval_protocol_hash,
                     "success": bool(metrics.get("success", True)),
                     "command": command_str,
                     "cwd": str(formatted_cwd),
@@ -469,6 +613,18 @@ def _run_one(
         "attempt": context.max_retries,
         "max_retries": context.max_retries,
         "metrics": {},
+        "primary_metric": task.primary_metric,
+        "secondary_metrics": list(task.secondary_metrics),
+        "effect_transform": task.effect_transform,
+        "higher_is_better": task.higher_is_better,
+        "equivalence_margin": task.equivalence_margin,
+        "noninferiority_margin": task.noninferiority_margin,
+        "alpha": task.alpha,
+        "holm_scope": task.holm_scope,
+        "eval_protocol": task.eval_protocol,
+        "validity_requirements": task.validity_requirements,
+        "source_commit": spec.source_commit,
+        "source_artifact_path": spec.source_artifact_path,
         "success": False,
         "command": command_str,
         "cwd": str(formatted_cwd),
@@ -488,6 +644,40 @@ def _parse_seed_list(raw: str) -> list[int]:
     if not values:
         return []
     return [int(v) for v in values]
+
+
+def _parse_task_filter(raw: str) -> list[str]:
+    patterns = [part.strip() for part in raw.split(",") if part.strip()]
+    return patterns
+
+
+def _select_tasks(
+    tasks: tuple[TaskSpec, ...],
+    *,
+    patterns: list[str],
+    shard_index: int,
+    num_shards: int,
+) -> tuple[TaskSpec, ...]:
+    if num_shards < 1:
+        raise RuntimeError("--num-shards must be >= 1")
+    if shard_index < 0 or shard_index >= num_shards:
+        raise RuntimeError("--shard-index must satisfy 0 <= shard-index < num-shards")
+
+    selected = list(tasks)
+    if patterns:
+        filtered: list[TaskSpec] = []
+        for task in selected:
+            if any(fnmatch.fnmatch(task.task_id, pattern) for pattern in patterns):
+                filtered.append(task)
+        selected = filtered
+
+    selected = sorted(selected, key=lambda task: task.task_id)
+    sharded = [task for idx, task in enumerate(selected) if idx % num_shards == shard_index]
+    if not sharded:
+        raise RuntimeError(
+            "No tasks selected after applying --task-filter/--shard-index/--num-shards."
+        )
+    return tuple(sharded)
 
 
 def _load_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -576,6 +766,7 @@ def _write_run_context(
     manifest_hash: str,
     run_jsonl: Path,
     seed_values: list[int],
+    selected_tasks: tuple[TaskSpec, ...],
 ) -> None:
     payload = {
         "schema_version": "parity.v1",
@@ -584,20 +775,52 @@ def _write_run_context(
         "manifest_path": str(context.manifest_path),
         "manifest_sha256": manifest_hash,
         "manifest_schema": manifest.schema_version,
+        "suite_id": manifest.suite_id,
+        "suite_family": manifest.family,
         "worldflux_sha": context.worldflux_sha,
         "device": context.device,
         "dry_run": context.dry_run,
         "max_retries": context.max_retries,
+        "task_filter": list(context.task_filter),
+        "shard_index": context.shard_index,
+        "num_shards": context.num_shards,
         "seeds": seed_values,
+        "selected_tasks": [task.task_id for task in selected_tasks],
+        "suite_contract": {
+            "primary_metric": manifest.primary_metric,
+            "secondary_metrics": list(manifest.secondary_metrics),
+            "higher_is_better": manifest.higher_is_better,
+            "effect_transform": manifest.effect_transform,
+            "equivalence_margin": manifest.equivalence_margin,
+            "noninferiority_margin": manifest.noninferiority_margin,
+            "alpha": manifest.alpha,
+            "holm_scope": manifest.holm_scope,
+            "train_budget": manifest.train_budget,
+            "eval_protocol": manifest.eval_protocol,
+            "validity_requirements": manifest.validity_requirements,
+        },
         "tasks": [
             {
                 "task_id": t.task_id,
                 "family": t.family,
                 "required_metrics": list(t.required_metrics),
+                "primary_metric": t.primary_metric,
+                "secondary_metrics": list(t.secondary_metrics),
+                "higher_is_better": t.higher_is_better,
+                "effect_transform": t.effect_transform,
+                "equivalence_margin": t.equivalence_margin,
+                "noninferiority_margin": t.noninferiority_margin,
+                "alpha": t.alpha,
+                "holm_scope": t.holm_scope,
+                "train_budget": t.train_budget,
+                "eval_protocol": t.eval_protocol,
+                "validity_requirements": t.validity_requirements,
                 "official_adapter": t.official.adapter,
                 "worldflux_adapter": t.worldflux.adapter,
+                "official_source_commit": t.official.source_commit,
+                "worldflux_source_commit": t.worldflux.source_commit,
             }
-            for t in manifest.tasks
+            for t in selected_tasks
         ],
         "artifacts": {
             "runs_jsonl": str(run_jsonl),
@@ -613,6 +836,9 @@ def main() -> int:
     args = _parse_args()
     raw_manifest = _load_manifest(args.manifest)
     manifest = _parse_manifest(raw_manifest)
+    registry = build_default_registry()
+    for task in manifest.tasks:
+        registry.require(task.family)
 
     run_id = (
         args.run_id.strip() or f"parity_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
@@ -628,6 +854,9 @@ def main() -> int:
         worldflux_sha=_infer_worldflux_sha(),
         dry_run=bool(args.dry_run),
         max_retries=max(0, int(args.max_retries)),
+        task_filter=tuple(_parse_task_filter(args.task_filter)),
+        shard_index=int(args.shard_index),
+        num_shards=int(args.num_shards),
     )
 
     run_jsonl = run_root / "parity_runs.jsonl"
@@ -643,13 +872,26 @@ def main() -> int:
             command_manifest.unlink()
 
     seed_override = _parse_seed_list(args.seed_list)
+    selected_tasks = _select_tasks(
+        manifest.tasks,
+        patterns=list(context.task_filter),
+        shard_index=context.shard_index,
+        num_shards=context.num_shards,
+    )
 
     defaults = dict(manifest.defaults)
-    alpha = float(args.alpha if args.alpha is not None else defaults.get("alpha", 0.05))
+    alpha = float(
+        args.alpha
+        if args.alpha is not None
+        else defaults.get("alpha", manifest.alpha if manifest.alpha > 0 else 0.05)
+    )
     equivalence_margin = float(
         args.equivalence_margin
         if args.equivalence_margin is not None
-        else defaults.get("equivalence_margin", 0.05)
+        else defaults.get(
+            "equivalence_margin",
+            manifest.equivalence_margin if manifest.equivalence_margin > 0 else 0.05,
+        )
     )
 
     seed_policy = manifest.seed_policy
@@ -694,10 +936,11 @@ def main() -> int:
         manifest_hash=manifest_hash,
         run_jsonl=run_jsonl,
         seed_values=seed_values,
+        selected_tasks=selected_tasks,
     )
 
     def run_seed_set(values: list[int]) -> None:
-        for task in manifest.tasks:
+        for task in selected_tasks:
             for seed in values:
                 for system, spec in (("official", task.official), ("worldflux", task.worldflux)):
                     key = (task.task_id, int(seed), system)
@@ -746,10 +989,17 @@ def main() -> int:
         "schema_version": "parity.v1",
         "run_id": context.run_id,
         "generated_at": datetime.now(timezone.utc).isoformat(),
+        "suite_id": manifest.suite_id,
+        "suite_family": manifest.family,
+        "plugin_families": list(registry.families()),
         "total_records": len(entries),
         "success_records": success,
         "failed_records": failed,
         "planned_records": planned,
+        "tasks_selected": [task.task_id for task in selected_tasks],
+        "task_filter": list(context.task_filter),
+        "shard_index": context.shard_index,
+        "num_shards": context.num_shards,
         "artifacts": {
             "run_context": str(run_root / "run_context.json"),
             "seed_plan": str(run_root / "seed_plan.json"),

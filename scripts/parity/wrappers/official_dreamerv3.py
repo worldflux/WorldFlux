@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -30,12 +31,33 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--run-dir", type=Path, required=True)
     parser.add_argument("--metrics-out", type=Path, required=True)
     parser.add_argument("--eval-window", type=int, default=10)
+    parser.add_argument("--eval-interval", type=int, default=5_000)
+    parser.add_argument("--eval-episodes", type=int, default=4)
     parser.add_argument("--timeout-sec", type=int, default=0)
     parser.add_argument("--scores-file", type=Path, default=None)
     parser.add_argument("--python-executable", type=str, default="python3")
     parser.add_argument("--train-command", type=str, default="")
     parser.add_argument("--mock", action="store_true")
     return parser.parse_args()
+
+
+def _eval_protocol_hash(
+    *,
+    family: str,
+    task_id: str,
+    eval_interval: int,
+    eval_episodes: int,
+    eval_window: int,
+) -> str:
+    payload = {
+        "family": str(family),
+        "task_id": str(task_id),
+        "eval_interval": int(eval_interval),
+        "eval_episodes": int(eval_episodes),
+        "eval_window": int(eval_window),
+    }
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def _format_template(template: str, values: dict[str, Any]) -> str:
@@ -85,7 +107,18 @@ def main() -> int:
             points=points,
             final_return_mean=curve_final_mean(points, args.eval_window),
             auc_return=curve_auc(points),
-            metadata={"mode": "mock"},
+            metadata={
+                "mode": "mock",
+                "policy_mode": "official_reference",
+                "policy_impl": "official_dreamerv3_reference",
+                "eval_protocol_hash": _eval_protocol_hash(
+                    family="dreamerv3",
+                    task_id=args.task_id,
+                    eval_interval=args.eval_interval,
+                    eval_episodes=args.eval_episodes,
+                    eval_window=args.eval_window,
+                ),
+            },
         )
         print(json.dumps(payload, indent=2, sort_keys=True))
         return 0
@@ -157,6 +190,15 @@ def main() -> int:
             "command": command,
             "stdout_tail": completed.stdout[-1000:],
             "stderr_tail": completed.stderr[-1000:],
+            "policy_mode": "official_reference",
+            "policy_impl": "official_dreamerv3_reference",
+            "eval_protocol_hash": _eval_protocol_hash(
+                family="dreamerv3",
+                task_id=args.task_id,
+                eval_interval=args.eval_interval,
+                eval_episodes=args.eval_episodes,
+                eval_window=args.eval_window,
+            ),
         },
     )
     print(json.dumps(payload, indent=2, sort_keys=True))

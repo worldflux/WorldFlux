@@ -65,6 +65,8 @@ def test_equivalence_report_json_has_stable_top_level_keys(tmp_path: Path) -> No
         "generated_at",
         "input",
         "config",
+        "completeness",
+        "validity",
         "holm",
         "tasks",
         "global",

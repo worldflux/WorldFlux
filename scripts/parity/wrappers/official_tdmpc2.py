@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -45,6 +46,25 @@ def _format_template(template: str, values: dict[str, Any]) -> str:
     return template.format_map(values)
 
 
+def _eval_protocol_hash(
+    *,
+    family: str,
+    task_id: str,
+    eval_interval: int,
+    eval_episodes: int,
+    eval_window: int,
+) -> str:
+    payload = {
+        "family": str(family),
+        "task_id": str(task_id),
+        "eval_interval": int(eval_interval),
+        "eval_episodes": int(eval_episodes),
+        "eval_window": int(eval_window),
+    }
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
 def _default_command(args: argparse.Namespace, *, exp_name: str) -> list[str]:
     return [
         args.python_executable,
@@ -84,7 +104,18 @@ def main() -> int:
             points=points,
             final_return_mean=curve_final_mean(points, args.eval_window),
             auc_return=curve_auc(points),
-            metadata={"mode": "mock"},
+            metadata={
+                "mode": "mock",
+                "policy_mode": "official_reference",
+                "policy_impl": "official_tdmpc2_reference",
+                "eval_protocol_hash": _eval_protocol_hash(
+                    family="tdmpc2",
+                    task_id=args.task_id,
+                    eval_interval=args.eval_freq,
+                    eval_episodes=args.eval_episodes,
+                    eval_window=args.eval_window,
+                ),
+            },
         )
         print(json.dumps(payload, indent=2, sort_keys=True))
         return 0
@@ -159,6 +190,15 @@ def main() -> int:
             "command": command,
             "stdout_tail": completed.stdout[-1000:],
             "stderr_tail": completed.stderr[-1000:],
+            "policy_mode": "official_reference",
+            "policy_impl": "official_tdmpc2_reference",
+            "eval_protocol_hash": _eval_protocol_hash(
+                family="tdmpc2",
+                task_id=args.task_id,
+                eval_interval=args.eval_freq,
+                eval_episodes=args.eval_episodes,
+                eval_window=args.eval_window,
+            ),
         },
     )
     print(json.dumps(payload, indent=2, sort_keys=True))
