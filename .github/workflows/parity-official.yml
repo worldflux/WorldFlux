@@ -1,28 +1,83 @@
 name: Parity Official
 
 on:
+  pull_request:
+    paths:
+      - "scripts/parity/**"
+      - "tests/test_scripts/test_*parity*"
+      - "tests/test_scripts/test_aws_distributed_orchestrator.py"
+      - ".github/workflows/parity-official.yml"
   workflow_dispatch:
     inputs:
       wf_region:
         description: AWS region
         required: true
         default: us-west-2
-      wf_instance_id:
-        description: SSM managed EC2 instance id
+      wf_instance_ids:
+        description: SSM managed EC2 instance IDs (comma-separated)
         required: true
         default: i-04b017c35ee53a11a
+      wf_s3_bucket:
+        description: S3 bucket for parity artifacts
+        required: true
+        default: worldflux-parity
       worldflux_sha:
-        description: WorldFlux commit SHA (blank uses current workflow SHA)
+        description: WorldFlux commit SHA (blank uses workflow SHA)
         required: false
         default: ""
+      max_retries:
+        description: Max retries per task/system run
+        required: true
+        default: "2"
   schedule:
     - cron: "0 9 * * 1"
 
 jobs:
-  parity-official:
+  parity-smoke:
+    if: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Run parity smoke tests
+        run: |
+          uv run pytest -q \
+            tests/test_scripts/test_end_to_end_parity_smoke.py \
+            tests/test_scripts/test_run_parity_matrix_sharding.py \
+            tests/test_scripts/test_parity_completeness_gate.py \
+            tests/test_scripts/test_stats_equivalence.py \
+            tests/test_scripts/test_suite_contract_schema_v2.py \
+            tests/test_scripts/test_metric_transforms_effect_size.py \
+            tests/test_scripts/test_family_plugin_registry.py \
+            tests/test_scripts/test_validity_gate_rejects_random_policy_in_proof_mode.py
+
+  parity-full-distributed:
+    if: ${{ github.event_name != 'pull_request' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install dependencies
+        run: uv sync --extra dev
 
       - name: Resolve AWS authentication mode
         id: auth
@@ -44,7 +99,7 @@ jobs:
           fi
 
           echo "mode=none" >> "${GITHUB_OUTPUT}"
-          echo "::warning::Skipping parity-official: AWS credentials are not configured."
+          echo "::warning::Skipping parity-official full run: AWS credentials are not configured."
 
       - name: Configure AWS credentials (OIDC role)
         if: ${{ steps.auth.outputs.mode == 'oidc' }}
@@ -61,66 +116,45 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ github.event.inputs.wf_region || 'us-west-2' }}
 
-      - name: Submit parity command via SSM
+      - name: Run distributed parity orchestration
         if: ${{ steps.auth.outputs.mode != 'none' }}
-        id: submit
         shell: bash
         run: |
           set -euo pipefail
 
-          REGION="${{ github.event.inputs.wf_region }}"
-          INSTANCE_ID="${{ github.event.inputs.wf_instance_id }}"
+          WF_REGION="${{ github.event.inputs.wf_region }}"
+          WF_INSTANCE_IDS="${{ github.event.inputs.wf_instance_ids }}"
+          WF_S3_BUCKET="${{ github.event.inputs.wf_s3_bucket }}"
           WF_SHA="${{ github.event.inputs.worldflux_sha }}"
-          if [ -z "${REGION}" ]; then REGION="us-west-2"; fi
-          if [ -z "${INSTANCE_ID}" ]; then INSTANCE_ID="i-04b017c35ee53a11a"; fi
-          if [ -z "${WF_SHA}" ]; then WF_SHA="${GITHUB_SHA}"; fi
+          MAX_RETRIES="${{ github.event.inputs.max_retries }}"
 
-          RUN_ID="parity_$(date -u +%Y%m%dT%H%M%SZ)"
-          export RUN_ID WF_SHA
+          if [ -z "${WF_REGION}" ]; then WF_REGION="us-west-2"; fi
+          if [ -z "${WF_INSTANCE_IDS}" ]; then WF_INSTANCE_IDS="i-04b017c35ee53a11a"; fi
+          if [ -z "${WF_S3_BUCKET}" ]; then WF_S3_BUCKET="worldflux-parity"; fi
+          if [ -z "${MAX_RETRIES}" ]; then MAX_RETRIES="2"; fi
 
-          COMMANDS_JSON="$(python3 - <<'PY'
-          import json
-          import os
+          RUN_ID="parity_full_$(date -u +%Y%m%dT%H%M%SZ)"
+          S3_PREFIX="s3://${WF_S3_BUCKET}/${RUN_ID}"
 
-          run_id = os.environ["RUN_ID"]
-          wf_sha = os.environ["WF_SHA"]
-          commands = [
-              "set -eu",
-              f"mkdir -p /opt/parity/{run_id} && cd /opt/parity/{run_id}",
-              "git clone https://github.com/worldflux/WorldFlux.git worldflux",
-              "git clone https://github.com/danijar/dreamerv3.git dreamerv3-official",
-              "git clone https://github.com/nicklashansen/tdmpc2.git tdmpc2-official",
-              f"cd worldflux && git checkout {wf_sha}",
-              "cd ../dreamerv3-official && git checkout b65cf81a6fb13625af8722127459283f899a35d9",
-              "cd ../tdmpc2-official && git checkout 8bbc14ebabdb32ea7ada5c801dc525d0dc73bafe",
-              "cd ../worldflux",
-              f"python3 scripts/parity/run_parity_matrix.py --manifest scripts/parity/manifests/official_vs_worldflux_v1.yaml --run-id {run_id} --device cuda",
-              f"python3 scripts/parity/stats_equivalence.py --input reports/parity/{run_id}/parity_runs.jsonl --output reports/parity/{run_id}/equivalence_report.json",
-              f"python3 scripts/parity/report_markdown.py --input reports/parity/{run_id}/equivalence_report.json --output reports/parity/{run_id}/equivalence_report.md",
-              f"cat reports/parity/{run_id}/equivalence_report.json",
-          ]
-          print(json.dumps(commands))
-          PY
-          )"
+          EXTRA_ARGS=()
+          if [ -n "${WF_SHA}" ]; then
+            EXTRA_ARGS+=(--worldflux-sha "${WF_SHA}")
+          fi
 
-          COMMAND_ID="$(aws ssm send-command \
-            --region "${REGION}" \
-            --instance-ids "${INSTANCE_ID}" \
-            --document-name AWS-RunShellScript \
-            --timeout-seconds 172800 \
-            --parameters "commands=${COMMANDS_JSON}" \
-            --query 'Command.CommandId' \
-            --output text)"
+          uv run python scripts/parity/aws_distributed_orchestrator.py \
+            --region "${WF_REGION}" \
+            --instance-ids "${WF_INSTANCE_IDS}" \
+            --manifest scripts/parity/manifests/official_vs_worldflux_full_v1.yaml \
+            --run-id "${RUN_ID}" \
+            --s3-prefix "${S3_PREFIX}" \
+            --device cuda \
+            --max-retries "${MAX_RETRIES}" \
+            "${EXTRA_ARGS[@]}"
 
-          echo "run_id=${RUN_ID}" >> "${GITHUB_OUTPUT}"
-          echo "region=${REGION}" >> "${GITHUB_OUTPUT}"
-          echo "instance_id=${INSTANCE_ID}" >> "${GITHUB_OUTPUT}"
-          echo "command_id=${COMMAND_ID}" >> "${GITHUB_OUTPUT}"
-
-      - name: Print follow-up commands
+      - name: Upload orchestrator summary
         if: ${{ steps.auth.outputs.mode != 'none' }}
-        run: |
-          echo "Run ID: ${{ steps.submit.outputs.run_id }}"
-          echo "Command ID: ${{ steps.submit.outputs.command_id }}"
-          echo "aws ssm list-command-invocations --region ${{ steps.submit.outputs.region }} --command-id ${{ steps.submit.outputs.command_id }} --details"
-          echo "aws ssm get-command-invocation --region ${{ steps.submit.outputs.region }} --command-id ${{ steps.submit.outputs.command_id }} --instance-id ${{ steps.submit.outputs.instance_id }} --query StandardOutputContent --output text"
+        uses: actions/upload-artifact@v4
+        with:
+          name: parity-orchestrator-summary
+          path: reports/parity/**/orchestrator_summary.json
+          if-no-files-found: ignore
