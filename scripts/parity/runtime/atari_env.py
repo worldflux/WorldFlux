@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import numbers
 from dataclasses import dataclass
 from typing import Any
 
@@ -205,7 +206,7 @@ def build_atari_env(
     obs_pre = _preprocess_atari_obs(obs)
 
     action_space_n = getattr(getattr(env, "action_space", None), "n", None)
-    if not isinstance(action_space_n, int) or action_space_n <= 0:
+    if not isinstance(action_space_n, numbers.Integral) or int(action_space_n) <= 0:
         env.close()
         raise AtariEnvError(f"Atari action_space.n must be positive int, got {action_space_n!r}")
 
