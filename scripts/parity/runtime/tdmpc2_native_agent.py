@@ -7,8 +7,10 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import torch
 
 from worldflux import create_world_model
+from worldflux.planners import CEMPlanner
 from worldflux.training import ReplayBuffer, Trainer, TrainingConfig
 
 from .dmcontrol_env import DMControlEnvError, build_dmcontrol_env
@@ -32,6 +34,10 @@ class TDMPC2NativeRunConfig:
     batch_size: int = 64
     max_episode_steps: int = 1000
     policy_mode: str = "diagnostic_random"
+    cem_horizon: int = 5
+    cem_num_samples: int = 128
+    cem_num_elites: int = 16
+    cem_iterations: int = 2
 
 
 def _evaluate_random_policy(
@@ -71,6 +77,42 @@ def _evaluate_random_policy(
     return float(np.mean(returns)) if returns else 0.0
 
 
+def _obs_to_tensor(obs: np.ndarray, *, device: str) -> torch.Tensor:
+    return torch.from_numpy(np.asarray(obs, dtype=np.float32)).unsqueeze(0).to(device=device)
+
+
+def _select_tdmpc2_cem_action(
+    *,
+    model: Any,
+    planner: CEMPlanner,
+    obs: np.ndarray,
+    action_low: np.ndarray,
+    action_high: np.ndarray,
+    device: str,
+    torch_seed: int,
+) -> np.ndarray:
+    with torch.no_grad():
+        torch.manual_seed(int(torch_seed))
+        obs_tensor = _obs_to_tensor(obs, device=device)
+        state = model.encode(obs_tensor)
+        action_payload = planner.plan(model, state)
+        if action_payload.tensor is None:
+            raise DMControlEnvError("CEM planner returned empty action tensor.")
+        action_tensor = action_payload.tensor
+        if action_tensor.ndim == 3:
+            selected = action_tensor[0, 0]
+        elif action_tensor.ndim == 2:
+            selected = action_tensor[0]
+        elif action_tensor.ndim == 1:
+            selected = action_tensor
+        else:
+            raise DMControlEnvError(
+                f"Unexpected CEM action tensor shape: {tuple(action_tensor.shape)}"
+            )
+        action = selected.detach().cpu().numpy().astype(np.float32)
+    return np.clip(action, action_low, action_high).astype(np.float32)
+
+
 def run_tdmpc2_native(
     config: TDMPC2NativeRunConfig,
 ) -> tuple[list[tuple[float, float]], dict[str, Any]]:
@@ -106,6 +148,23 @@ def run_tdmpc2_native(
 
     rng = np.random.default_rng(config.seed)
     curve: list[tuple[float, float]] = []
+    policy_mode = str(config.policy_mode).strip().lower()
+    if policy_mode not in {"diagnostic_random", "parity_candidate"}:
+        raise DMControlEnvError(
+            "policy_mode must be either 'diagnostic_random' or 'parity_candidate', "
+            f"got {config.policy_mode!r}"
+        )
+    planner: CEMPlanner | None = None
+    if policy_mode == "parity_candidate":
+        planner = CEMPlanner(
+            horizon=max(1, int(config.cem_horizon)),
+            action_dim=env.action_dim,
+            num_samples=max(2, int(config.cem_num_samples)),
+            num_elites=max(1, int(config.cem_num_elites)),
+            iterations=max(1, int(config.cem_iterations)),
+            action_low=env.action_low,
+            action_high=env.action_high,
+        )
 
     env_steps = 0
     train_target_steps = 0
@@ -124,7 +183,19 @@ def run_tdmpc2_native(
             done = False
             ep_len = 0
             while not done and env_steps < int(config.steps):
-                action = env.sample_action(rng)
+                if policy_mode == "parity_candidate":
+                    assert planner is not None
+                    action = _select_tdmpc2_cem_action(
+                        model=model,
+                        planner=planner,
+                        obs=obs,
+                        action_low=env.action_low,
+                        action_high=env.action_high,
+                        device=config.device,
+                        torch_seed=config.seed + env_steps,
+                    )
+                else:
+                    action = env.sample_action(rng)
                 model_action = env.to_model_action(action)
                 next_obs, reward, terminated, truncated, _ = env.step(action)
 
@@ -187,12 +258,16 @@ def run_tdmpc2_native(
         "family": "tdmpc2",
         "task_id": config.task_id,
         "model_id": model_id,
-        "policy": "random",
+        "policy": "learned" if policy_mode == "parity_candidate" else "random",
         "policy_mode": config.policy_mode,
-        "policy_impl": "random_env_sampler",
+        "policy_impl": "cem_planner" if policy_mode == "parity_candidate" else "random_env_sampler",
         "env_backend": config.env_backend,
         "obs_shape": list(env.obs_shape),
         "action_dim": int(env.action_dim),
+        "cem_horizon": int(config.cem_horizon),
+        "cem_num_samples": int(config.cem_num_samples),
+        "cem_num_elites": int(config.cem_num_elites),
+        "cem_iterations": int(config.cem_iterations),
         "buffer_capacity": int(config.buffer_capacity),
         "warmup_steps": int(config.warmup_steps),
         "train_steps_per_eval": int(config.train_steps_per_eval),
