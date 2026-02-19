@@ -98,3 +98,12 @@ def test_load_suite_contract_v2_requires_validity_requirements() -> None:
 
     with pytest.raises(RuntimeError, match="validity_requirements.policy_mode"):
         mod.load_suite_contract(payload)
+
+
+def test_load_suite_contract_v2_rejects_string_command() -> None:
+    mod = _load_module()
+    payload = _valid_v2()
+    payload["tasks"][0]["official"]["command"] = "python3 -c \"print('ok')\""
+
+    with pytest.raises(RuntimeError, match="must be list\\[str\\]"):
+        mod.load_suite_contract(payload)
