@@ -7,6 +7,7 @@ import csv
 import json
 import math
 import random
+import shlex
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,10 +28,21 @@ def run_command(
     env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Run a subprocess command and return the completed process."""
+    argv: list[str]
+    if isinstance(command, str):
+        if any(pattern in command for pattern in ("`", "$(", "${", "\n", "\r")):
+            raise RuntimeError(
+                "String command contains shell-special constructs; use list[str] instead."
+            )
+        argv = shlex.split(command, posix=True)
+    else:
+        argv = [str(token) for token in command if str(token)]
+    if not argv:
+        raise RuntimeError("Command must not be empty.")
+
     return subprocess.run(
-        command,
+        argv,
         cwd=str(cwd),
-        shell=isinstance(command, str),
         text=True,
         capture_output=True,
         timeout=timeout_sec,
