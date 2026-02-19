@@ -36,7 +36,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--policy-mode",
         type=str,
-        default="diagnostic_random",
+        default="parity_candidate",
         choices=["diagnostic_random", "parity_candidate"],
     )
     parser.add_argument("--run-dir", type=Path, required=True)

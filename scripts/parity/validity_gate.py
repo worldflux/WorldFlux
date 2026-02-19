@@ -77,12 +77,11 @@ def evaluate_validity(
 ) -> dict[str, Any]:
     """Evaluate parity-run validity conditions before statistical testing."""
     active_requirements = dict(requirements or {})
-    forbidden_rules = active_requirements.get("forbidden_shortcuts", [])
-    if not isinstance(forbidden_rules, list):
-        forbidden_rules = []
-
-    required_backend = str(active_requirements.get("environment_backend", "auto")).strip().lower()
-    policy_mode_expected = str(active_requirements.get("policy_mode", required_policy_mode)).strip()
+    default_forbidden = active_requirements.get("forbidden_shortcuts", [])
+    if not isinstance(default_forbidden, list):
+        default_forbidden = []
+    default_backend = str(active_requirements.get("environment_backend", "auto")).strip().lower()
+    default_policy_mode = str(active_requirements.get("policy_mode", required_policy_mode)).strip()
 
     plugin_registry = registry or build_default_registry()
     issues: list[dict[str, Any]] = []
@@ -98,6 +97,19 @@ def evaluate_validity(
         system = str(entry.get("system", ""))
         family = str(entry.get("family", "")).strip().lower()
         metadata = _metrics_metadata(entry)
+        record_requirements = dict(active_requirements)
+        entry_requirements = entry.get("validity_requirements")
+        if isinstance(entry_requirements, dict):
+            record_requirements.update(entry_requirements)
+        forbidden_rules = record_requirements.get("forbidden_shortcuts", default_forbidden)
+        if not isinstance(forbidden_rules, list):
+            forbidden_rules = list(default_forbidden)
+        required_backend = (
+            str(record_requirements.get("environment_backend", default_backend)).strip().lower()
+        )
+        policy_mode_expected = str(
+            record_requirements.get("policy_mode", default_policy_mode)
+        ).strip()
 
         flat: dict[str, Any] = {}
         _flatten("metadata", metadata, flat)
@@ -227,10 +239,10 @@ def evaluate_validity(
         "schema_version": "parity.v1",
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "proof_mode": bool(proof_mode),
-        "required_policy_mode": policy_mode_expected,
+        "required_policy_mode": str(required_policy_mode),
         "requirements": {
-            "environment_backend": required_backend,
-            "forbidden_shortcuts": [str(item) for item in forbidden_rules],
+            "environment_backend": default_backend,
+            "forbidden_shortcuts": [str(item) for item in default_forbidden],
         },
         "issue_count": len(issues),
         "issues": issues,

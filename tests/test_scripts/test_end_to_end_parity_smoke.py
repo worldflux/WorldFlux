@@ -29,6 +29,11 @@ def test_parity_pipeline_smoke_generates_all_artifacts(tmp_path: Path) -> None:
                 "task_id": "atari100k_pong",
                 "family": "dreamerv3",
                 "required_metrics": ["final_return_mean", "auc_return"],
+                "validity_requirements": {
+                    "policy_mode": "parity_candidate",
+                    "environment_backend": "gymnasium",
+                    "forbidden_shortcuts": ["policy=random", "mode=mock"],
+                },
                 "official": {
                     "adapter": "official_dreamerv3",
                     "cwd": str(root),
@@ -70,6 +75,8 @@ def test_parity_pipeline_smoke_generates_all_artifacts(tmp_path: Path) -> None:
                         "{run_root}/executions/{task_id}/seed_{seed}/worldflux",
                         "--metrics-out",
                         "{metrics_out}",
+                        "--policy-mode",
+                        "parity_candidate",
                         "--mock",
                     ],
                 },
@@ -78,6 +85,11 @@ def test_parity_pipeline_smoke_generates_all_artifacts(tmp_path: Path) -> None:
                 "task_id": "dog-run",
                 "family": "tdmpc2",
                 "required_metrics": ["final_return_mean", "auc_return"],
+                "validity_requirements": {
+                    "policy_mode": "parity_candidate",
+                    "environment_backend": "dmcontrol",
+                    "forbidden_shortcuts": ["policy=random", "mode=mock"],
+                },
                 "official": {
                     "adapter": "official_tdmpc2",
                     "cwd": str(root),
@@ -119,6 +131,8 @@ def test_parity_pipeline_smoke_generates_all_artifacts(tmp_path: Path) -> None:
                         "{run_root}/executions/{task_id}/seed_{seed}/worldflux",
                         "--metrics-out",
                         "{metrics_out}",
+                        "--policy-mode",
+                        "parity_candidate",
                         "--mock",
                     ],
                 },

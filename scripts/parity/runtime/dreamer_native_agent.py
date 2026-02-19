@@ -7,8 +7,11 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import torch
+import torch.nn.functional as F
 
 from worldflux import create_world_model
+from worldflux.core.state import State
 from worldflux.training import ReplayBuffer, Trainer, TrainingConfig
 
 from .atari_env import AtariEnvError, build_atari_env
@@ -32,6 +35,8 @@ class DreamerNativeRunConfig:
     batch_size: int = 16
     max_episode_steps: int = 27_000
     policy_mode: str = "diagnostic_random"
+    shooting_horizon: int = 5
+    shooting_num_candidates: int = 128
 
 
 def _evaluate_random_policy(
@@ -72,6 +77,55 @@ def _evaluate_random_policy(
     return float(np.mean(returns)) if returns else 0.0
 
 
+def _obs_to_tensor(obs: np.ndarray, *, device: str) -> torch.Tensor:
+    return torch.from_numpy(np.asarray(obs, dtype=np.float32)).unsqueeze(0).to(device=device)
+
+
+def _expand_state(state: State, *, batch_size: int) -> State:
+    expanded = {
+        key: value.expand(batch_size, *value.shape[1:]).clone()
+        for key, value in state.tensors.items()
+    }
+    return State(tensors=expanded, meta=dict(state.meta))
+
+
+def _select_dreamer_shooting_action(
+    *,
+    model: Any,
+    obs: np.ndarray,
+    action_dim: int,
+    rng: np.random.Generator,
+    device: str,
+    horizon: int,
+    num_candidates: int,
+) -> int:
+    with torch.no_grad():
+        obs_tensor = _obs_to_tensor(obs, device=device)
+        base_state = model.encode(obs_tensor)
+        simulated_state = _expand_state(base_state, batch_size=max(1, int(num_candidates)))
+
+        candidates = rng.integers(
+            low=0,
+            high=max(1, int(action_dim)),
+            size=(max(1, int(num_candidates)), max(1, int(horizon))),
+            endpoint=False,
+        )
+        reward_sum = torch.zeros((max(1, int(num_candidates)),), device=obs_tensor.device)
+
+        for step in range(max(1, int(horizon))):
+            indices = torch.from_numpy(candidates[:, step]).to(device=obs_tensor.device)
+            actions = F.one_hot(indices, num_classes=max(1, int(action_dim))).to(torch.float32)
+            simulated_state = model.transition(simulated_state, actions, deterministic=True)
+            decoded = model.decode(simulated_state)
+            rewards = decoded.predictions.get("reward")
+            if rewards is None:
+                raise AtariEnvError("Dreamer shooting policy requires 'reward' prediction output.")
+            reward_sum += rewards.reshape(max(1, int(num_candidates)), -1)[:, 0]
+
+        best = int(torch.argmax(reward_sum).item())
+    return int(candidates[best, 0])
+
+
 def run_dreamer_native(
     config: DreamerNativeRunConfig,
 ) -> tuple[list[tuple[float, float]], dict[str, Any]]:
@@ -108,6 +162,12 @@ def run_dreamer_native(
 
     rng = np.random.default_rng(config.seed)
     curve: list[tuple[float, float]] = []
+    policy_mode = str(config.policy_mode).strip().lower()
+    if policy_mode not in {"diagnostic_random", "parity_candidate"}:
+        raise AtariEnvError(
+            "policy_mode must be either 'diagnostic_random' or 'parity_candidate', "
+            f"got {config.policy_mode!r}"
+        )
 
     env_steps = 0
     train_target_steps = 0
@@ -126,7 +186,18 @@ def run_dreamer_native(
             done = False
             ep_len = 0
             while not done and env_steps < int(config.steps):
-                action = env.sample_action(rng)
+                if policy_mode == "parity_candidate":
+                    action = _select_dreamer_shooting_action(
+                        model=model,
+                        obs=obs,
+                        action_dim=env.action_dim,
+                        rng=rng,
+                        device=config.device,
+                        horizon=max(1, int(config.shooting_horizon)),
+                        num_candidates=max(1, int(config.shooting_num_candidates)),
+                    )
+                else:
+                    action = env.sample_action(rng)
                 model_action = env.to_model_action(action)
                 next_obs, reward, terminated, truncated, _ = env.step(action)
 
@@ -189,12 +260,16 @@ def run_dreamer_native(
         "family": "dreamerv3",
         "task_id": config.task_id,
         "model_id": model_id,
-        "policy": "random",
+        "policy": "model_based" if policy_mode == "parity_candidate" else "random",
         "policy_mode": config.policy_mode,
-        "policy_impl": "random_env_sampler",
+        "policy_impl": "model_based_shooting"
+        if policy_mode == "parity_candidate"
+        else "random_env_sampler",
         "env_backend": config.env_backend,
         "obs_shape": list(env.obs_shape),
         "action_dim": int(env.action_dim),
+        "shooting_horizon": int(config.shooting_horizon),
+        "shooting_num_candidates": int(config.shooting_num_candidates),
         "buffer_capacity": int(config.buffer_capacity),
         "warmup_steps": int(config.warmup_steps),
         "train_steps_per_eval": int(config.train_steps_per_eval),

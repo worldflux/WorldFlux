@@ -97,3 +97,31 @@ def test_validity_gate_allows_random_policy_outside_proof_mode() -> None:
     )
 
     assert report["pass"] is True
+
+
+def test_validity_gate_uses_per_entry_validity_requirements_override() -> None:
+    mod = _load_module()
+    entries = [
+        _entry("official", random_policy=False),
+        {
+            **_entry("worldflux", random_policy=False),
+            "validity_requirements": {
+                "policy_mode": "parity_candidate",
+                "environment_backend": "gymnasium",
+                "forbidden_shortcuts": ["policy=random"],
+            },
+        },
+    ]
+
+    report = mod.evaluate_validity(
+        entries,
+        proof_mode=True,
+        required_policy_mode="diagnostic_random",
+        requirements={
+            "policy_mode": "diagnostic_random",
+            "environment_backend": "auto",
+            "forbidden_shortcuts": [],
+        },
+    )
+
+    assert report["pass"] is True

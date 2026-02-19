@@ -204,3 +204,57 @@ def test_stats_equivalence_strict_validity_fails_on_random_policy(tmp_path: Path
     assert report["global"]["strict_mode_failed"] is True
     assert report["global"]["validity_pass"] is False
     assert report["validity"]["pass"] is False
+
+
+def test_stats_equivalence_strict_validity_passes_on_parity_candidate_policy(
+    tmp_path: Path,
+) -> None:
+    runs_path = tmp_path / "runs.jsonl"
+    rows: list[dict] = []
+    for seed in range(2):
+        metadata_official = {
+            "mode": "official",
+            "eval_protocol_hash": "abc123",
+            "policy_mode": "official_reference",
+            "policy_impl": "official_ref",
+        }
+        metadata_worldflux = {
+            "mode": "native_real_env",
+            "eval_protocol_hash": "abc123",
+            "policy_mode": "parity_candidate",
+            "policy_impl": "cem_planner",
+            "policy": "learned",
+            "env_backend": "dmcontrol",
+        }
+        rows.append(
+            _record(
+                "dog-run",
+                seed,
+                "official",
+                100.0 + seed,
+                90.0 + seed,
+                metadata=metadata_official,
+            )
+        )
+        rows.append(
+            _record(
+                "dog-run",
+                seed,
+                "worldflux",
+                100.0 + seed,
+                90.0 + seed,
+                metadata=metadata_worldflux,
+            )
+        )
+    runs_path.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+
+    report = _run_stats(
+        runs_path,
+        tmp_path / "report.json",
+        extra_args=["--strict-validity", "--proof-mode"],
+        expected_returncode=0,
+    )
+
+    assert report["global"]["strict_mode_failed"] is False
+    assert report["global"]["validity_pass"] is True
+    assert report["validity"]["pass"] is True

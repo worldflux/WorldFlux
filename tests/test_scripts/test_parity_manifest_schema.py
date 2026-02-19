@@ -98,3 +98,34 @@ def test_full_manifest_includes_65_tasks() -> None:
     families = {task.family for task in parsed.tasks}
     assert families == {"dreamerv3", "tdmpc2"}
     assert len({task.task_id for task in parsed.tasks}) == 65
+
+
+def test_manifest_v1_tasks_define_validity_requirements_and_policy_mode() -> None:
+    mod = _load_module()
+    manifest_path = (
+        Path(__file__).resolve().parents[2]
+        / "scripts"
+        / "parity"
+        / "manifests"
+        / "official_vs_worldflux_v1.yaml"
+    )
+    parsed = mod._parse_manifest(mod._load_manifest(manifest_path))
+    task_map = {task.task_id: task for task in parsed.tasks}
+
+    dreamer = task_map["atari100k_pong"]
+    tdmpc2 = task_map["dog-run"]
+
+    assert dreamer.validity_requirements["policy_mode"] == "parity_candidate"
+    assert dreamer.validity_requirements["environment_backend"] == "gymnasium"
+    assert "policy=random" in dreamer.validity_requirements["forbidden_shortcuts"]
+
+    assert tdmpc2.validity_requirements["policy_mode"] == "parity_candidate"
+    assert tdmpc2.validity_requirements["environment_backend"] == "dmcontrol"
+    assert "policy=random" in tdmpc2.validity_requirements["forbidden_shortcuts"]
+
+    for task in parsed.tasks:
+        command = list(task.worldflux.command) if isinstance(task.worldflux.command, list) else []
+        assert "--policy-mode" in command
+        idx = command.index("--policy-mode")
+        assert idx + 1 < len(command)
+        assert command[idx + 1] == "parity_candidate"
