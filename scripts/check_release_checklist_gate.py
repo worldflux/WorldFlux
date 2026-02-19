@@ -21,7 +21,7 @@ REQUIRED_CI_SNIPPETS: tuple[str, ...] = (
     "benchmarks/benchmark_tdmpc2_mujoco.py --quick --seed 42",
     "benchmarks/benchmark_diffusion_imagination.py --quick --seed 42",
     "uv run mkdocs build --strict",
-    "bandit -r src/worldflux/ -ll",
+    "bandit -r src/worldflux/ scripts/parity/ -ll",
     "pip-audit",
     "scripts/check_critical_coverage.py --report coverage.xml",
     "scripts/check_parity_suite_coverage.py",

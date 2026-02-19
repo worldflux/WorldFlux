@@ -37,15 +37,15 @@ jobs:
     if: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
       - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: "3.11"
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
 
       - name: Install dependencies
         run: uv sync --extra dev
@@ -66,18 +66,35 @@ jobs:
     if: ${{ github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
       - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: "3.11"
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
 
       - name: Install dependencies
         run: uv sync --extra dev
+
+      - name: Dependency provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "### Parity dependency provenance"
+            echo ""
+            echo "- Workflow SHA: \`${GITHUB_SHA}\`"
+            echo "- Python: \`$(python --version 2>&1)\`"
+            echo "- uv: \`$(uv --version)\`"
+            if [ -f uv.lock ]; then
+              echo "- uv.lock sha256: \`$(sha256sum uv.lock | awk '{print $1}')\`"
+            else
+              echo "- uv.lock sha256: \`missing\`"
+            fi
+          } >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Resolve AWS authentication mode
         id: auth
@@ -103,14 +120,14 @@ jobs:
 
       - name: Configure AWS credentials (OIDC role)
         if: ${{ steps.auth.outputs.mode == 'oidc' }}
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ github.event.inputs.wf_region || 'us-west-2' }}
 
       - name: Configure AWS credentials (access keys)
         if: ${{ steps.auth.outputs.mode == 'keys' }}
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -153,7 +170,7 @@ jobs:
 
       - name: Upload orchestrator summary
         if: ${{ steps.auth.outputs.mode != 'none' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: parity-orchestrator-summary
           path: reports/parity/**/orchestrator_summary.json
