@@ -65,7 +65,9 @@ def _format_template(template: str, values: dict[str, Any]) -> str:
 
 
 def _default_command(args: argparse.Namespace, *, repo_root: Path, logdir: Path) -> list[str]:
-    jax_platform = "cpu" if args.device.lower() == "cpu" else "gpu"
+    # JAX expects explicit backend names (e.g. "cuda"), and "gpu" can route
+    # through unsupported backend probes on some CUDA hosts.
+    jax_platform = "cpu" if args.device.lower() == "cpu" else "cuda"
     return [
         args.python_executable,
         "dreamerv3/main.py",
@@ -82,7 +84,7 @@ def _default_command(args: argparse.Namespace, *, repo_root: Path, logdir: Path)
         "--jax.platform",
         jax_platform,
         "--logger.outputs",
-        "[jsonl]",
+        "jsonl",
     ]
 
 

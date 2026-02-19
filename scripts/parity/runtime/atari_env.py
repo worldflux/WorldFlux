@@ -176,6 +176,19 @@ def build_atari_env(
             "or use backend=stub for local smoke tests."
         ) from exc
 
+    try:
+        import ale_py  # type: ignore
+    except ModuleNotFoundError as exc:
+        raise AtariEnvError(
+            "ale-py is required for Atari parity runs. Install gymnasium + ale-py, "
+            "or use backend=stub for local smoke tests."
+        ) from exc
+
+    # Gymnasium requires explicit ALE namespace registration on some versions.
+    register_envs = getattr(gym, "register_envs", None)
+    if callable(register_envs):  # pragma: no branch - simple compatibility guard
+        register_envs(ale_py)
+
     env_id = _ale_env_id(task_id)
     try:
         env = gym.make(
