@@ -79,6 +79,7 @@ def _default_command(args: argparse.Namespace, *, exp_name: str) -> list[str]:
         "save_csv=true",
         "save_video=false",
         "save_agent=false",
+        "compile=false",
         f"exp_name={exp_name}",
     ]
 
