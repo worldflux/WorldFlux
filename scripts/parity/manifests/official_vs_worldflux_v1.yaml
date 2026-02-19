@@ -4,7 +4,7 @@
     "alpha": 0.05,
     "equivalence_margin": 0.05,
     "noninferiority_margin": 0.05,
-    "eps": 1e-8
+    "eps": 1e-08
   },
   "seed_policy": {
     "mode": "auto_power",
@@ -69,7 +69,17 @@
           "--run-dir",
           "{run_root}/executions/{task_id}/seed_{seed}/worldflux",
           "--metrics-out",
-          "{metrics_out}"
+          "{metrics_out}",
+          "--policy-mode",
+          "parity_candidate"
+        ]
+      },
+      "validity_requirements": {
+        "policy_mode": "parity_candidate",
+        "environment_backend": "gymnasium",
+        "forbidden_shortcuts": [
+          "policy=random",
+          "mode=mock"
         ]
       }
     },
@@ -129,7 +139,17 @@
           "--run-dir",
           "{run_root}/executions/{task_id}/seed_{seed}/worldflux",
           "--metrics-out",
-          "{metrics_out}"
+          "{metrics_out}",
+          "--policy-mode",
+          "parity_candidate"
+        ]
+      },
+      "validity_requirements": {
+        "policy_mode": "parity_candidate",
+        "environment_backend": "dmcontrol",
+        "forbidden_shortcuts": [
+          "policy=random",
+          "mode=mock"
         ]
       }
     }
