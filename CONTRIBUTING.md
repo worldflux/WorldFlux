@@ -120,10 +120,12 @@ uv run pytest tests/ --cov=worldflux --cov-report=html
    uv run python scripts/run_local_ci_gate.py
    ```
    - `pre-commit` now enforces the same local CI gate on every commit.
+   - Hook commands run from repository root and use `uv --project` for stable imports.
    - Install hooks once per clone:
      ```bash
      uv run --with pre-commit pre-commit install --hook-type pre-commit --hook-type pre-push
      ```
+   - If a hook fails, fix the reported issue instead of bypassing with `--no-verify`.
 
 4. **Submit a pull request**
    - Provide a clear description of the changes

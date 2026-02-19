@@ -10,6 +10,7 @@ import sys
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from pathlib import Path
 
 
 @dataclass(frozen=True)
@@ -18,6 +19,9 @@ class GateCommand:
 
     name: str
     argv: tuple[str, ...]
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _is_docs_domain_reachable(timeout_seconds: float = 5.0) -> bool:
@@ -323,7 +327,17 @@ def build_gate_commands() -> tuple[GateCommand, ...]:
         ),
         GateCommand(
             name="Bandit security linter",
-            argv=("uv", "run", "--with", "bandit", "bandit", "-r", "src/worldflux/", "-ll"),
+            argv=(
+                "uv",
+                "run",
+                "--with",
+                "bandit",
+                "bandit",
+                "-r",
+                "src/worldflux/",
+                "scripts/parity/",
+                "-ll",
+            ),
         ),
         GateCommand(
             name="pip-audit",
@@ -481,25 +495,47 @@ def _format_command(argv: tuple[str, ...]) -> str:
     return shlex.join(argv)
 
 
+def _projectize_uv_command(argv: tuple[str, ...], *, repo_root: Path) -> tuple[str, ...]:
+    if not argv:
+        return argv
+    if argv[0] != "uv":
+        return argv
+    if "--project" in argv:
+        return argv
+    if len(argv) >= 2 and argv[1] in {"run", "sync"}:
+        mutable = list(argv)
+        mutable[2:2] = ["--project", str(repo_root)]
+        return tuple(mutable)
+    return argv
+
+
 def run_commands(
     commands: tuple[GateCommand, ...],
     *,
     dry_run: bool = False,
     keep_going: bool = False,
+    repo_root: Path = REPO_ROOT,
 ) -> int:
+    resolved_root = repo_root.resolve()
     failures: list[tuple[str, int]] = []
     total = len(commands)
     for index, command in enumerate(commands, start=1):
+        command_argv = _projectize_uv_command(command.argv, repo_root=resolved_root)
         print(f"[ci-gate] ({index}/{total}) {command.name}")
-        print(f"[ci-gate] command: {_format_command(command.argv)}")
+        print(f"[ci-gate] repo root: {resolved_root}")
+        print(f"[ci-gate] command: {_format_command(command_argv)}")
         if dry_run:
             continue
 
-        completed = subprocess.run(command.argv, check=False)
+        completed = subprocess.run(command_argv, check=False, cwd=str(resolved_root))
         if completed.returncode == 0:
             continue
 
         failures.append((command.name, completed.returncode))
+        print(
+            "[ci-gate] diagnostic: command failed. "
+            "Check that dependencies are synced and avoid --no-verify for routine commits."
+        )
         if not keep_going:
             break
 
@@ -525,10 +561,21 @@ def main() -> int:
         action="store_true",
         help="Continue running remaining commands after failures.",
     )
+    parser.add_argument(
+        "--repo-root",
+        type=Path,
+        default=REPO_ROOT,
+        help="Repository root used as working directory and uv --project target.",
+    )
     args = parser.parse_args()
 
     commands = build_gate_commands()
-    return run_commands(commands, dry_run=args.dry_run, keep_going=args.keep_going)
+    return run_commands(
+        commands,
+        dry_run=args.dry_run,
+        keep_going=args.keep_going,
+        repo_root=args.repo_root,
+    )
 
 
 if __name__ == "__main__":

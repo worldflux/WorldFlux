@@ -34,13 +34,13 @@ repos:
     hooks:
       - id: ci-full-gate
         name: ci-full-gate
-        entry: uv run python scripts/run_local_ci_gate.py
+        entry: bash -lc 'ROOT="$(git rev-parse --show-toplevel)"; cd "$ROOT"; uv run --project "$ROOT" python scripts/run_local_ci_gate.py'
         language: system
         pass_filenames: false
         stages: [pre-commit]
       - id: pytest
         name: pytest
-        entry: uv run --extra dev python -m pytest tests/ -x -q --tb=short
+        entry: bash -lc 'ROOT="$(git rev-parse --show-toplevel)"; cd "$ROOT"; uv run --project "$ROOT" --extra dev python -m pytest tests/ -x -q --tb=short'
         language: system
         pass_filenames: false
         stages: [pre-push]

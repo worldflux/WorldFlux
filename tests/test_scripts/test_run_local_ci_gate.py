@@ -57,10 +57,10 @@ def test_lychee_command_does_not_exclude_when_reachable(monkeypatch) -> None:
 
 def test_run_commands_stops_on_first_failure(monkeypatch) -> None:
     mod = _load_module()
-    calls: list[tuple[str, ...]] = []
+    calls: list[tuple[tuple[str, ...], str | None]] = []
 
-    def _run(argv, check=False):  # noqa: ARG001
-        calls.append(tuple(argv))
+    def _run(argv, check=False, cwd=None):  # noqa: ARG001
+        calls.append((tuple(argv), cwd))
         return type("Completed", (), {"returncode": 1 if len(calls) == 1 else 0})()
 
     monkeypatch.setattr(mod.subprocess, "run", _run)
@@ -72,6 +72,34 @@ def test_run_commands_stops_on_first_failure(monkeypatch) -> None:
     result = mod.run_commands(commands, dry_run=False, keep_going=False)
     assert result == 1
     assert len(calls) == 1
+    assert calls[0][1] is not None
+
+
+def test_projectize_uv_run_injects_repo_root() -> None:
+    mod = _load_module()
+    repo_root = Path("/tmp/worldflux")
+    argv = ("uv", "run", "python", "-m", "pytest")
+
+    updated = mod._projectize_uv_command(argv, repo_root=repo_root)
+    assert updated[:4] == ("uv", "run", "--project", str(repo_root))
+
+
+def test_projectize_uv_sync_injects_repo_root() -> None:
+    mod = _load_module()
+    repo_root = Path("/tmp/worldflux")
+    argv = ("uv", "sync", "--extra", "dev")
+
+    updated = mod._projectize_uv_command(argv, repo_root=repo_root)
+    assert updated[:4] == ("uv", "sync", "--project", str(repo_root))
+
+
+def test_projectize_uv_pip_is_left_unchanged() -> None:
+    mod = _load_module()
+    repo_root = Path("/tmp/worldflux")
+    argv = ("uv", "pip", "install", "-e", ".")
+
+    updated = mod._projectize_uv_command(argv, repo_root=repo_root)
+    assert updated == argv
 
 
 def test_twine_command_uses_uv_managed_twine() -> None:
