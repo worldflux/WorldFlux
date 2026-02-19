@@ -20,6 +20,12 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--seeds", type=str, default="")
     parser.add_argument("--max-missing-pairs", type=int, default=0)
     parser.add_argument("--systems", type=str, default="official,worldflux")
+    parser.add_argument(
+        "--rerun-manifest-output",
+        type=Path,
+        default=None,
+        help="Optional path to emit a rerun-focused manifest for missing task/seed pairs.",
+    )
     return parser.parse_args()
 
 
@@ -43,7 +49,7 @@ def _load_jsonl(path: Path) -> list[dict[str, Any]]:
     return rows
 
 
-def _parse_manifest(path: Path) -> list[str]:
+def _parse_manifest(path: Path) -> dict[str, Any]:
     text = path.read_text(encoding="utf-8")
     try:
         payload = json.loads(text)
@@ -58,7 +64,10 @@ def _parse_manifest(path: Path) -> list[str]:
 
     if not isinstance(payload, dict):
         raise RuntimeError("Manifest root must be object.")
+    return payload
 
+
+def _manifest_task_ids(payload: dict[str, Any]) -> list[str]:
     tasks_raw = payload.get("tasks", [])
     if not isinstance(tasks_raw, list):
         raise RuntimeError("manifest.tasks must be list")
@@ -71,6 +80,57 @@ def _parse_manifest(path: Path) -> list[str]:
         if isinstance(task_id, str) and task_id.strip():
             task_ids.append(task_id.strip())
     return sorted(set(task_ids))
+
+
+def _write_rerun_manifest(
+    *,
+    manifest_payload: dict[str, Any],
+    missing_entries: list[dict[str, Any]],
+    output_path: Path,
+) -> None:
+    missing_tasks = {
+        str(entry.get("task_id", "")).strip()
+        for entry in missing_entries
+        if str(entry.get("task_id", "")).strip()
+    }
+    missing_seeds = sorted(
+        {
+            int(entry.get("seed", -1))
+            for entry in missing_entries
+            if isinstance(entry.get("seed"), int)
+        }
+    )
+    tasks_raw = manifest_payload.get("tasks", [])
+    selected_tasks = [
+        task
+        for task in tasks_raw
+        if isinstance(task, dict) and str(task.get("task_id", "")).strip() in missing_tasks
+    ]
+
+    seed_policy_raw = manifest_payload.get("seed_policy", {})
+    seed_policy: dict[str, Any]
+    if isinstance(seed_policy_raw, dict):
+        seed_policy = dict(seed_policy_raw)
+    else:
+        seed_policy = {}
+    seed_policy["mode"] = "fixed"
+    seed_policy["values"] = missing_seeds
+
+    rerun_payload: dict[str, Any] = dict(manifest_payload)
+    rerun_payload["tasks"] = selected_tasks
+    rerun_payload["seed_policy"] = seed_policy
+    rerun_payload["rerun_metadata"] = {
+        "generated_from": str(manifest_payload.get("schema_version", "unknown")),
+        "missing_pairs": len(missing_entries),
+        "missing_tasks": sorted(missing_tasks),
+        "missing_seeds": missing_seeds,
+    }
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(
+        json.dumps(rerun_payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
 
 
 def _parse_seed_csv(raw: str) -> list[int]:
@@ -124,7 +184,8 @@ def main() -> int:
     if args.max_missing_pairs < 0:
         raise SystemExit("--max-missing-pairs must be >= 0")
 
-    manifest_tasks = _parse_manifest(args.manifest)
+    manifest_payload = _parse_manifest(args.manifest)
+    manifest_tasks = _manifest_task_ids(manifest_payload)
     rows = _load_jsonl(args.runs)
 
     seed_plan = _load_json(args.seed_plan) if args.seed_plan and args.seed_plan.exists() else None
@@ -179,6 +240,14 @@ def main() -> int:
         "tasks": tasks,
         "seeds": seeds,
     }
+
+    if args.rerun_manifest_output is not None and missing:
+        _write_rerun_manifest(
+            manifest_payload=manifest_payload,
+            missing_entries=report["missing_entries"],
+            output_path=args.rerun_manifest_output,
+        )
+        report["rerun_manifest"] = str(args.rerun_manifest_output)
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
