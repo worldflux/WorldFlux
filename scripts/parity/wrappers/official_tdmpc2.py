@@ -80,6 +80,7 @@ def _default_command(args: argparse.Namespace, *, exp_name: str) -> list[str]:
         "save_video=false",
         "save_agent=false",
         "compile=false",
+        "hydra/launcher=basic",
         f"exp_name={exp_name}",
     ]
 

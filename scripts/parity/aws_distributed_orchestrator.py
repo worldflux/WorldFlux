@@ -545,7 +545,7 @@ def _build_remote_commands(
         "  . ../.venv/bin/activate",
         "  python -m pip install --upgrade pip",
         "  python -m pip install -e .",
-        "  python -m pip install hydra-core omegaconf termcolor tensordict torchrl gymnasium dm-control mujoco imageio imageio-ffmpeg h5py kornia tqdm pandas wandb",
+        "  python -m pip install hydra-core hydra-submitit-launcher submitit omegaconf termcolor tensordict torchrl gymnasium dm-control mujoco imageio imageio-ffmpeg h5py kornia tqdm pandas wandb",
         "  python -m pip install -r ../dreamerv3-official/requirements.txt",
         "  python -m pip install pyyaml gymnasium ale-py dm-control mujoco hydra-core omegaconf",
         "  touch ../.venv/.parity_ready",
