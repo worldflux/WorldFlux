@@ -4,11 +4,23 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
+
+
+def _wrapper_common_module():
+    root = _repo_root()
+    wrappers_dir = root / "scripts" / "parity" / "wrappers"
+    path = str(wrappers_dir)
+    if path not in sys.path:
+        sys.path.insert(0, path)
+    from common import load_csv_curve  # type: ignore
+
+    return load_csv_curve
 
 
 def test_adapter_wrappers_emit_normalized_metrics(tmp_path: Path) -> None:
@@ -158,3 +170,19 @@ metrics_out.write_text(json.dumps({"final_return_mean": 1.0, "auc_return": 1.0})
     assert len(records) == 2
     assert all(record["status"] == "success" for record in records)
     assert all(record["attempt"] == 1 for record in records)
+
+
+def test_load_csv_curve_parses_numeric_strings(tmp_path: Path) -> None:
+    load_csv_curve = _wrapper_common_module()
+    csv_path = tmp_path / "eval.csv"
+    csv_path.write_text(
+        "step,episode_reward\n0.0,1.5\n5000,2.75\n",
+        encoding="utf-8",
+    )
+
+    points = load_csv_curve(csv_path, value_keys=["episode_reward"])
+    assert len(points) == 2
+    assert points[0].step == 0.0
+    assert points[0].value == 1.5
+    assert points[1].step == 5000.0
+    assert points[1].value == 2.75

@@ -53,16 +53,30 @@ def find_latest_file(search_roots: list[Path], names: list[str]) -> Path | None:
 
 
 def _first_numeric(mapping: dict[str, Any], keys: list[str]) -> float | None:
-    for key in keys:
-        value = mapping.get(key)
+    def _to_float(value: Any) -> float | None:
         if isinstance(value, int | float):
             return float(value)
+        if isinstance(value, str):
+            text = value.strip()
+            if not text:
+                return None
+            try:
+                return float(text)
+            except ValueError:
+                return None
+        return None
+
+    for key in keys:
+        parsed = _to_float(mapping.get(key))
+        if parsed is not None:
+            return parsed
     for key, value in mapping.items():
         key_l = str(key).lower()
-        if not isinstance(value, int | float):
+        parsed = _to_float(value)
+        if parsed is None:
             continue
         if "score" in key_l or "reward" in key_l or "return" in key_l:
-            return float(value)
+            return parsed
     return None
 
 
@@ -71,6 +85,13 @@ def _step_value(mapping: dict[str, Any], keys: list[str], fallback: int) -> floa
         value = mapping.get(key)
         if isinstance(value, int | float):
             return float(value)
+        if isinstance(value, str):
+            text = value.strip()
+            if text:
+                try:
+                    return float(text)
+                except ValueError:
+                    pass
     return float(fallback)
 
 
