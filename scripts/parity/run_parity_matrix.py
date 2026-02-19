@@ -112,6 +112,7 @@ class RunContext:
     dry_run: bool
     max_retries: int
     task_filter: tuple[str, ...]
+    systems: tuple[str, ...]
     shard_index: int
     num_shards: int
 
@@ -123,6 +124,12 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", type=Path, default=Path("reports/parity"))
     parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument("--seed-list", type=str, default="")
+    parser.add_argument(
+        "--systems",
+        type=str,
+        default="official,worldflux",
+        help="Comma-separated systems to execute (official, worldflux).",
+    )
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--max-retries", type=int, default=1)
@@ -668,6 +675,20 @@ def _parse_task_filter(raw: str) -> list[str]:
     return patterns
 
 
+def _parse_systems(raw: str) -> tuple[str, ...]:
+    values = [part.strip().lower() for part in raw.split(",") if part.strip()]
+    if not values:
+        raise RuntimeError("--systems must include at least one value.")
+    allowed = {"official", "worldflux"}
+    unknown = [value for value in values if value not in allowed]
+    if unknown:
+        raise RuntimeError(
+            f"--systems contains unsupported values {sorted(set(unknown))}; "
+            f"allowed={sorted(allowed)}."
+        )
+    return tuple(dict.fromkeys(values))
+
+
 def _select_tasks(
     tasks: tuple[TaskSpec, ...],
     *,
@@ -799,6 +820,7 @@ def _write_run_context(
         "dry_run": context.dry_run,
         "max_retries": context.max_retries,
         "task_filter": list(context.task_filter),
+        "systems": list(context.systems),
         "shard_index": context.shard_index,
         "num_shards": context.num_shards,
         "seeds": seed_values,
@@ -872,6 +894,7 @@ def main() -> int:
         dry_run=bool(args.dry_run),
         max_retries=max(0, int(args.max_retries)),
         task_filter=tuple(_parse_task_filter(args.task_filter)),
+        systems=_parse_systems(args.systems),
         shard_index=int(args.shard_index),
         num_shards=int(args.num_shards),
     )
@@ -960,6 +983,8 @@ def main() -> int:
         for task in selected_tasks:
             for seed in values:
                 for system, spec in (("official", task.official), ("worldflux", task.worldflux)):
+                    if system not in context.systems:
+                        continue
                     key = (task.task_id, int(seed), system)
                     if key in done_success:
                         continue
@@ -1015,6 +1040,7 @@ def main() -> int:
         "planned_records": planned,
         "tasks_selected": [task.task_id for task in selected_tasks],
         "task_filter": list(context.task_filter),
+        "systems": list(context.systems),
         "shard_index": context.shard_index,
         "num_shards": context.num_shards,
         "artifacts": {
