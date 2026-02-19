@@ -34,12 +34,14 @@ from .core.spec import ModelMaturity
 MODEL_ALIASES: dict[str, str] = {
     # DreamerV3 aliases
     "dreamer": "dreamerv3:size12m",
+    "dreamer-ci": "dreamer:ci",
     "dreamerv3": "dreamerv3:size12m",
     "dreamer-small": "dreamerv3:size12m",
     "dreamer-medium": "dreamerv3:size50m",
     "dreamer-large": "dreamerv3:size200m",
     # TD-MPC2 aliases
     "tdmpc": "tdmpc2:5m",
+    "tdmpc2-ci": "tdmpc2:ci",
     "tdmpc2": "tdmpc2:5m",
     "tdmpc-small": "tdmpc2:5m",
     "tdmpc-medium": "tdmpc2:48m",
@@ -63,6 +65,13 @@ MODEL_ALIASES: dict[str, str] = {
 
 # Available model presets with descriptions
 MODEL_CATALOG: dict[str, dict[str, Any]] = {
+    "dreamer:ci": {
+        "description": "Dreamer CI preset - small profile for quick validation and scaffolds",
+        "params": "~0.1M",
+        "type": "dreamer",
+        "default_obs": "image",
+        "maturity": ModelMaturity.REFERENCE.value,
+    },
     "dreamerv3:size12m": {
         "description": "DreamerV3 12M params - Good for simple environments",
         "params": "~12M",
@@ -101,6 +110,13 @@ MODEL_CATALOG: dict[str, dict[str, Any]] = {
     "tdmpc2:5m": {
         "description": "TD-MPC2 5M params - Fast planning",
         "params": "~5M",
+        "type": "tdmpc2",
+        "default_obs": "vector",
+        "maturity": ModelMaturity.REFERENCE.value,
+    },
+    "tdmpc2:ci": {
+        "description": "TD-MPC2 CI preset - small profile for quick validation and scaffolds",
+        "params": "~0.1M",
         "type": "tdmpc2",
         "default_obs": "vector",
         "maturity": ModelMaturity.REFERENCE.value,
