@@ -543,7 +543,7 @@ def _build_remote_commands(
         "  . ../.venv/bin/activate",
         "  python -m pip install --upgrade pip",
         "  python -m pip install -e .",
-        "  python -m pip install -e ../tdmpc2-official",
+        "  python -m pip install -r ../tdmpc2-official/requirements.txt",
         "  python -m pip install -r ../dreamerv3-official/requirements.txt",
         "  python -m pip install pyyaml gymnasium ale-py dm-control mujoco hydra-core omegaconf",
         "  touch ../.venv/.parity_ready",
