@@ -86,3 +86,50 @@ def test_validate_matrix_completeness_fails_when_pair_missing(tmp_path: Path) ->
     report = json.loads(output.read_text(encoding="utf-8"))
     assert report["missing_pairs"] == 1
     assert report["pass"] is False
+
+
+def test_validate_matrix_completeness_writes_rerun_manifest(tmp_path: Path) -> None:
+    root = _repo_root()
+    manifest_path = _manifest(tmp_path / "manifest.json")
+
+    runs_path = tmp_path / "runs.jsonl"
+    rows = [
+        {
+            "schema_version": "parity.v1",
+            "task_id": "atari100k_pong",
+            "seed": 0,
+            "system": "official",
+            "status": "success",
+            "metrics": {"final_return_mean": 1.0, "auc_return": 1.0},
+        }
+    ]
+    runs_path.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+
+    output = tmp_path / "coverage_report.json"
+    rerun_manifest = tmp_path / "rerun_manifest.json"
+    cmd = [
+        "python3",
+        "scripts/parity/validate_matrix_completeness.py",
+        "--manifest",
+        str(manifest_path),
+        "--runs",
+        str(runs_path),
+        "--output",
+        str(output),
+        "--seeds",
+        "0",
+        "--max-missing-pairs",
+        "0",
+        "--rerun-manifest-output",
+        str(rerun_manifest),
+    ]
+
+    completed = subprocess.run(cmd, cwd=root, check=False, text=True, capture_output=True)
+    assert completed.returncode == 1
+    assert rerun_manifest.exists()
+
+    rerun_payload = json.loads(rerun_manifest.read_text(encoding="utf-8"))
+    assert rerun_payload["seed_policy"]["mode"] == "fixed"
+    assert rerun_payload["seed_policy"]["values"] == [0]
+    assert len(rerun_payload["tasks"]) == 1
+    assert rerun_payload["tasks"][0]["task_id"] == "atari100k_pong"
