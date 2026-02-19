@@ -26,7 +26,9 @@ class TestListModels:
         """list_models returns list of model IDs."""
         models = list_models()
         assert isinstance(models, list)
+        assert "dreamer:ci" in models
         assert "dreamerv3:size12m" in models
+        assert "tdmpc2:ci" in models
         assert "tdmpc2:5m" in models
         assert "jepa:base" in models
         assert "vjepa2:base" in models
@@ -72,6 +74,14 @@ class TestGetModelInfo:
         info = get_model_info("dreamer-large")
         assert info["model_id"] == "dreamerv3:size200m"
         assert info["alias"] == "dreamer-large"
+
+    def test_get_model_info_ci_presets(self):
+        dreamer_info = get_model_info("dreamer:ci")
+        tdmpc_info = get_model_info("tdmpc2:ci")
+        assert dreamer_info["model_id"] == "dreamer:ci"
+        assert dreamer_info["type"] == "dreamer"
+        assert tdmpc_info["model_id"] == "tdmpc2:ci"
+        assert tdmpc_info["type"] == "tdmpc2"
 
     def test_get_model_info_unknown(self):
         """Unknown model raises ValueError."""
@@ -240,12 +250,14 @@ class TestModelCatalog:
     def test_catalog_has_all_dreamer_sizes(self):
         """Catalog has all DreamerV3 size presets."""
         expected = ["size12m", "size25m", "size50m", "size100m", "size200m"]
+        assert "dreamer:ci" in MODEL_CATALOG
         for size in expected:
             assert f"dreamerv3:{size}" in MODEL_CATALOG
 
     def test_catalog_has_all_tdmpc_sizes(self):
         """Catalog has all TD-MPC2 size presets."""
         expected = ["5m", "19m", "48m", "317m"]
+        assert "tdmpc2:ci" in MODEL_CATALOG
         for size in expected:
             assert f"tdmpc2:{size}" in MODEL_CATALOG
 

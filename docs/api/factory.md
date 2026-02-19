@@ -39,17 +39,26 @@ model = create_world_model("dreamerv3:size12m", ...)
 model = create_world_model("tdmpc2:5m", ...)
 ```
 
+#### CI Presets (`*:ci`)
+
+```python
+model = create_world_model("dreamer:ci", ...)
+model = create_world_model("tdmpc2:ci", ...)
+```
+
 #### Aliases
 
 ```python
 # DreamerV3 aliases
 model = create_world_model("dreamer", ...)        # dreamerv3:size12m
+model = create_world_model("dreamer-ci", ...)     # dreamer:ci
 model = create_world_model("dreamer-small", ...)  # dreamerv3:size12m
 model = create_world_model("dreamer-medium", ...) # dreamerv3:size50m
 model = create_world_model("dreamer-large", ...)  # dreamerv3:size200m
 
 # TD-MPC2 aliases
 model = create_world_model("tdmpc", ...)         # tdmpc2:5m
+model = create_world_model("tdmpc2-ci", ...)     # tdmpc2:ci
 model = create_world_model("tdmpc-small", ...)   # tdmpc2:5m
 model = create_world_model("tdmpc-medium", ...)  # tdmpc2:48m
 model = create_world_model("tdmpc-large", ...)   # tdmpc2:317m
@@ -116,6 +125,7 @@ models = list_models(verbose=True)
 
 | Preset | Approx Params | `deter_dim` | `stoch_discrete` | `stoch_classes` |
 |--------|----------------|-------------|------------------|-----------------|
+| `dreamer:ci` | ~0.1M | 64 | 4 | 4 |
 | `dreamerv3:size12m` | ~12M | 2048 | 16 | 16 |
 | `dreamerv3:size25m` | ~25M | 4096 | 32 | 16 |
 | `dreamerv3:size50m` | ~50M | 4096 | 32 | 32 |
@@ -126,6 +136,7 @@ models = list_models(verbose=True)
 
 | Preset | Approx Params | `latent_dim` | `hidden_dim` | `num_q_networks` |
 |--------|----------------|--------------|--------------|------------------|
+| `tdmpc2:ci` | ~0.1M | 32 | 32 | 2 |
 | `tdmpc2:5m` | ~5M | 256 | 256 | 5 |
 | `tdmpc2:19m` | ~19M | 512 | 512 | 5 |
 | `tdmpc2:48m` | ~48M | 512 | 1024 | 5 |
