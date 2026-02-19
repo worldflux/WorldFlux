@@ -430,30 +430,32 @@ def _build_seed_system_shards(
 
     plans: list[ShardPlan] = []
     shard_id = 0
+    packed_seeds = tuple(sorted({int(seed) for seed in seed_values}))
     for task_id in sorted(task_by_id):
         task = task_by_id[task_id]
         single_system_cost = max(1.0, float(task.estimated_steps))
         single_system_duration = float(
             single_system_cost / max(1.0, _family_steps_per_second(task.family))
         )
-        for seed in seed_values:
-            for system in systems:
-                instance_id, slot = select_slot(system)
-                slot_load[(instance_id, slot)] += single_system_cost
-                plans.append(
-                    ShardPlan(
-                        shard_id=shard_id,
-                        instance_id=instance_id,
-                        task_ids=(task.task_id,),
-                        shard_run_id=f"{run_id}_shard{shard_id:02d}",
-                        estimated_cost=single_system_cost,
-                        estimated_duration_sec=single_system_duration,
-                        seed_values=(int(seed),),
-                        systems=(system,),
-                        gpu_slot=slot,
-                    )
+        total_cost = single_system_cost * float(len(packed_seeds))
+        total_duration = single_system_duration * float(len(packed_seeds))
+        for system in systems:
+            instance_id, slot = select_slot(system)
+            slot_load[(instance_id, slot)] += total_cost
+            plans.append(
+                ShardPlan(
+                    shard_id=shard_id,
+                    instance_id=instance_id,
+                    task_ids=(task.task_id,),
+                    shard_run_id=f"{run_id}_shard{shard_id:02d}",
+                    estimated_cost=total_cost,
+                    estimated_duration_sec=total_duration,
+                    seed_values=packed_seeds,
+                    systems=(system,),
+                    gpu_slot=slot,
                 )
-                shard_id += 1
+            )
+            shard_id += 1
 
     if not plans:
         raise RuntimeError("No seed_system shards generated")
