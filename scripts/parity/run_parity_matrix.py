@@ -44,7 +44,7 @@ class _SafeFormat(dict[str, Any]):
 class CommandSpec:
     adapter: str
     cwd: str
-    command: str | list[str]
+    command: list[str]
     env: dict[str, str]
     timeout_sec: int | None
     source_commit: str | None
@@ -185,11 +185,23 @@ def _require_string(value: Any, *, name: str) -> str:
     return value
 
 
-def _coerce_command(value: Any, *, name: str) -> str | list[str]:
+def _coerce_command(value: Any, *, name: str) -> list[str]:
     if isinstance(value, str):
-        return value
+        tokens = shlex.split(value, posix=True)
+        if not tokens:
+            raise RuntimeError(f"{name} must not be an empty command string.")
+        dangerous_tokens = {";", "&&", "||", "|", "&"}
+        if any(token in dangerous_tokens for token in tokens):
+            raise RuntimeError(
+                f"{name} contains shell control operators {sorted(dangerous_tokens)}; "
+                "use list[str] without shell operators."
+            )
+        return [str(token) for token in tokens]
     if isinstance(value, list) and all(isinstance(v, str) for v in value):
-        return [str(v) for v in value]
+        out = [str(v) for v in value if str(v)]
+        if not out:
+            raise RuntimeError(f"{name} must not be an empty command list.")
+        return out
     raise RuntimeError(f"{name} must be string or list[str].")
 
 
@@ -404,9 +416,7 @@ def _infer_worldflux_sha() -> str:
     return result.stdout.strip() or "unknown"
 
 
-def _shell_quote_command(command: str | list[str]) -> str:
-    if isinstance(command, str):
-        return command
+def _shell_quote_command(command: list[str]) -> str:
     return " ".join(shlex.quote(v) for v in command)
 
 
@@ -458,7 +468,15 @@ def _run_one(
         "worldflux_sha": context.worldflux_sha,
     }
 
-    formatted_command = _format_recursive(spec.command, variables)
+    formatted_command_raw = _format_recursive(spec.command, variables)
+    if not isinstance(formatted_command_raw, list) or not all(
+        isinstance(item, str) for item in formatted_command_raw
+    ):
+        raise RuntimeError(
+            f"Rendered command must be list[str] for {task.task_id}/{system}/seed={seed}, "
+            f"got {type(formatted_command_raw)!r}"
+        )
+    formatted_command = [str(item) for item in formatted_command_raw]
     formatted_env = _format_recursive(spec.env, variables)
     formatted_cwd_raw = _format_recursive(spec.cwd, variables)
     formatted_cwd = Path(str(formatted_cwd_raw)).expanduser()
@@ -526,7 +544,6 @@ def _run_one(
                 env=env,
                 capture_output=True,
                 text=True,
-                shell=isinstance(formatted_command, str),
                 timeout=spec.timeout_sec,
                 check=False,
             )

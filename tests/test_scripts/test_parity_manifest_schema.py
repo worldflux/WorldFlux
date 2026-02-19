@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import sys
 from pathlib import Path
+from warnings import catch_warnings, simplefilter
 
 import pytest
 
@@ -124,8 +125,75 @@ def test_manifest_v1_tasks_define_validity_requirements_and_policy_mode() -> Non
     assert "policy=random" in tdmpc2.validity_requirements["forbidden_shortcuts"]
 
     for task in parsed.tasks:
-        command = list(task.worldflux.command) if isinstance(task.worldflux.command, list) else []
+        command = list(task.worldflux.command)
         assert "--policy-mode" in command
         idx = command.index("--policy-mode")
         assert idx + 1 < len(command)
         assert command[idx + 1] == "parity_candidate"
+
+
+def test_manifest_v1_allows_string_command_with_warning() -> None:
+    mod = _load_module()
+    manifest = _valid_manifest()
+    manifest["tasks"][0]["official"]["command"] = "python3 -c \"print('ok')\""
+
+    with catch_warnings(record=True) as captured:
+        simplefilter("always")
+        parsed = mod._parse_manifest(manifest)
+
+    assert parsed.tasks[0].official.command == ["python3", "-c", "print('ok')"]
+    assert any("legacy string" in str(item.message) for item in captured)
+
+
+def test_suite_v2_rejects_string_command() -> None:
+    mod = _load_module()
+    manifest = {
+        "schema_version": "parity.suite.v2",
+        "suite_id": "dreamerv3.atari100k",
+        "family": "dreamerv3",
+        "primary_metric": "final_return_mean",
+        "secondary_metrics": ["auc_return"],
+        "higher_is_better": True,
+        "effect_transform": "paired_log_ratio",
+        "equivalence_margin": 0.05,
+        "noninferiority_margin": 0.05,
+        "alpha": 0.05,
+        "holm_scope": "all_metrics",
+        "seed_policy": {
+            "mode": "fixed",
+            "values": [0],
+            "pilot_seeds": 10,
+            "min_seeds": 20,
+            "max_seeds": 50,
+            "power_target": 0.8,
+        },
+        "train_budget": {"steps": 100000},
+        "eval_protocol": {"eval_interval": 5000, "eval_episodes": 4, "eval_window": 10},
+        "validity_requirements": {
+            "policy_mode": "parity_candidate",
+            "environment_backend": "gymnasium",
+            "forbidden_shortcuts": ["mode=mock", "policy=random"],
+        },
+        "tasks": [
+            {
+                "task_id": "atari100k_pong",
+                "official": {
+                    "adapter": "official_dreamerv3",
+                    "cwd": ".",
+                    "command": "python3 -c \"print('ok')\"",
+                    "env": {},
+                    "source": {"commit": "abc", "artifact_path": "official"},
+                },
+                "worldflux": {
+                    "adapter": "worldflux_dreamerv3_native",
+                    "cwd": ".",
+                    "command": ["python3", "-c", "print('ok')"],
+                    "env": {},
+                    "source": {"commit": "def", "artifact_path": "wf"},
+                },
+            }
+        ],
+    }
+
+    with pytest.raises(RuntimeError, match="must be list\\[str\\]"):
+        mod._parse_manifest(manifest)

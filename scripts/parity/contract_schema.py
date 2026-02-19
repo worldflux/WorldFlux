@@ -4,7 +4,9 @@
 
 from __future__ import annotations
 
+import shlex
 import sys
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -54,10 +56,31 @@ def _coerce_string_list(value: Any, *, name: str, non_empty: bool = False) -> tu
 
 def _coerce_command(value: Any, *, name: str) -> str | list[str]:
     if isinstance(value, str) and value.strip():
-        return value
+        return value.strip()
     if isinstance(value, list) and value and all(isinstance(v, str) and v.strip() for v in value):
-        return [str(v) for v in value]
+        return [str(v).strip() for v in value]
     raise RuntimeError(f"{name} must be a non-empty string or non-empty list[str].")
+
+
+def _tokenize_legacy_command(raw: str, *, name: str) -> list[str]:
+    if any(pattern in raw for pattern in ("`", "$(", "${", "\n", "\r")):
+        raise RuntimeError(
+            f"{name} string command contains shell-special constructs that are forbidden. "
+            "Use list[str] command form."
+        )
+    try:
+        tokens = shlex.split(raw, posix=True)
+    except ValueError as exc:
+        raise RuntimeError(f"{name} string command could not be tokenized: {exc}") from exc
+    if not tokens:
+        raise RuntimeError(f"{name} string command produced empty argv after tokenization.")
+    dangerous_tokens = {";", "&&", "||", "|", "&"}
+    if any(token in dangerous_tokens for token in tokens):
+        raise RuntimeError(
+            f"{name} string command contains control operators {sorted(dangerous_tokens)}. "
+            "Use list[str] command form."
+        )
+    return [str(token) for token in tokens]
 
 
 @dataclass(frozen=True)
@@ -70,7 +93,7 @@ class SourceReference:
 class CommandContract:
     adapter: str
     cwd: str
-    command: str | list[str]
+    command: list[str]
     env: dict[str, str]
     timeout_sec: int | None
     source: SourceReference | None
@@ -177,6 +200,7 @@ def _parse_command_contract(
     name: str,
     supported_adapters: set[str] | None,
     require_source: bool,
+    allow_legacy_string_command: bool,
 ) -> CommandContract:
     obj = _require_object(raw, name=name)
 
@@ -187,7 +211,21 @@ def _parse_command_contract(
         )
 
     cwd = _require_string(obj.get("cwd", "."), name=f"{name}.cwd")
-    command = _coerce_command(obj.get("command"), name=f"{name}.command")
+    command_raw = _coerce_command(obj.get("command"), name=f"{name}.command")
+    if isinstance(command_raw, list):
+        command: list[str] = list(command_raw)
+    else:
+        if not allow_legacy_string_command:
+            raise RuntimeError(
+                f"{name}.command must be list[str] for schema '{SCHEMA_V2}'. "
+                "String commands are only supported for legacy schema parity.manifest.v1."
+            )
+        command = _tokenize_legacy_command(command_raw, name=f"{name}.command")
+        warnings.warn(
+            f"{name}.command provided as legacy string and tokenized to argv list. "
+            "Please migrate to list[str] command form.",
+            stacklevel=2,
+        )
 
     env_raw = obj.get("env", {})
     if not isinstance(env_raw, dict) or not all(
@@ -277,6 +315,7 @@ def _parse_task_contract(
     validity_requirements: dict[str, Any],
     supported_adapters: set[str] | None,
     require_source: bool,
+    allow_legacy_string_command: bool,
 ) -> TaskContract:
     obj = _require_object(raw, name=name)
     task_id = _require_string(obj.get("task_id"), name=f"{name}.task_id")
@@ -329,12 +368,14 @@ def _parse_task_contract(
         name=f"{name}.official",
         supported_adapters=supported_adapters,
         require_source=require_source,
+        allow_legacy_string_command=allow_legacy_string_command,
     )
     worldflux = _parse_command_contract(
         obj.get("worldflux"),
         name=f"{name}.worldflux",
         supported_adapters=supported_adapters,
         require_source=require_source,
+        allow_legacy_string_command=allow_legacy_string_command,
     )
 
     return TaskContract(
@@ -416,6 +457,7 @@ def load_suite_contract(
                 },
                 supported_adapters=supported_adapters,
                 require_source=False,
+                allow_legacy_string_command=True,
             )
             if task.task_id in seen:
                 raise RuntimeError(f"Duplicate task_id: {task.task_id}")
@@ -482,6 +524,7 @@ def load_suite_contract(
             validity_requirements=validity_requirements,
             supported_adapters=supported_adapters,
             require_source=True,
+            allow_legacy_string_command=False,
         )
         if task.task_id in seen:
             raise RuntimeError(f"Duplicate task_id: {task.task_id}")
