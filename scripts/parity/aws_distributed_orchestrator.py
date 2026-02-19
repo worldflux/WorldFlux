@@ -545,7 +545,7 @@ def _build_remote_commands(
         "  . ../.venv/bin/activate",
         "  python -m pip install --upgrade pip",
         "  python -m pip install -e .",
-        "  python -m pip install hydra-core==1.3.2 hydra-submitit-launcher==1.2.0 submitit==1.5.1 omegaconf==2.3.0 termcolor==2.4.0 tensordict torchrl gymnasium==0.29.1 dm-control==1.0.16 mujoco==3.1.2 imageio==2.34.1 imageio-ffmpeg==0.4.9 h5py==3.11.0 kornia==0.7.2 tqdm==4.66.4 pandas==2.0.3 wandb==0.17.4",
+        "  python -m pip install hydra-core==1.3.2 hydra-submitit-launcher==1.2.0 submitit==1.5.1 omegaconf==2.3.0 termcolor==2.4.0 tensordict torchrl gymnasium==0.29.1 dm-control==1.0.16 mujoco==3.1.2 imageio==2.34.1 imageio-ffmpeg==0.4.9 h5py==3.11.0 kornia==0.7.2 tqdm==4.66.4 pandas==2.2.3 wandb==0.17.4",
         "  python -m pip install -r ../dreamerv3-official/requirements.txt",
         "  python -m pip install pyyaml gymnasium==0.29.1 ale-py dm-control==1.0.16 mujoco==3.1.2 hydra-core==1.3.2 omegaconf==2.3.0",
         "  touch ../.venv/.parity_ready_v2",
