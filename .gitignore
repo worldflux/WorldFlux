@@ -96,6 +96,11 @@ wandb/
 *.npy
 data/
 
+# Generated reports
+reports/parity/local_dryrun_check/
+reports/parity/suite-policy-validation.json
+reports/public-contract/update-result.json
+
 # OS files
 .DS_Store
 Thumbs.db
