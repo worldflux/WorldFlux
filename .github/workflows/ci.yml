@@ -173,7 +173,7 @@ jobs:
         run: uv sync
 
       - name: Run bandit security linter
-        run: uv run --with bandit bandit -r src/worldflux/ -ll
+        run: uv run --with bandit bandit -r src/worldflux/ scripts/parity/ -ll
 
       - name: Check dependencies for vulnerabilities
         run: uv run --with pip-audit pip-audit
