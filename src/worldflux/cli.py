@@ -40,7 +40,9 @@ from worldflux.parity.errors import ParityError
 from worldflux.scaffold import generate_project
 
 app = typer.Typer(help="WorldFlux command-line interface.")
-parity_app = typer.Typer(help="Run upstream parity harness and reports.")
+parity_app = typer.Typer(
+    help="Run parity tools (legacy harness + proof-grade official equivalence pipeline)."
+)
 parity_campaign_app = typer.Typer(help="Run reproducible parity campaigns.")
 app.add_typer(parity_app, name="parity")
 parity_app.add_typer(parity_campaign_app, name="campaign")
@@ -832,6 +834,44 @@ def init(
     )
 
 
+def _resolve_parity_script_path(script_name: str) -> Path:
+    candidates = (
+        Path(__file__).resolve().parents[2] / "scripts" / "parity" / script_name,
+        Path.cwd().resolve() / "scripts" / "parity" / script_name,
+    )
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    raise ParityError(
+        f"Unable to locate scripts/parity/{script_name}. "
+        "Run this command from a WorldFlux source checkout."
+    )
+
+
+def _run_parity_proof_script(script_name: str, args: list[str]) -> str:
+    script_path = _resolve_parity_script_path(script_name)
+    completed = subprocess.run(
+        [sys.executable, str(script_path), *args],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    stdout = completed.stdout.strip()
+    stderr = completed.stderr.strip()
+    if completed.returncode != 0:
+        details = "\n".join(part for part in (stdout, stderr) if part)
+        raise ParityError(
+            f"Proof pipeline step failed ({script_name}, exit={completed.returncode}).\n{details}"
+        )
+    return stdout
+
+
+def _fmt_bool(value: Any) -> str:
+    if isinstance(value, bool):
+        return "PASS" if value else "FAIL"
+    return "-"
+
+
 @parity_app.command("run")
 def parity_run(
     suite: Path = typer.Argument(..., help="Path to parity suite specification file."),
@@ -871,7 +911,7 @@ def parity_run(
         help="Exit non-zero when non-inferiority verdict fails.",
     ),
 ) -> None:
-    """Run one parity suite and emit comparison artifact."""
+    """Run legacy non-inferiority parity harness and emit comparison artifact."""
     try:
         payload = run_suite(
             suite,
@@ -894,6 +934,7 @@ def parity_run(
         Panel.fit(
             "\n".join(
                 [
+                    "Mode: legacy non-inferiority harness",
                     f"Suite: {suite_meta['suite_id']} ({suite_meta['family']})",
                     f"Samples: {stats['sample_size']}",
                     f"Mean drop ratio: {stats['mean_drop_ratio']:.6f}",
@@ -902,7 +943,7 @@ def parity_run(
                     f"Verdict: {verdict}",
                 ]
             ),
-            title="Parity Run",
+            title="Parity Run (Legacy)",
             border_style="cyan",
         )
     )
@@ -933,7 +974,7 @@ def parity_aggregate(
         help="Exit non-zero when any suite fails aggregate verdict.",
     ),
 ) -> None:
-    """Aggregate one or more parity run artifacts."""
+    """Aggregate legacy parity run artifacts."""
     paths = list(run_paths)
     if not paths:
         paths = [Path(path) for path in sorted(glob.glob(runs_glob))]
@@ -953,6 +994,7 @@ def parity_aggregate(
         Panel.fit(
             "\n".join(
                 [
+                    "Mode: legacy non-inferiority harness",
                     f"Runs: {payload['run_count']}",
                     f"Suite pass: {payload['suite_pass_count']}",
                     f"Suite fail: {payload['suite_fail_count']}",
@@ -960,7 +1002,7 @@ def parity_aggregate(
                     f"Written: {output.resolve()}",
                 ]
             ),
-            title="Parity Aggregate",
+            title="Parity Aggregate (Legacy)",
             border_style="blue",
         )
     )
@@ -981,7 +1023,7 @@ def parity_report(
         help="Markdown report output path.",
     ),
 ) -> None:
-    """Render markdown report from aggregate parity artifact."""
+    """Render legacy parity markdown report from aggregate artifact."""
     try:
         payload = json.loads(aggregate.read_text(encoding="utf-8"))
         if not isinstance(payload, dict):
@@ -994,6 +1036,176 @@ def parity_report(
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(markdown, encoding="utf-8")
     console.print(f"[green]Wrote parity report:[/green] {output.resolve()}")
+
+
+@parity_app.command("proof-run")
+def parity_proof_run(
+    manifest: Path = typer.Argument(
+        ..., help="Proof manifest (parity.manifest.v1 or parity.suite.v2)."
+    ),
+    run_id: str = typer.Option(
+        "",
+        "--run-id",
+        help="Run identifier. If omitted, scripts/parity/run_parity_matrix.py generates one.",
+    ),
+    output_dir: Path = typer.Option(
+        Path("reports/parity"),
+        "--output-dir",
+        help="Output directory root for proof artifacts.",
+    ),
+    device: str = typer.Option("cuda", "--device", help="Execution device."),
+    seed_list: str = typer.Option("", "--seed-list", help="Optional seed override, e.g. 0,1,2."),
+    max_retries: int = typer.Option(1, "--max-retries", help="Max retries per task/system pair."),
+    task_filter: str = typer.Option(
+        "",
+        "--task-filter",
+        help="Comma-separated task filters (supports fnmatch patterns).",
+    ),
+    shard_index: int = typer.Option(0, "--shard-index", help="Shard index (0-based)."),
+    num_shards: int = typer.Option(1, "--num-shards", help="Total shard count."),
+    resume: bool = typer.Option(
+        True, "--resume/--no-resume", help="Resume from existing parity_runs.jsonl."
+    ),
+) -> None:
+    """Run proof-grade parity matrix execution (official path backed by scripts/parity)."""
+    args = [
+        "--manifest",
+        str(manifest),
+        "--output-dir",
+        str(output_dir),
+        "--device",
+        device,
+        "--max-retries",
+        str(max_retries),
+        "--shard-index",
+        str(shard_index),
+        "--num-shards",
+        str(num_shards),
+    ]
+    if run_id.strip():
+        args.extend(["--run-id", run_id.strip()])
+    if seed_list.strip():
+        args.extend(["--seed-list", seed_list.strip()])
+    if task_filter.strip():
+        args.extend(["--task-filter", task_filter.strip()])
+    if resume:
+        args.append("--resume")
+
+    try:
+        stdout = _run_parity_proof_script("run_parity_matrix.py", args)
+    except ParityError as exc:
+        console.print(f"[bold red]Parity proof-run failed:[/bold red] {exc}")
+        raise typer.Exit(code=1) from None
+
+    if stdout:
+        console.print(stdout)
+    console.print(
+        Panel.fit(
+            "\n".join(
+                [
+                    "Mode: proof-grade official equivalence path",
+                    f"Manifest: {manifest.resolve()}",
+                    f"Output dir: {output_dir.resolve()}",
+                    "Next: run `worldflux parity proof-report --manifest ... --runs .../parity_runs.jsonl`",
+                ]
+            ),
+            title="Parity Proof Run",
+            border_style="green",
+        )
+    )
+
+
+@parity_app.command("proof-report")
+def parity_proof_report(
+    manifest: Path = typer.Argument(..., help="Proof manifest used for the run."),
+    runs: Path = typer.Option(
+        ...,
+        "--runs",
+        help="Path to parity_runs.jsonl produced by proof-run or distributed orchestration.",
+    ),
+    output_dir: Path | None = typer.Option(
+        None,
+        "--output-dir",
+        help="Output directory for coverage/equivalence reports (defaults to runs parent).",
+    ),
+) -> None:
+    """Generate proof-grade completeness + equivalence + markdown reports."""
+    resolved_runs = runs.resolve()
+    run_root = resolved_runs.parent
+    report_root = output_dir.resolve() if output_dir is not None else run_root
+    report_root.mkdir(parents=True, exist_ok=True)
+
+    coverage_report = report_root / "coverage_report.json"
+    validity_report = report_root / "validity_report.json"
+    equivalence_report = report_root / "equivalence_report.json"
+    markdown_report = report_root / "equivalence_report.md"
+
+    seed_plan = run_root / "seed_plan.json"
+    run_context = run_root / "run_context.json"
+    try:
+        coverage_args = [
+            "--manifest",
+            str(manifest),
+            "--runs",
+            str(resolved_runs),
+            "--output",
+            str(coverage_report),
+            "--max-missing-pairs",
+            "0",
+        ]
+        if seed_plan.exists():
+            coverage_args.extend(["--seed-plan", str(seed_plan)])
+        if run_context.exists():
+            coverage_args.extend(["--run-context", str(run_context)])
+        _run_parity_proof_script("validate_matrix_completeness.py", coverage_args)
+
+        _run_parity_proof_script(
+            "stats_equivalence.py",
+            [
+                "--input",
+                str(resolved_runs),
+                "--output",
+                str(equivalence_report),
+                "--manifest",
+                str(manifest),
+                "--strict-completeness",
+                "--strict-validity",
+                "--proof-mode",
+                "--validity-report",
+                str(validity_report),
+            ],
+        )
+        _run_parity_proof_script(
+            "report_markdown.py",
+            [
+                "--input",
+                str(equivalence_report),
+                "--output",
+                str(markdown_report),
+            ],
+        )
+    except ParityError as exc:
+        console.print(f"[bold red]Parity proof-report failed:[/bold red] {exc}")
+        raise typer.Exit(code=1) from None
+
+    report_payload = json.loads(equivalence_report.read_text(encoding="utf-8"))
+    global_block = report_payload.get("global", {})
+    console.print(
+        Panel.fit(
+            "\n".join(
+                [
+                    "Mode: proof-grade official equivalence path",
+                    f"Final verdict: {_fmt_bool(global_block.get('parity_pass_final'))}",
+                    f"Validity pass: {_fmt_bool(global_block.get('validity_pass'))}",
+                    f"Missing pairs: {global_block.get('missing_pairs', '-')}",
+                    f"JSON: {equivalence_report}",
+                    f"Markdown: {markdown_report}",
+                ]
+            ),
+            title="Parity Proof Report",
+            border_style="green",
+        )
+    )
 
 
 def _resolve_campaign_seeds(

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import builtins
 import importlib.util
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -760,7 +761,8 @@ def test_parity_run_enforce_exits_non_zero_on_failed_verdict(
 
     result = runner.invoke(cli.app, ["parity", "run", "suite.yaml", "--enforce"])
     assert result.exit_code == 1
-    assert "Parity Run" in result.stdout
+    assert "Parity Run (Legacy)" in result.stdout
+    assert "legacy non-inferiority harness" in result.stdout
 
 
 def test_parity_run_reports_failure_message(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -799,7 +801,8 @@ def test_parity_aggregate_enforce_exits_on_failed_aggregate(
         ["parity", "aggregate", "--run", "run_a.json", "--run", "run_b.json", "--enforce"],
     )
     assert result.exit_code == 1
-    assert "Parity Aggregate" in result.stdout
+    assert "Parity Aggregate (Legacy)" in result.stdout
+    assert "legacy non-inferiority harness" in result.stdout
 
 
 def test_parity_report_writes_output_markdown(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -817,6 +820,106 @@ def test_parity_report_writes_output_markdown(monkeypatch: pytest.MonkeyPatch) -
         assert result.exit_code == 0
         assert output.exists()
         assert output.read_text(encoding="utf-8") == "# Report\n"
+
+
+def test_parity_proof_run_invokes_matrix_script(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    calls: list[tuple[str, list[str]]] = []
+
+    def _run(script_name: str, args: list[str]) -> str:
+        calls.append((script_name, list(args)))
+        return '{"run_id":"proof_01"}'
+
+    monkeypatch.setattr(cli, "_run_parity_proof_script", _run)
+
+    result = runner.invoke(
+        cli.app,
+        [
+            "parity",
+            "proof-run",
+            str(tmp_path / "manifest.yaml"),
+            "--run-id",
+            "proof_01",
+            "--seed-list",
+            "0,1",
+            "--task-filter",
+            "atari*",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert calls
+    assert calls[0][0] == "run_parity_matrix.py"
+    assert "--manifest" in calls[0][1]
+    assert "--run-id" in calls[0][1]
+    assert "--seed-list" in calls[0][1]
+    assert "--task-filter" in calls[0][1]
+    assert "Parity Proof Run" in result.stdout
+
+
+def test_parity_proof_report_runs_completeness_stats_and_markdown(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    run_root = tmp_path / "run_01"
+    run_root.mkdir(parents=True)
+    runs = run_root / "parity_runs.jsonl"
+    runs.write_text("", encoding="utf-8")
+    (run_root / "seed_plan.json").write_text('{"seed_values":[0]}', encoding="utf-8")
+    (run_root / "run_context.json").write_text('{"seeds":[0]}', encoding="utf-8")
+    equivalence = run_root / "equivalence_report.json"
+    markdown = run_root / "equivalence_report.md"
+
+    calls: list[str] = []
+
+    def _run(script_name: str, args: list[str]) -> str:
+        calls.append(script_name)
+        if script_name == "stats_equivalence.py":
+            output = Path(args[args.index("--output") + 1])
+            output.write_text(
+                json.dumps(
+                    {
+                        "global": {
+                            "parity_pass_final": True,
+                            "validity_pass": True,
+                            "missing_pairs": 0,
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            validity_path = Path(args[args.index("--validity-report") + 1])
+            validity_path.write_text("{}", encoding="utf-8")
+        if script_name == "report_markdown.py":
+            output = Path(args[args.index("--output") + 1])
+            output.write_text("# Proof\n", encoding="utf-8")
+        if script_name == "validate_matrix_completeness.py":
+            output = Path(args[args.index("--output") + 1])
+            output.write_text('{"missing_pairs":0,"pass":true}', encoding="utf-8")
+        return ""
+
+    monkeypatch.setattr(cli, "_run_parity_proof_script", _run)
+
+    result = runner.invoke(
+        cli.app,
+        [
+            "parity",
+            "proof-report",
+            str(tmp_path / "manifest.yaml"),
+            "--runs",
+            str(runs),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert calls == [
+        "validate_matrix_completeness.py",
+        "stats_equivalence.py",
+        "report_markdown.py",
+    ]
+    assert equivalence.exists()
+    assert markdown.exists()
+    assert "Parity Proof Report" in result.stdout
 
 
 def test_parity_report_rejects_non_object_payload() -> None:

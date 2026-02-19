@@ -1,149 +1,76 @@
-# Parity Harness (Oracle Comparison)
+# Parity (Legacy vs Proof-Grade)
 
-WorldFlux provides a dedicated parity harness to compare model-family score quality
-against pinned upstream oracle artifacts.
+WorldFlux provides two parity tracks. They are intentionally different:
 
-## Scope
+- `legacy quick parity`: fast non-inferiority checks for local development.
+- `proof-grade parity`: strict official-vs-WorldFlux equivalence pipeline.
 
-- DreamerV3: Atari100k (`benchmarks/parity/dreamer_atari100k.yaml`)
-- TD-MPC2: DMControl39 (`benchmarks/parity/tdmpc2_dmcontrol39.yaml`)
+Use the proof path when you need a statistical claim such as "official and WorldFlux are equivalent."
 
-Pinned upstream references are recorded in:
+## Legacy Quick Parity
 
-- `reports/parity/upstream_lock.json`
-- `reports/parity/suite_policy.json`
-
-## Statistical Rule
-
-Parity verdict uses a one-sided non-inferiority test on relative score drop:
-
-- drop ratio = `(upstream - worldflux) / max(abs(upstream), 1.0)`
-- confidence = 95%
-- margin = 5%
-- pass when one-sided upper confidence bound is `<= 0.05`
-
-## CLI
-
-Run one suite:
+Legacy commands stay available for backward compatibility:
 
 ```bash
 worldflux parity run benchmarks/parity/dreamer_atari100k.yaml --output reports/parity/runs/dreamer.json
-```
-
-Aggregate multiple suites:
-
-```bash
 worldflux parity aggregate --runs-glob "reports/parity/runs/*.json" --output reports/parity/aggregate.json
-```
-
-Render markdown report:
-
-```bash
 worldflux parity report --aggregate reports/parity/aggregate.json --output reports/parity/report.md
 ```
 
-Run reproducible campaign export (source artifact -> canonical output):
+Legacy parity uses the `src/worldflux/parity/*` harness and non-inferiority verdicts.
+It is not the source of truth for official equivalence proof.
+
+## Proof-Grade Official Equivalence Path
+
+Proof commands call `scripts/parity/*`, which is the canonical path for:
+
+- strict completeness (`missing_pairs == 0`)
+- strict validity checks (no shortcut policies in proof mode)
+- TOST equivalence + Holm correction
+- final global verdict
+
+### Run Matrix
 
 ```bash
-worldflux parity campaign export benchmarks/parity/campaign/dreamer_atari100k.yaml \
-  --source worldflux \
-  --seeds 0,1,2,3,4 \
-  --output reports/parity/worldflux/dreamer_atari100k.json
-```
-
-Run campaign with command-template execution and resume support:
-
-```bash
-worldflux parity campaign run benchmarks/parity/campaign/tdmpc2_dmcontrol39.yaml \
-  --mode worldflux \
+worldflux parity proof-run scripts/parity/manifests/official_vs_worldflux_v1.yaml \
+  --run-id parity_$(date -u +%Y%m%dT%H%M%SZ) \
   --device cuda \
-  --seeds 1,2,3 \
   --resume
 ```
 
-`campaign run` executes per task/seed commands only when `sources.<name>.command_template`
-is defined in the campaign spec. Otherwise it exports from existing `input_path` artifacts.
-
-Resume from partially completed outputs:
+### Generate Proof Reports
 
 ```bash
-worldflux parity campaign resume benchmarks/parity/campaign/tdmpc2_dmcontrol39.yaml \
-  --mode both \
-  --device cuda \
-  --seeds 1,2,3
+worldflux parity proof-report scripts/parity/manifests/official_vs_worldflux_v1.yaml \
+  --runs reports/parity/<RUN_ID>/parity_runs.jsonl
 ```
 
-## Input Formats
+This emits:
 
-Supported source formats:
+- `coverage_report.json`
+- `validity_report.json`
+- `equivalence_report.json`
+- `equivalence_report.md`
 
-- `canonical_json`
-- `canonical_jsonl`
-- `dreamerv3_scores_json_gz`
-- `tdmpc2_results_csv_dir`
+### Final Verdict Keys
 
-Use suite files to pin expected upstream format/path and optionally override via CLI.
+For official proof claims, check `equivalence_report.json`:
 
-Campaign specs are defined at:
+- `global.parity_pass_final == true`
+- `global.parity_pass_all_metrics == true`
+- `global.missing_pairs == 0`
+- `global.validity_pass == true`
 
-- `benchmarks/parity/campaign/dreamer_atari100k.yaml`
-- `benchmarks/parity/campaign/tdmpc2_dmcontrol39.yaml`
+If any key is false, the proof run fails.
 
-These specs include:
+## Campaign Helpers (Reproducible Exports)
 
-- canonical task set
-- default seed set
-- source artifact definitions (`oracle`, `worldflux`)
-- optional command templates for task/seed execution
-
-## Artifact Fields (Backward Compatible Additions)
-
-`worldflux.parity.run.v1` keeps existing keys and adds optional metadata:
-
-- `evaluation_manifest`:
-  - `runner`, `python`, `torch`, `cuda`, `seed_policy`, `generated_at_utc`
-- `artifact_integrity`:
-  - `suite_sha256`, `upstream_input_sha256`, `worldflux_input_sha256`, `upstream_lock_sha256`
-- `suite_lock_ref`:
-  - `suite_id`, `lock_version`, `locked_upstream_commit`, `resolved_upstream_commit`, `matches_lock`
-
-`worldflux.parity.aggregate.v1` adds suite-level `verdict_reason` text explaining pass/fail.
-
-## Release Validation
-
-Release workflow validates fixed artifacts:
+Campaign export/run/resume remains available for reproducible source artifact pipelines:
 
 ```bash
-uv run python scripts/validate_parity_artifacts.py \
-  --run reports/parity/runs/dreamer_atari100k.json \
-  --run reports/parity/runs/tdmpc2_dmcontrol39.json \
-  --aggregate reports/parity/aggregate.json \
-  --lock reports/parity/upstream_lock.json \
-  --required-suite dreamer_atari100k \
-  --required-suite tdmpc2_dmcontrol39 \
-  --max-missing-pairs 0
+worldflux parity campaign export benchmarks/parity/campaign/dreamer_atari100k.yaml --source worldflux --seeds 0,1,2
+worldflux parity campaign run benchmarks/parity/campaign/tdmpc2_dmcontrol39.yaml --mode worldflux --device cuda --resume
+worldflux parity campaign resume benchmarks/parity/campaign/tdmpc2_dmcontrol39.yaml --mode both --device cuda
 ```
 
-If either suite fails non-inferiority, release is blocked.
-
-Release also validates suite governance policy:
-
-```bash
-uv run python scripts/check_parity_suite_coverage.py \
-  --policy reports/parity/suite_policy.json \
-  --lock reports/parity/upstream_lock.json \
-  --aggregate reports/parity/aggregate.json \
-  --enforce-pass
-```
-
-## Oracle Fetch (Pinned Commits)
-
-Use the helper to fetch upstream oracle artifacts at locked commits:
-
-```bash
-uv run bash scripts/parity/fetch_oracles.sh \
-  --oracle-root /root/oracles \
-  --dreamer-commit b65cf81a6fb13625af8722127459283f899a35d9 \
-  --tdmpc2-commit 8bbc14ebabdb32ea7ada5c801dc525d0dc73bafe \
-  --copy-to artifacts/upstream
-```
+These commands are operational helpers and do not replace proof-grade verdict generation.
