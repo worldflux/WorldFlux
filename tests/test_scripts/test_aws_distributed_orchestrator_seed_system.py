@@ -87,6 +87,7 @@ def test_seed_system_sharding_routes_systems_to_split_fleets(tmp_path: Path) -> 
         official_instances=["i-off0", "i-off1"],
         worldflux_instances=["i-wf0", "i-wf1"],
         gpu_slots_per_instance=2,
+        seed_shard_unit="packed",
     )
 
     assert len(shards) == 2 * 2  # tasks * systems
@@ -108,3 +109,57 @@ def test_seed_system_sharding_routes_systems_to_split_fleets(tmp_path: Path) -> 
             assert shard.instance_id in {"i-wf0", "i-wf1"}
 
     assert len(seen) == len(shards)
+
+
+def test_seed_system_pair_unit_splits_each_seed_into_own_shard(tmp_path: Path) -> None:
+    mod = _load_module()
+
+    manifest = {
+        "schema_version": "parity.manifest.v1",
+        "seed_policy": {
+            "mode": "fixed",
+            "values": [0, 1, 2],
+            "pilot_seeds": 10,
+            "min_seeds": 20,
+            "max_seeds": 50,
+            "power_target": 0.8,
+        },
+        "tasks": [
+            {
+                "task_id": "dog-run",
+                "family": "tdmpc2",
+                "required_metrics": ["final_return_mean", "auc_return"],
+                "official": {
+                    "adapter": "official_tdmpc2",
+                    "cwd": ".",
+                    "env": {},
+                    "command": ["python3", "-c", "print('ok')", "--steps", "7000000"],
+                },
+                "worldflux": {
+                    "adapter": "worldflux_tdmpc2_native",
+                    "cwd": ".",
+                    "env": {},
+                    "command": ["python3", "-c", "print('ok')", "--steps", "7000000"],
+                },
+            }
+        ],
+    }
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+
+    task_costs = mod._manifest_task_costs(manifest_path)
+    shards = mod._build_seed_system_shards(
+        "run_pair",
+        task_costs,
+        seed_values=[0, 1, 2],
+        systems=("official", "worldflux"),
+        official_instances=["i-off0"],
+        worldflux_instances=["i-wf0"],
+        gpu_slots_per_instance=2,
+        seed_shard_unit="pair",
+    )
+
+    # 1 task * 2 systems * 3 seeds
+    assert len(shards) == 6
+    assert all(len(shard.seed_values) == 1 for shard in shards)
+    assert {shard.systems[0] for shard in shards} == {"official", "worldflux"}
