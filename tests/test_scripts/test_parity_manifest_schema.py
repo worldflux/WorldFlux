@@ -132,6 +132,29 @@ def test_manifest_v1_tasks_define_validity_requirements_and_policy_mode() -> Non
         assert command[idx + 1] == "parity_candidate"
 
 
+def test_manifest_v1_declares_bayesian_statistical_settings() -> None:
+    mod = _load_module()
+    manifest_path = (
+        Path(__file__).resolve().parents[2]
+        / "scripts"
+        / "parity"
+        / "manifests"
+        / "official_vs_worldflux_v1.yaml"
+    )
+    payload = mod._load_manifest(manifest_path)
+
+    statistical = payload.get("statistical")
+    assert isinstance(statistical, dict)
+    bayesian = statistical.get("bayesian")
+    assert isinstance(bayesian, dict)
+    assert bayesian.get("enable") is True
+    assert bayesian.get("draws") == 20000
+    assert bayesian.get("seed") == 20260220
+    assert bayesian.get("probability_threshold_equivalence") == 0.95
+    assert bayesian.get("probability_threshold_noninferiority") == 0.975
+    assert bayesian.get("dual_pass_required") is True
+
+
 def test_manifest_v1_allows_string_command_with_warning() -> None:
     mod = _load_module()
     manifest = _valid_manifest()
