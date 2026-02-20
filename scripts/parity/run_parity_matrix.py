@@ -125,6 +125,12 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument("--seed-list", type=str, default="")
     parser.add_argument(
+        "--pair-plan",
+        type=Path,
+        default=None,
+        help="Optional JSON/JSONL file listing explicit (task_id, seed, system) pairs.",
+    )
+    parser.add_argument(
         "--systems",
         type=str,
         default="official,worldflux",
@@ -689,6 +695,64 @@ def _parse_systems(raw: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys(values))
 
 
+def _load_pair_plan(
+    path: Path,
+    *,
+    allowed_tasks: set[str],
+    allowed_systems: set[str],
+) -> list[tuple[str, int, str]]:
+    if not path.exists():
+        raise RuntimeError(f"--pair-plan not found: {path}")
+
+    rows: list[dict[str, Any]] = []
+    if path.suffix == ".jsonl":
+        with path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                parsed = json.loads(line)
+                if isinstance(parsed, dict):
+                    rows.append(parsed)
+    else:
+        parsed = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(parsed, dict):
+            pairs = parsed.get("pairs", [])
+            if isinstance(pairs, list):
+                rows = [item for item in pairs if isinstance(item, dict)]
+        elif isinstance(parsed, list):
+            rows = [item for item in parsed if isinstance(item, dict)]
+
+    if not rows:
+        raise RuntimeError(f"--pair-plan has no entries: {path}")
+
+    out: list[tuple[str, int, str]] = []
+    seen: set[tuple[str, int, str]] = set()
+    for idx, row in enumerate(rows):
+        task_id = str(row.get("task_id", "")).strip()
+        system = str(row.get("system", "")).strip().lower()
+        try:
+            seed = int(row.get("seed", -1))
+        except Exception as exc:
+            raise RuntimeError(f"--pair-plan entry[{idx}] has invalid seed: {row}") from exc
+        if not task_id:
+            raise RuntimeError(f"--pair-plan entry[{idx}] missing task_id")
+        if task_id not in allowed_tasks:
+            raise RuntimeError(f"--pair-plan entry[{idx}] unknown task_id: {task_id}")
+        if system not in allowed_systems:
+            raise RuntimeError(
+                f"--pair-plan entry[{idx}] invalid system {system!r}; allowed={sorted(allowed_systems)}"
+            )
+        if seed < 0:
+            raise RuntimeError(f"--pair-plan entry[{idx}] seed must be >= 0")
+        key = (task_id, seed, system)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(key)
+    return out
+
+
 def _select_tasks(
     tasks: tuple[TaskSpec, ...],
     *,
@@ -918,6 +982,14 @@ def main() -> int:
         shard_index=context.shard_index,
         num_shards=context.num_shards,
     )
+    task_map = {task.task_id: task for task in selected_tasks}
+    pair_plan: list[tuple[str, int, str]] = []
+    if args.pair_plan is not None:
+        pair_plan = _load_pair_plan(
+            args.pair_plan.resolve(),
+            allowed_tasks=set(task_map),
+            allowed_systems=set(context.systems),
+        )
 
     defaults = dict(manifest.defaults)
     alpha = float(
@@ -942,7 +1014,19 @@ def main() -> int:
         args.power_target if args.power_target is not None else seed_policy.power_target
     )
 
-    if seed_override:
+    if pair_plan:
+        seed_values = sorted({seed for _task_id, seed, _system in pair_plan})
+        seed_plan = {
+            "mode": "pair_plan",
+            "pair_plan_path": str(args.pair_plan.resolve()) if args.pair_plan is not None else "",
+            "pair_count": len(pair_plan),
+            "seed_values": seed_values,
+            "pairs": [
+                {"task_id": task_id, "seed": seed, "system": system}
+                for task_id, seed, system in pair_plan
+            ],
+        }
+    elif seed_override:
         seed_values = sorted(set(seed_override))
         seed_plan = {
             "mode": "override",
@@ -979,28 +1063,36 @@ def main() -> int:
         selected_tasks=selected_tasks,
     )
 
+    def run_one_pair(task: TaskSpec, *, seed: int, system: str) -> None:
+        key = (task.task_id, int(seed), system)
+        if key in done_success:
+            return
+        spec = task.official if system == "official" else task.worldflux
+        _run_one(
+            context=context,
+            task=task,
+            system=system,
+            seed=int(seed),
+            spec=spec,
+            run_jsonl=run_jsonl,
+            command_manifest=command_manifest,
+        )
+
     def run_seed_set(values: list[int]) -> None:
         for task in selected_tasks:
             for seed in values:
-                for system, spec in (("official", task.official), ("worldflux", task.worldflux)):
+                for system in ("official", "worldflux"):
                     if system not in context.systems:
                         continue
-                    key = (task.task_id, int(seed), system)
-                    if key in done_success:
-                        continue
-                    _run_one(
-                        context=context,
-                        task=task,
-                        system=system,
-                        seed=int(seed),
-                        spec=spec,
-                        run_jsonl=run_jsonl,
-                        command_manifest=command_manifest,
-                    )
+                    run_one_pair(task, seed=int(seed), system=system)
 
-    run_seed_set(seed_values)
+    if pair_plan:
+        for task_id, seed, system in pair_plan:
+            run_one_pair(task_map[task_id], seed=seed, system=system)
+    else:
+        run_seed_set(seed_values)
 
-    if not seed_override and seed_policy.mode == "auto_power":
+    if not pair_plan and not seed_override and seed_policy.mode == "auto_power":
         entries = _load_jsonl(run_jsonl)
         n_required = _estimate_seed_count(
             entries=entries,

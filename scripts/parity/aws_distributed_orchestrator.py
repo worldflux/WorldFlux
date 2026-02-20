@@ -14,7 +14,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from statistics import NormalDist, pstdev
+from statistics import NormalDist, median, pstdev
 from typing import Any
 
 
@@ -88,7 +88,14 @@ def _parse_args() -> argparse.Namespace:
         default="8bbc14ebabdb32ea7ada5c801dc525d0dc73bafe",
     )
     parser.add_argument("--workspace-root", type=str, default="/opt/parity")
+    parser.add_argument("--bootstrap-root", type=str, default="/opt/parity/bootstrap")
     parser.add_argument("--output-dir", type=Path, default=Path("reports/parity"))
+    parser.add_argument(
+        "--skip-bootstrap",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Skip repository and dependency bootstrap when prebuilt workers are prepared.",
+    )
     parser.add_argument(
         "--wait",
         action=argparse.BooleanOptionalAction,
@@ -101,6 +108,13 @@ def _parse_args() -> argparse.Namespace:
         type=str,
         choices=["task", "seed_system"],
         default="task",
+    )
+    parser.add_argument(
+        "--seed-shard-unit",
+        type=str,
+        choices=["packed", "pair"],
+        default="packed",
+        help="Seed partition unit for seed_system sharding.",
     )
     parser.add_argument(
         "--phase-plan",
@@ -350,6 +364,44 @@ def _cpu_affinity_for_slot(policy: str, slot: int | None) -> str | None:
     return f"{start}-{end}"
 
 
+def _collect_empirical_duration_per_seed(output_dir: Path) -> dict[tuple[str, str], float]:
+    """Collect historical per-seed durations keyed by (task_id, system)."""
+    durations: dict[tuple[str, str], list[float]] = defaultdict(list)
+    if not output_dir.exists():
+        return {}
+
+    for jsonl_path in output_dir.rglob("parity_runs.jsonl"):
+        try:
+            with jsonl_path.open("r", encoding="utf-8") as handle:
+                for line in handle:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    entry = json.loads(line)
+                    if not isinstance(entry, dict):
+                        continue
+                    if str(entry.get("status", "")) != "success":
+                        continue
+                    task_id = str(entry.get("task_id", "")).strip()
+                    system = str(entry.get("system", "")).strip()
+                    duration = entry.get("duration_sec")
+                    if (
+                        task_id
+                        and system in {"official", "worldflux"}
+                        and isinstance(duration, int | float)
+                        and float(duration) > 0.0
+                    ):
+                        durations[(task_id, system)].append(float(duration))
+        except Exception:
+            continue
+
+    out: dict[tuple[str, str], float] = {}
+    for key, values in durations.items():
+        if values:
+            out[key] = float(median(values))
+    return out
+
+
 def _build_task_shards(
     run_id: str,
     tasks: list[TaskCost],
@@ -404,6 +456,8 @@ def _build_seed_system_shards(
     official_instances: list[str],
     worldflux_instances: list[str],
     gpu_slots_per_instance: int,
+    seed_shard_unit: str,
+    empirical_duration_per_seed: dict[tuple[str, str], float] | None = None,
 ) -> list[ShardPlan]:
     if not seed_values:
         raise RuntimeError("seed_system sharding requires non-empty seed list")
@@ -413,6 +467,8 @@ def _build_seed_system_shards(
         raise RuntimeError("seed_system sharding requires at least one official instance")
     if not worldflux_instances:
         raise RuntimeError("seed_system sharding requires at least one worldflux instance")
+    if seed_shard_unit not in {"packed", "pair"}:
+        raise RuntimeError("--seed-shard-unit must be packed or pair")
 
     task_by_id = {task.task_id: task for task in tasks}
 
@@ -431,31 +487,42 @@ def _build_seed_system_shards(
     plans: list[ShardPlan] = []
     shard_id = 0
     packed_seeds = tuple(sorted({int(seed) for seed in seed_values}))
+    seed_groups: tuple[tuple[int, ...], ...]
+    if seed_shard_unit == "pair":
+        seed_groups = tuple((seed,) for seed in packed_seeds)
+    else:
+        seed_groups = (packed_seeds,)
+
+    empirical = empirical_duration_per_seed or {}
     for task_id in sorted(task_by_id):
         task = task_by_id[task_id]
         single_system_cost = max(1.0, float(task.estimated_steps))
-        single_system_duration = float(
+        fallback_duration_per_seed = float(
             single_system_cost / max(1.0, _family_steps_per_second(task.family))
         )
-        total_cost = single_system_cost * float(len(packed_seeds))
-        total_duration = single_system_duration * float(len(packed_seeds))
         for system in systems:
-            instance_id, slot = select_slot(system)
-            slot_load[(instance_id, slot)] += total_cost
-            plans.append(
-                ShardPlan(
-                    shard_id=shard_id,
-                    instance_id=instance_id,
-                    task_ids=(task.task_id,),
-                    shard_run_id=f"{run_id}_shard{shard_id:02d}",
-                    estimated_cost=total_cost,
-                    estimated_duration_sec=total_duration,
-                    seed_values=packed_seeds,
-                    systems=(system,),
-                    gpu_slot=slot,
-                )
+            duration_per_seed = float(
+                empirical.get((task.task_id, system), fallback_duration_per_seed)
             )
-            shard_id += 1
+            for seed_group in seed_groups:
+                total_cost = single_system_cost * float(len(seed_group))
+                total_duration = duration_per_seed * float(len(seed_group))
+                instance_id, slot = select_slot(system)
+                slot_load[(instance_id, slot)] += total_cost
+                plans.append(
+                    ShardPlan(
+                        shard_id=shard_id,
+                        instance_id=instance_id,
+                        task_ids=(task.task_id,),
+                        shard_run_id=f"{run_id}_shard{shard_id:02d}",
+                        estimated_cost=total_cost,
+                        estimated_duration_sec=total_duration,
+                        seed_values=seed_group,
+                        systems=(system,),
+                        gpu_slot=slot,
+                    )
+                )
+                shard_id += 1
 
     if not plans:
         raise RuntimeError("No seed_system shards generated")
@@ -471,12 +538,40 @@ def _sync_command(remote_run_root: str, shard_prefix: str) -> str:
             "--include 'run_context.json'",
             "--include 'run_summary.json'",
             "--include 'coverage_report.json'",
+            "--include 'phase_progress.json'",
             "--include 'command_manifest.txt'",
             "--include 'runner.stdout.log'",
             "--include 'runner.stderr.log'",
         ]
     )
     return f"aws s3 sync {remote_run_root} {shard_prefix} {include_args}"
+
+
+def _progress_update_command() -> str:
+    code = (
+        "import datetime,json,os,pathlib;"
+        "root=pathlib.Path(os.environ['WF_PROGRESS_RUN_ROOT']);"
+        "expected=int(os.environ.get('WF_PROGRESS_EXPECTED','0'));"
+        "manifest=root/'command_manifest.txt';"
+        "runs=root/'parity_runs.jsonl';"
+        "started=sum(1 for _ in manifest.open('r',encoding='utf-8')) if manifest.exists() else 0;"
+        "text=runs.read_text(encoding='utf-8') if runs.exists() else '';"
+        'success=text.count(\'"status": "success"\');'
+        'failed=text.count(\'"status": "failed"\');'
+        "running=max(0,started-success-failed);"
+        "payload={"
+        "'schema_version':'parity.v1',"
+        "'generated_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),"
+        "'expected':expected,"
+        "'started':started,"
+        "'success':success,"
+        "'failed':failed,"
+        "'running':running"
+        "};"
+        "root.mkdir(parents=True,exist_ok=True);"
+        "(root/'phase_progress.json').write_text(json.dumps(payload,indent=2,sort_keys=True)+'\\n',encoding='utf-8')"
+    )
+    return f"python3 -c {shlex.quote(code)}"
 
 
 def _build_remote_commands(
@@ -488,6 +583,7 @@ def _build_remote_commands(
     device: str,
     max_retries: int,
     workspace_root: str,
+    bootstrap_root: str,
     worldflux_sha: str,
     dreamer_sha: str,
     tdmpc2_sha: str,
@@ -495,15 +591,19 @@ def _build_remote_commands(
     resume_from_s3: bool,
     thread_limit_profile: str,
     cpu_affinity_policy: str,
+    skip_bootstrap: bool,
 ) -> list[str]:
     instance_root = f"{workspace_root.rstrip('/')}/{run_id}/{shard.instance_id}"
+    bootstrap_instance_root = f"{bootstrap_root.rstrip('/')}/{shard.instance_id}"
     remote_run_root = f"reports/parity/{shard.shard_run_id}"
     shard_prefix = f"{s3_prefix.rstrip('/')}/shards/{shard.shard_id:02d}"
     sync_cmd = _sync_command(remote_run_root, shard_prefix)
+    progress_cmd = _progress_update_command()
 
     task_filter = ",".join(shard.task_ids)
     systems_csv = ",".join(shard.systems)
     seeds_csv = ",".join(str(v) for v in shard.seed_values)
+    expected_pairs = max(1, len(shard.task_ids) * len(shard.seed_values) * len(shard.systems))
 
     wf_ref = worldflux_sha.strip() or "origin/main"
     thread_env = _thread_env(thread_limit_profile)
@@ -530,30 +630,57 @@ def _build_remote_commands(
     commands = [
         "set -eu",
         f"mkdir -p {shlex.quote(instance_root)}",
-        f"cd {shlex.quote(instance_root)}",
-        "exec 9>.repo_setup.lock",
+        f"mkdir -p {shlex.quote(bootstrap_instance_root)}",
+        f"cd {shlex.quote(bootstrap_instance_root)}",
+        "exec 9>.bootstrap_setup.lock",
         "flock 9",
-        "if [ ! -d worldflux/.git ]; then git clone https://github.com/worldflux/WorldFlux.git worldflux; fi",
-        "if [ ! -d dreamerv3-official/.git ]; then git clone https://github.com/danijar/dreamerv3.git dreamerv3-official; fi",
-        "if [ ! -d tdmpc2-official/.git ]; then git clone https://github.com/nicklashansen/tdmpc2.git tdmpc2-official; fi",
-        f"cd worldflux && git fetch origin --tags --prune && git checkout {shlex.quote(wf_ref)}",
-        f"cd ../dreamerv3-official && git fetch origin --tags --prune && git checkout {shlex.quote(dreamer_sha)}",
-        f"cd ../tdmpc2-official && git fetch origin --tags --prune && git checkout {shlex.quote(tdmpc2_sha)}",
-        "cd ../worldflux",
-        "if [ ! -f ../.venv/.parity_ready_v2 ]; then",
-        "  if [ ! -x ../.venv/bin/python3 ]; then python3 -m venv ../.venv; fi",
-        "  . ../.venv/bin/activate",
-        "  python -m pip install --upgrade pip",
-        "  python -m pip install -e .",
-        "  python -m pip install hydra-core==1.3.2 hydra-submitit-launcher==1.2.0 submitit==1.5.1 omegaconf==2.3.0 termcolor==2.4.0 tensordict torchrl gymnasium==0.29.1 dm-control==1.0.16 mujoco==3.1.2 imageio==2.34.1 imageio-ffmpeg==0.4.9 h5py==3.11.0 kornia==0.7.2 tqdm==4.66.4 pandas==2.2.3 wandb==0.17.4",
-        "  python -m pip install -r ../dreamerv3-official/requirements.txt",
-        "  python -m pip install pyyaml gymnasium==0.29.1 ale-py dm-control==1.0.16 mujoco==3.1.2 hydra-core==1.3.2 omegaconf==2.3.0",
-        "  touch ../.venv/.parity_ready_v2",
-        "fi",
-        ". ../.venv/bin/activate",
-        "flock -u 9",
-        f"mkdir -p {shlex.quote(remote_run_root)}",
     ]
+
+    if skip_bootstrap:
+        commands.extend(
+            [
+                '[ -d worldflux/.git ] || { echo "Missing bootstrap repo: worldflux"; exit 2; }',
+                '[ -d dreamerv3-official/.git ] || { echo "Missing bootstrap repo: dreamerv3-official"; exit 2; }',
+                '[ -d tdmpc2-official/.git ] || { echo "Missing bootstrap repo: tdmpc2-official"; exit 2; }',
+                '[ -x .venv/bin/python3 ] || { echo "Missing bootstrap venv"; exit 2; }',
+                "cd worldflux",
+                ". ../.venv/bin/activate",
+                "flock -u 9",
+            ]
+        )
+    else:
+        commands.extend(
+            [
+                "if [ ! -d worldflux/.git ]; then git clone https://github.com/worldflux/WorldFlux.git worldflux; fi",
+                "if [ ! -d dreamerv3-official/.git ]; then git clone https://github.com/danijar/dreamerv3.git dreamerv3-official; fi",
+                "if [ ! -d tdmpc2-official/.git ]; then git clone https://github.com/nicklashansen/tdmpc2.git tdmpc2-official; fi",
+                f"cd worldflux && git fetch origin --tags --prune && git checkout {shlex.quote(wf_ref)}",
+                f"cd ../dreamerv3-official && git fetch origin --tags --prune && git checkout {shlex.quote(dreamer_sha)}",
+                f"cd ../tdmpc2-official && git fetch origin --tags --prune && git checkout {shlex.quote(tdmpc2_sha)}",
+                "cd ../worldflux",
+                "if [ ! -f ../.venv/.parity_ready_v2 ]; then",
+                "  if [ ! -x ../.venv/bin/python3 ]; then python3 -m venv ../.venv; fi",
+                "  . ../.venv/bin/activate",
+                "  python -m pip install --upgrade pip",
+                "  python -m pip install -e .",
+                "  python -m pip install hydra-core==1.3.2 hydra-submitit-launcher==1.2.0 submitit==1.5.1 omegaconf==2.3.0 termcolor==2.4.0 tensordict torchrl gymnasium==0.29.1 dm-control==1.0.16 mujoco==3.1.2 imageio==2.34.1 imageio-ffmpeg==0.4.9 h5py==3.11.0 kornia==0.7.2 tqdm==4.66.4 pandas==2.2.3 wandb==0.17.4",
+                "  python -m pip install -r ../dreamerv3-official/requirements.txt",
+                "  python -m pip install pyyaml gymnasium==0.29.1 ale-py dm-control==1.0.16 mujoco==3.1.2 hydra-core==1.3.2 omegaconf==2.3.0",
+                "  touch ../.venv/.parity_ready_v2",
+                "fi",
+                ". ../.venv/bin/activate",
+                "flock -u 9",
+            ]
+        )
+
+    commands.extend(
+        [
+            f"mkdir -p {shlex.quote(remote_run_root)}",
+            f"export WF_PROGRESS_EXPECTED={int(expected_pairs)}",
+            f"export WF_PROGRESS_RUN_ROOT={shlex.quote(remote_run_root)}",
+            progress_cmd,
+        ]
+    )
 
     if resume_from_s3:
         commands.extend(
@@ -562,6 +689,7 @@ def _build_remote_commands(
                 f"aws s3 cp {shlex.quote(shard_prefix + '/seed_plan.json')} {shlex.quote(remote_run_root + '/seed_plan.json')} || true",
                 f"aws s3 cp {shlex.quote(shard_prefix + '/run_context.json')} {shlex.quote(remote_run_root + '/run_context.json')} || true",
                 f"aws s3 cp {shlex.quote(shard_prefix + '/run_summary.json')} {shlex.quote(remote_run_root + '/run_summary.json')} || true",
+                f"aws s3 cp {shlex.quote(shard_prefix + '/phase_progress.json')} {shlex.quote(remote_run_root + '/phase_progress.json')} || true",
             ]
         )
 
@@ -575,12 +703,13 @@ def _build_remote_commands(
             f"{runner_cmd} > {shlex.quote(remote_run_root + '/runner.stdout.log')} 2> {shlex.quote(remote_run_root + '/runner.stderr.log')} &",
             "RUNNER_PID=$!",
             (
-                f'(while kill -0 "$RUNNER_PID" 2>/dev/null; do {sync_cmd} >/dev/null 2>&1 || true; '
+                f'(while kill -0 "$RUNNER_PID" 2>/dev/null; do {progress_cmd} >/dev/null 2>&1 || true; {sync_cmd} >/dev/null 2>&1 || true; '
                 f"sleep {max(10, int(sync_interval_sec))}; done) &"
             ),
             "SYNC_PID=$!",
             'if wait "$RUNNER_PID"; then RUNNER_RC=0; else RUNNER_RC=$?; fi',
             'kill "$SYNC_PID" >/dev/null 2>&1 || true',
+            f"{progress_cmd} >/dev/null 2>&1 || true",
             f"{sync_cmd} >/dev/null 2>&1 || true",
             '[ "$RUNNER_RC" -eq 0 ] || exit "$RUNNER_RC"',
             (
@@ -598,6 +727,7 @@ def _build_remote_commands(
             f"aws s3 cp {shlex.quote(remote_run_root + '/run_context.json')} {shlex.quote(shard_prefix + '/run_context.json')}",
             f"aws s3 cp {shlex.quote(remote_run_root + '/run_summary.json')} {shlex.quote(shard_prefix + '/run_summary.json')}",
             f"aws s3 cp {shlex.quote(remote_run_root + '/coverage_report.json')} {shlex.quote(shard_prefix + '/coverage_report.json')}",
+            f"aws s3 cp {shlex.quote(remote_run_root + '/phase_progress.json')} {shlex.quote(shard_prefix + '/phase_progress.json')} || true",
             f"aws s3 cp {shlex.quote(remote_run_root + '/command_manifest.txt')} {shlex.quote(shard_prefix + '/command_manifest.txt')} || true",
             f"aws s3 cp {shlex.quote(remote_run_root + '/runner.stdout.log')} {shlex.quote(shard_prefix + '/runner.stdout.log')} || true",
             f"aws s3 cp {shlex.quote(remote_run_root + '/runner.stderr.log')} {shlex.quote(shard_prefix + '/runner.stderr.log')} || true",
@@ -639,6 +769,181 @@ def _send_command(
     return result.stdout.strip()
 
 
+TERMINAL_STATUSES = {"Success", "Failed", "Cancelled", "TimedOut", "Undeliverable", "Terminated"}
+
+
+def _get_command_invocation(
+    *,
+    region: str,
+    command_id: str,
+    instance_id: str,
+) -> dict[str, Any]:
+    cli = [
+        "aws",
+        "ssm",
+        "get-command-invocation",
+        "--region",
+        region,
+        "--command-id",
+        command_id,
+        "--instance-id",
+        instance_id,
+        "--output",
+        "json",
+    ]
+    result = _run_cli(cli)
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"get-command-invocation failed for {instance_id} command {command_id}: {result.stderr}"
+        )
+    return json.loads(result.stdout)
+
+
+def _slot_key(shard: ShardPlan) -> tuple[str, int]:
+    return (str(shard.instance_id), int(shard.gpu_slot if shard.gpu_slot is not None else -1))
+
+
+def _submit_shard(
+    *,
+    args: argparse.Namespace,
+    shard: ShardPlan,
+    manifest_rel: str,
+    run_id: str,
+    s3_prefix: str,
+) -> dict[str, Any]:
+    commands = _build_remote_commands(
+        shard=shard,
+        manifest_rel=manifest_rel,
+        run_id=run_id,
+        s3_prefix=s3_prefix,
+        device=args.device,
+        max_retries=args.max_retries,
+        workspace_root=args.workspace_root,
+        bootstrap_root=args.bootstrap_root,
+        worldflux_sha=args.worldflux_sha,
+        dreamer_sha=args.dreamer_sha,
+        tdmpc2_sha=args.tdmpc2_sha,
+        sync_interval_sec=args.sync_interval_sec,
+        resume_from_s3=bool(args.resume_from_s3),
+        thread_limit_profile=args.thread_limit_profile,
+        cpu_affinity_policy=args.cpu_affinity_policy,
+        skip_bootstrap=bool(args.skip_bootstrap),
+    )
+    command_id = _send_command(
+        region=args.region,
+        instance_id=shard.instance_id,
+        timeout_seconds=args.timeout_seconds,
+        commands=commands,
+    )
+    return {
+        "shard_id": shard.shard_id,
+        "instance_id": shard.instance_id,
+        "task_count": len(shard.task_ids),
+        "task_ids": list(shard.task_ids),
+        "seed_values": list(shard.seed_values),
+        "systems": list(shard.systems),
+        "gpu_slot": shard.gpu_slot,
+        "run_id": shard.shard_run_id,
+        "command_id": command_id,
+        "estimated_cost": shard.estimated_cost,
+        "predicted_duration_sec": shard.estimated_duration_sec,
+        "timeout_risk": _timeout_risk(
+            predicted_duration_sec=shard.estimated_duration_sec,
+            timeout_seconds=args.timeout_seconds,
+        ),
+        "submitted_at": _timestamp(),
+    }
+
+
+def _dispatch_with_slot_scheduler(
+    *,
+    args: argparse.Namespace,
+    shards: list[ShardPlan],
+    manifest_rel: str,
+    run_id: str,
+    s3_prefix: str,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    # Queue shards per (instance, gpu_slot) so each slot runs at most one command at a time.
+    by_slot: dict[tuple[str, int], list[ShardPlan]] = defaultdict(list)
+    for shard in sorted(
+        shards, key=lambda row: (row.instance_id, row.gpu_slot or -1, row.shard_id)
+    ):
+        by_slot[_slot_key(shard)].append(shard)
+
+    submissions: list[dict[str, Any]] = []
+    results: list[dict[str, Any]] = []
+    active: dict[tuple[str, int], dict[str, Any]] = {}
+
+    def submit_next(slot: tuple[str, int]) -> None:
+        queue = by_slot.get(slot, [])
+        if not queue:
+            return
+        shard = queue.pop(0)
+        item = _submit_shard(
+            args=args,
+            shard=shard,
+            manifest_rel=manifest_rel,
+            run_id=run_id,
+            s3_prefix=s3_prefix,
+        )
+        submissions.append(item)
+        active[slot] = item
+
+    for slot in sorted(by_slot):
+        submit_next(slot)
+
+    while active:
+        for slot, item in list(active.items()):
+            payload = _get_command_invocation(
+                region=args.region,
+                command_id=str(item["command_id"]),
+                instance_id=str(item["instance_id"]),
+            )
+            status = str(payload.get("Status", ""))
+            if status not in TERMINAL_STATUSES:
+                continue
+            item["status"] = payload.get("Status")
+            item["response_code"] = payload.get("ResponseCode")
+            item["status_details"] = payload.get("StatusDetails")
+            item["stdout"] = payload.get("StandardOutputContent", "")
+            item["stderr"] = payload.get("StandardErrorContent", "")
+            item["completed_at"] = _timestamp()
+            item["actual_duration_sec"] = _duration_seconds(
+                item["submitted_at"], item["completed_at"]
+            )
+            results.append(item)
+            del active[slot]
+            submit_next(slot)
+        if active:
+            time.sleep(max(1, int(args.poll_interval_sec)))
+
+    return submissions, results
+
+
+def _poll_all_submissions(
+    *,
+    args: argparse.Namespace,
+    submissions: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    results: list[dict[str, Any]] = []
+    for item in submissions:
+        status_payload = _poll_command(
+            region=args.region,
+            command_id=item["command_id"],
+            instance_id=item["instance_id"],
+            poll_interval_sec=args.poll_interval_sec,
+        )
+        item["status"] = status_payload.get("Status")
+        item["response_code"] = status_payload.get("ResponseCode")
+        item["status_details"] = status_payload.get("StatusDetails")
+        item["stdout"] = status_payload.get("StandardOutputContent", "")
+        item["stderr"] = status_payload.get("StandardErrorContent", "")
+        item["completed_at"] = _timestamp()
+        item["actual_duration_sec"] = _duration_seconds(item["submitted_at"], item["completed_at"])
+        results.append(item)
+    return results
+
+
 def _poll_command(
     *,
     region: str,
@@ -647,27 +952,13 @@ def _poll_command(
     poll_interval_sec: int,
 ) -> dict[str, Any]:
     while True:
-        cli = [
-            "aws",
-            "ssm",
-            "get-command-invocation",
-            "--region",
-            region,
-            "--command-id",
-            command_id,
-            "--instance-id",
-            instance_id,
-            "--output",
-            "json",
-        ]
-        result = _run_cli(cli)
-        if result.returncode != 0:
-            raise RuntimeError(
-                f"get-command-invocation failed for {instance_id} command {command_id}: {result.stderr}"
-            )
-        payload = json.loads(result.stdout)
+        payload = _get_command_invocation(
+            region=region,
+            command_id=command_id,
+            instance_id=instance_id,
+        )
         status = str(payload.get("Status", ""))
-        if status in {"Success", "Failed", "Cancelled", "TimedOut", "Undeliverable", "Terminated"}:
+        if status in TERMINAL_STATUSES:
             return payload
         time.sleep(max(1, poll_interval_sec))
 
@@ -685,6 +976,7 @@ def _download_shard_artifacts(
         "run_context.json",
         "run_summary.json",
         "coverage_report.json",
+        "phase_progress.json",
         "command_manifest.txt",
         "runner.stdout.log",
         "runner.stderr.log",
@@ -749,6 +1041,142 @@ def _timeout_risk(*, predicted_duration_sec: float, timeout_seconds: int) -> str
     if ratio >= 0.60:
         return "medium"
     return "low"
+
+
+def _aggregate_phase_progress(shards_root: Path) -> dict[str, Any]:
+    totals = {"expected": 0, "started": 0, "success": 0, "failed": 0, "running": 0}
+    per_shard: list[dict[str, Any]] = []
+    if not shards_root.exists():
+        return {"totals": totals, "shards": per_shard}
+
+    for shard_dir in sorted(shards_root.glob("shard_*")):
+        progress_path = shard_dir / "phase_progress.json"
+        if not progress_path.exists():
+            continue
+        try:
+            payload = json.loads(progress_path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if not isinstance(payload, dict):
+            continue
+        expected = int(payload.get("expected", 0) or 0)
+        started = int(payload.get("started", 0) or 0)
+        success = int(payload.get("success", 0) or 0)
+        failed = int(payload.get("failed", 0) or 0)
+        running = int(payload.get("running", 0) or 0)
+        entry = {
+            "shard": shard_dir.name,
+            "expected": expected,
+            "started": started,
+            "success": success,
+            "failed": failed,
+            "running": running,
+        }
+        per_shard.append(entry)
+        totals["expected"] += expected
+        totals["started"] += started
+        totals["success"] += success
+        totals["failed"] += failed
+        totals["running"] += running
+    return {"totals": totals, "shards": per_shard}
+
+
+def _build_rerun_command(
+    *,
+    args: argparse.Namespace,
+    rerun_manifest: Path,
+    run_id: str,
+    s3_prefix: str,
+    systems: tuple[str, ...],
+) -> str:
+    cmd: list[str] = [
+        "python3",
+        "scripts/parity/aws_distributed_orchestrator.py",
+        "--region",
+        args.region,
+        "--manifest",
+        str(rerun_manifest),
+        "--run-id",
+        f"{run_id}_rerun",
+        "--s3-prefix",
+        f"{s3_prefix.rstrip('/')}/rerun",
+        "--device",
+        args.device,
+        "--systems",
+        ",".join(systems),
+        "--max-retries",
+        str(int(args.max_retries)),
+        "--timeout-seconds",
+        str(int(args.timeout_seconds)),
+        "--poll-interval-sec",
+        str(int(args.poll_interval_sec)),
+        "--sync-interval-sec",
+        str(int(args.sync_interval_sec)),
+        "--sharding-mode",
+        str(args.sharding_mode),
+        "--seed-shard-unit",
+        str(args.seed_shard_unit),
+        "--gpu-slots-per-instance",
+        str(int(args.gpu_slots_per_instance)),
+        "--thread-limit-profile",
+        str(args.thread_limit_profile),
+        "--cpu-affinity-policy",
+        str(args.cpu_affinity_policy),
+        "--worldflux-sha",
+        str(args.worldflux_sha),
+        "--dreamer-sha",
+        str(args.dreamer_sha),
+        "--tdmpc2-sha",
+        str(args.tdmpc2_sha),
+        "--workspace-root",
+        str(args.workspace_root),
+        "--bootstrap-root",
+        str(args.bootstrap_root),
+        "--output-dir",
+        str(args.output_dir),
+        "--resume-from-s3",
+    ]
+    if bool(args.skip_bootstrap):
+        cmd.append("--skip-bootstrap")
+
+    if str(args.official_instance_ids).strip() or str(args.worldflux_instance_ids).strip():
+        if str(args.official_instance_ids).strip():
+            cmd.extend(["--official-instance-ids", str(args.official_instance_ids)])
+        if str(args.worldflux_instance_ids).strip():
+            cmd.extend(["--worldflux-instance-ids", str(args.worldflux_instance_ids)])
+    elif str(args.instance_ids).strip():
+        cmd.extend(["--instance-ids", str(args.instance_ids)])
+
+    if bool(args.auto_provision):
+        cmd.extend(
+            [
+                "--auto-provision",
+                "--fleet-size",
+                str(int(args.fleet_size)),
+                "--fleet-split",
+                str(args.fleet_split),
+                "--instance-type",
+                str(args.instance_type),
+                "--image-id",
+                str(args.image_id),
+                "--subnet-id",
+                str(args.subnet_id),
+                "--security-group-ids",
+                str(args.security_group_ids),
+                "--iam-instance-profile",
+                str(args.iam_instance_profile),
+                "--key-name",
+                str(args.key_name),
+                "--volume-size-gb",
+                str(int(args.volume_size_gb)),
+                "--provision-timeout-sec",
+                str(int(args.provision_timeout_sec)),
+            ]
+        )
+    if bool(args.auto_terminate):
+        cmd.append("--auto-terminate")
+
+    return " ".join(shlex.quote(part) for part in cmd)
 
 
 def _upload_artifact(*, region: str, artifact: Path, final_prefix: str) -> None:
@@ -1026,6 +1454,7 @@ def _execute_phase(
 ) -> PhaseResult:
     task_costs = _manifest_task_costs(manifest_path)
     manifest_rel = _manifest_relpath(manifest_path)
+    empirical_duration_per_seed = _collect_empirical_duration_per_seed(args.output_dir.resolve())
 
     if args.sharding_mode == "seed_system":
         shards = _build_seed_system_shards(
@@ -1036,6 +1465,8 @@ def _execute_phase(
             official_instances=official_instances,
             worldflux_instances=worldflux_instances,
             gpu_slots_per_instance=int(args.gpu_slots_per_instance),
+            seed_shard_unit=str(args.seed_shard_unit),
+            empirical_duration_per_seed=empirical_duration_per_seed,
         )
     else:
         shards = _build_task_shards(
@@ -1046,72 +1477,32 @@ def _execute_phase(
             systems=systems,
         )
 
-    submissions: list[dict[str, Any]] = []
-    for shard in shards:
-        commands = _build_remote_commands(
-            shard=shard,
+    use_slot_scheduler = bool(
+        args.wait and args.sharding_mode == "seed_system" and args.seed_shard_unit == "pair"
+    )
+    if use_slot_scheduler:
+        submissions, results = _dispatch_with_slot_scheduler(
+            args=args,
+            shards=shards,
             manifest_rel=manifest_rel,
             run_id=run_id,
             s3_prefix=s3_prefix,
-            device=args.device,
-            max_retries=args.max_retries,
-            workspace_root=args.workspace_root,
-            worldflux_sha=args.worldflux_sha,
-            dreamer_sha=args.dreamer_sha,
-            tdmpc2_sha=args.tdmpc2_sha,
-            sync_interval_sec=args.sync_interval_sec,
-            resume_from_s3=bool(args.resume_from_s3),
-            thread_limit_profile=args.thread_limit_profile,
-            cpu_affinity_policy=args.cpu_affinity_policy,
         )
-        command_id = _send_command(
-            region=args.region,
-            instance_id=shard.instance_id,
-            timeout_seconds=args.timeout_seconds,
-            commands=commands,
-        )
-        submissions.append(
-            {
-                "shard_id": shard.shard_id,
-                "instance_id": shard.instance_id,
-                "task_count": len(shard.task_ids),
-                "task_ids": list(shard.task_ids),
-                "seed_values": list(shard.seed_values),
-                "systems": list(shard.systems),
-                "gpu_slot": shard.gpu_slot,
-                "run_id": shard.shard_run_id,
-                "command_id": command_id,
-                "estimated_cost": shard.estimated_cost,
-                "predicted_duration_sec": shard.estimated_duration_sec,
-                "timeout_risk": _timeout_risk(
-                    predicted_duration_sec=shard.estimated_duration_sec,
-                    timeout_seconds=args.timeout_seconds,
-                ),
-                "submitted_at": _timestamp(),
-            }
-        )
-
-    results: list[dict[str, Any]] = []
-    if args.wait:
-        for item in submissions:
-            status_payload = _poll_command(
-                region=args.region,
-                command_id=item["command_id"],
-                instance_id=item["instance_id"],
-                poll_interval_sec=args.poll_interval_sec,
-            )
-            item["status"] = status_payload.get("Status")
-            item["response_code"] = status_payload.get("ResponseCode")
-            item["status_details"] = status_payload.get("StatusDetails")
-            item["stdout"] = status_payload.get("StandardOutputContent", "")
-            item["stderr"] = status_payload.get("StandardErrorContent", "")
-            item["completed_at"] = _timestamp()
-            item["actual_duration_sec"] = _duration_seconds(
-                item["submitted_at"], item["completed_at"]
-            )
-            results.append(item)
     else:
-        results = submissions
+        submissions = [
+            _submit_shard(
+                args=args,
+                shard=shard,
+                manifest_rel=manifest_rel,
+                run_id=run_id,
+                s3_prefix=s3_prefix,
+            )
+            for shard in shards
+        ]
+        if args.wait:
+            results = _poll_all_submissions(args=args, submissions=submissions)
+        else:
+            results = submissions
 
     failed = [row for row in results if args.wait and str(row.get("status")) != "Success"]
 
@@ -1165,6 +1556,12 @@ def _execute_phase(
         for path in downloaded:
             if path.name == "parity_runs.jsonl":
                 shard_jsonl_paths.append(path)
+    phase_progress = local_root / "phase_progress.json"
+    phase_progress_payload = _aggregate_phase_progress(shards_root)
+    phase_progress.write_text(
+        json.dumps(phase_progress_payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
 
     merged_runs = local_root / "parity_runs.jsonl"
     merge_summary = local_root / "merge_summary.json"
@@ -1212,6 +1609,17 @@ def _execute_phase(
         json.loads(coverage_report.read_text(encoding="utf-8")) if coverage_report.exists() else {}
     )
     missing_pairs = int(coverage_payload.get("missing_pairs", 0) or 0)
+    rerun_command = (
+        _build_rerun_command(
+            args=args,
+            rerun_manifest=rerun_manifest,
+            run_id=run_id,
+            s3_prefix=s3_prefix,
+            systems=systems,
+        )
+        if rerun_manifest.exists()
+        else ""
+    )
 
     equivalence_report = local_root / "equivalence_report.json"
     equivalence_md = local_root / "equivalence_report.md"
@@ -1266,6 +1674,7 @@ def _execute_phase(
         merged_runs,
         coverage_report,
         rerun_manifest,
+        phase_progress,
         validity_report,
         equivalence_report,
         equivalence_md,
@@ -1276,10 +1685,16 @@ def _execute_phase(
     predicted_total_duration_sec = float(sum(float(item.estimated_duration_sec) for item in shards))
     actual_wait_duration_sec: float | None = None
     if submissions and results:
-        starts = [_parse_iso8601(item.get("submitted_at")) for item in submissions]
-        ends = [_parse_iso8601(item.get("completed_at")) for item in results]
-        starts = [stamp for stamp in starts if stamp is not None]
-        ends = [stamp for stamp in ends if stamp is not None]
+        starts: list[datetime] = []
+        for item in submissions:
+            stamp = _parse_iso8601(item.get("submitted_at"))
+            if stamp is not None:
+                starts.append(stamp)
+        ends: list[datetime] = []
+        for item in results:
+            stamp = _parse_iso8601(item.get("completed_at"))
+            if stamp is not None:
+                ends.append(stamp)
         if starts and ends:
             actual_wait_duration_sec = max(0.0, float((max(ends) - min(starts)).total_seconds()))
 
@@ -1300,7 +1715,9 @@ def _execute_phase(
             "missing_pairs": missing_pairs,
             "pass": bool(coverage_result.returncode == 0),
             "rerun_manifest": str(rerun_manifest) if rerun_manifest.exists() else "",
+            "rerun_command": rerun_command,
         },
+        "phase_progress": phase_progress_payload,
         "timing": {
             "predicted_total_duration_sec": predicted_total_duration_sec,
             "actual_wait_duration_sec": actual_wait_duration_sec,
@@ -1314,6 +1731,7 @@ def _execute_phase(
             "merged_runs": str(merged_runs),
             "coverage_report": str(coverage_report),
             "rerun_manifest": str(rerun_manifest) if rerun_manifest.exists() else "",
+            "phase_progress": str(phase_progress),
             "validity_report": str(validity_report) if validity_report.exists() else "",
             "equivalence_report": str(equivalence_report) if equivalence_report.exists() else "",
             "equivalence_markdown": str(equivalence_md) if equivalence_md.exists() else "",
