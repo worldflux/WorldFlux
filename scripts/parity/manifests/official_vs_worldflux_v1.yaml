@@ -14,6 +14,16 @@
         "max_seeds": 50,
         "power_target": 0.8,
     },
+    "statistical": {
+        "bayesian": {
+            "enable": true,
+            "draws": 20000,
+            "seed": 20260220,
+            "probability_threshold_equivalence": 0.95,
+            "probability_threshold_noninferiority": 0.975,
+            "dual_pass_required": true,
+        },
+    },
     "tasks": [
         {
             "task_id": "atari100k_pong",

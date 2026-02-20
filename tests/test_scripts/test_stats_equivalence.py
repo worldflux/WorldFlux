@@ -258,3 +258,49 @@ def test_stats_equivalence_strict_validity_passes_on_parity_candidate_policy(
     assert report["global"]["strict_mode_failed"] is False
     assert report["global"]["validity_pass"] is True
     assert report["validity"]["pass"] is True
+
+
+def test_stats_equivalence_dual_pass_fails_when_bayesian_not_enabled(tmp_path: Path) -> None:
+    runs_path = tmp_path / "runs.jsonl"
+    rows: list[dict] = []
+    for seed in range(20):
+        official = 100.0 + seed * 0.1
+        worldflux = official * 1.01
+        rows.append(_record("atari100k_pong", seed, "official", official, official * 0.9))
+        rows.append(_record("atari100k_pong", seed, "worldflux", worldflux, worldflux * 0.9))
+
+    runs_path.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+    report = _run_stats(
+        runs_path,
+        tmp_path / "report.json",
+        extra_args=["--dual-pass-required"],
+    )
+
+    assert report["global"]["parity_pass_all_metrics"] is True
+    assert report["global"]["parity_pass_bayesian"] is None
+    assert report["global"]["parity_pass_final"] is False
+
+
+def test_stats_equivalence_bayesian_dual_pass_succeeds_for_good_data(tmp_path: Path) -> None:
+    runs_path = tmp_path / "runs.jsonl"
+    rows: list[dict] = []
+    for seed in range(20):
+        official = 100.0 + seed * 0.1
+        ratio = 1.0 + ((seed % 4) - 1.5) * 0.005
+        worldflux = official * ratio
+        rows.append(_record("atari100k_pong", seed, "official", official, official * 0.9))
+        rows.append(_record("atari100k_pong", seed, "worldflux", worldflux, worldflux * 0.9))
+
+    runs_path.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+    report = _run_stats(
+        runs_path,
+        tmp_path / "report.json",
+        extra_args=["--bayes-enable", "--dual-pass-required", "--bayes-seed", "123"],
+    )
+
+    assert report["global"]["parity_pass_all_metrics"] is True
+    assert report["global"]["parity_pass_bayesian"] is True
+    assert report["global"]["parity_pass_final"] is True
+    metric = report["tasks"][0]["metrics"]["final_return_mean"]
+    assert metric["bayesian"]["status"] == "ok"
+    assert metric["pass_with_bayesian"] is True

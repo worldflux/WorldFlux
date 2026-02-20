@@ -107,3 +107,35 @@ def test_load_suite_contract_v2_rejects_string_command() -> None:
 
     with pytest.raises(RuntimeError, match="must be list\\[str\\]"):
         mod.load_suite_contract(payload)
+
+
+def test_load_suite_contract_v2_accepts_optional_bayesian_statistical_config() -> None:
+    mod = _load_module()
+    payload = _valid_v2()
+    payload["statistical"] = {
+        "bayesian": {
+            "enable": True,
+            "draws": 20000,
+            "seed": 20260220,
+            "probability_threshold_equivalence": 0.95,
+            "probability_threshold_noninferiority": 0.975,
+            "dual_pass_required": True,
+        }
+    }
+
+    contract = mod.load_suite_contract(payload)
+    assert contract.statistical["bayesian"]["enable"] is True
+    assert contract.statistical["bayesian"]["draws"] == 20000
+
+
+def test_load_suite_contract_v2_rejects_invalid_bayesian_probability() -> None:
+    mod = _load_module()
+    payload = _valid_v2()
+    payload["statistical"] = {
+        "bayesian": {
+            "probability_threshold_equivalence": 1.2,
+        }
+    }
+
+    with pytest.raises(RuntimeError, match="probability_threshold_equivalence"):
+        mod.load_suite_contract(payload)

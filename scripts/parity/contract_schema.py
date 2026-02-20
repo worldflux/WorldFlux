@@ -135,6 +135,7 @@ class SuiteContract:
     suite_id: str
     family: str
     defaults: dict[str, Any]
+    statistical: dict[str, Any]
     seed_policy: SeedPolicyContract
     train_budget: dict[str, Any]
     eval_protocol: dict[str, Any]
@@ -148,6 +149,59 @@ class SuiteContract:
     alpha: float
     holm_scope: str
     tasks: tuple[TaskContract, ...]
+
+
+def _parse_statistical_config(raw: Any) -> dict[str, Any]:
+    if raw is None:
+        return {}
+    obj = _require_object(raw, name="statistical")
+    out: dict[str, Any] = {}
+    bayesian_raw = obj.get("bayesian")
+    if bayesian_raw is None:
+        return out
+
+    bayesian = _require_object(bayesian_raw, name="statistical.bayesian")
+    normalized: dict[str, Any] = {}
+    if "enable" in bayesian:
+        normalized["enable"] = _require_bool(bayesian["enable"], name="statistical.bayesian.enable")
+    if "draws" in bayesian:
+        draws = bayesian["draws"]
+        if not isinstance(draws, int) or draws <= 0:
+            raise RuntimeError("statistical.bayesian.draws must be a positive integer.")
+        normalized["draws"] = draws
+    if "seed" in bayesian:
+        seed = bayesian["seed"]
+        if not isinstance(seed, int) or seed < 0:
+            raise RuntimeError("statistical.bayesian.seed must be a non-negative integer.")
+        normalized["seed"] = seed
+    if "probability_threshold_equivalence" in bayesian:
+        threshold = _require_float(
+            bayesian["probability_threshold_equivalence"],
+            name="statistical.bayesian.probability_threshold_equivalence",
+        )
+        if not (0.0 < threshold <= 1.0):
+            raise RuntimeError(
+                "statistical.bayesian.probability_threshold_equivalence must be in (0, 1]."
+            )
+        normalized["probability_threshold_equivalence"] = threshold
+    if "probability_threshold_noninferiority" in bayesian:
+        threshold = _require_float(
+            bayesian["probability_threshold_noninferiority"],
+            name="statistical.bayesian.probability_threshold_noninferiority",
+        )
+        if not (0.0 < threshold <= 1.0):
+            raise RuntimeError(
+                "statistical.bayesian.probability_threshold_noninferiority must be in (0, 1]."
+            )
+        normalized["probability_threshold_noninferiority"] = threshold
+    if "dual_pass_required" in bayesian:
+        normalized["dual_pass_required"] = _require_bool(
+            bayesian["dual_pass_required"],
+            name="statistical.bayesian.dual_pass_required",
+        )
+
+    out["bayesian"] = normalized
+    return out
 
 
 def _parse_seed_policy(raw: Any) -> SeedPolicyContract:
@@ -427,6 +481,7 @@ def load_suite_contract(
     supported_adapters: set[str] | None = None,
 ) -> SuiteContract:
     schema_version = _require_string(raw.get("schema_version"), name="schema_version")
+    statistical = _parse_statistical_config(raw.get("statistical"))
 
     if schema_version == SCHEMA_V1:
         defaults = _require_object(raw.get("defaults", {}), name="defaults")
@@ -472,6 +527,7 @@ def load_suite_contract(
             ),
             family=family,
             defaults=dict(defaults),
+            statistical=statistical,
             seed_policy=seed_policy,
             train_budget={},
             eval_protocol={},
@@ -536,6 +592,7 @@ def load_suite_contract(
         suite_id=suite_id,
         family=family,
         defaults=dict(defaults),
+        statistical=statistical,
         seed_policy=seed_policy,
         train_budget=dict(train_budget),
         eval_protocol=dict(eval_protocol),
@@ -554,7 +611,7 @@ def load_suite_contract(
 
 def to_legacy_manifest_dict(contract: SuiteContract) -> dict[str, Any]:
     """Render suite contract into backward-compatible parity.manifest.v1-like shape."""
-    return {
+    out = {
         "schema_version": contract.schema_version,
         "suite_id": contract.suite_id,
         "family": contract.family,
@@ -627,6 +684,9 @@ def to_legacy_manifest_dict(contract: SuiteContract) -> dict[str, Any]:
             for task in contract.tasks
         ],
     }
+    if contract.statistical:
+        out["statistical"] = dict(contract.statistical)
+    return out
 
 
 __all__ = [

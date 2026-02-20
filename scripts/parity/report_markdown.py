@@ -52,6 +52,25 @@ def _metric_row(task_id: str, metric_name: str, metric: dict[str, Any]) -> str:
     )
 
 
+def _bayes_metric_row(task_id: str, metric_name: str, metric: dict[str, Any]) -> str:
+    bayesian = metric.get("bayesian", {})
+    if not isinstance(bayesian, dict) or bayesian.get("status") != "ok":
+        status = "-"
+        if isinstance(bayesian, dict):
+            status = str(bayesian.get("status", "missing"))
+        return f"| {task_id} | {metric_name} | - | - | - | {status} |"
+
+    posterior_ci90 = bayesian.get("posterior_ci90", [None, None])
+    posterior_ci90_str = f"[{_fmt_float(posterior_ci90[0])}, {_fmt_float(posterior_ci90[1])}]"
+    return (
+        f"| {task_id} | {metric_name} | "
+        f"{_fmt_float(bayesian.get('p_equivalence'))} | "
+        f"{_fmt_float(bayesian.get('p_noninferior'))} | "
+        f"{posterior_ci90_str} | "
+        f"{_fmt_bool(bayesian.get('pass_all'))} |"
+    )
+
+
 def _render(report: dict[str, Any]) -> str:
     lines: list[str] = []
     lines.append("# WorldFlux Parity Equivalence Report")
@@ -68,10 +87,33 @@ def _render(report: dict[str, Any]) -> str:
         f"- Primary metric parity: **{_fmt_bool(global_block.get('parity_pass_primary'))}**"
     )
     lines.append(
-        f"- All metrics parity: **{_fmt_bool(global_block.get('parity_pass_all_metrics'))}**"
+        f"- All metrics parity (frequentist): **{_fmt_bool(global_block.get('parity_pass_all_metrics'))}**"
     )
+    if "parity_pass_bayesian" in global_block:
+        lines.append(
+            f"- All metrics parity (Bayesian): **{_fmt_bool(global_block.get('parity_pass_bayesian'))}**"
+        )
+    if "parity_pass_frequentist" in global_block:
+        lines.append(
+            f"- Dual-pass frequentist gate: **{_fmt_bool(global_block.get('parity_pass_frequentist'))}**"
+        )
+    bayes_cfg = report.get("config", {}).get("bayesian", {})
+    if isinstance(bayes_cfg, dict):
+        lines.append(
+            f"- Dual-pass required: `{bayes_cfg.get('dual_pass_required', False)}` "
+            f"(Bayesian enabled: `{bayes_cfg.get('enabled', False)}`)"
+        )
+        if bayes_cfg.get("enabled", False):
+            lines.append(
+                "- Bayesian thresholds: "
+                f"equivalence `{_fmt_float(bayes_cfg.get('probability_threshold_equivalence'))}`, "
+                f"noninferiority `{_fmt_float(bayes_cfg.get('probability_threshold_noninferiority'))}`"
+            )
+            lines.append(
+                f"- Bayesian draws/seed: `{bayes_cfg.get('draws', '-')}` / `{bayes_cfg.get('seed', '-')}`"
+            )
     lines.append(
-        f"- Final verdict (all-metrics + completeness): **{_fmt_bool(global_block.get('parity_pass_final'))}**"
+        f"- Final verdict (all gates): **{_fmt_bool(global_block.get('parity_pass_final'))}**"
     )
     lines.append(f"- Validity gate: **{_fmt_bool(global_block.get('validity_pass'))}**")
     lines.append(
@@ -110,6 +152,29 @@ def _render(report: dict[str, Any]) -> str:
             f"- Required policy mode: `{validity.get('required_policy_mode', '-')}`, "
             f"issues: `{validity.get('issue_count', '-')}`"
         )
+    lines.append("")
+
+    bayesian_block = report.get("bayesian", {})
+    if isinstance(bayesian_block, dict):
+        lines.append("## Bayesian Summary")
+        lines.append("")
+        lines.append(f"- Enabled: `{bayesian_block.get('enabled', False)}`")
+        lines.append(
+            f"- Task pass count: `{bayesian_block.get('tasks_pass_all_metrics', '-')}` "
+            f"/ `{bayesian_block.get('tasks_total', '-')}`"
+        )
+        lines.append(
+            f"- Bayesian all-metrics parity: **{_fmt_bool(bayesian_block.get('parity_pass_all_metrics'))}**"
+        )
+        posterior = bayesian_block.get("posterior_summary", {})
+        if isinstance(posterior, dict) and posterior:
+            lines.append(
+                "- Posterior probability summary: "
+                f"mean p(eq) `{_fmt_float(posterior.get('mean_p_equivalence'))}`, "
+                f"min p(eq) `{_fmt_float(posterior.get('min_p_equivalence'))}`, "
+                f"mean p(non-inf) `{_fmt_float(posterior.get('mean_p_noninferior'))}`, "
+                f"min p(non-inf) `{_fmt_float(posterior.get('min_p_noninferior'))}`"
+            )
         lines.append("")
 
     lines.append("## Per-Metric Results")
@@ -129,14 +194,29 @@ def _render(report: dict[str, Any]) -> str:
             lines.append(_metric_row(task_id, metric_name, metric))
 
     lines.append("")
+    if isinstance(bayesian_block, dict) and bool(bayesian_block.get("enabled", False)):
+        lines.append("## Bayesian Per-Metric Results")
+        lines.append("")
+        lines.append("| Task | Metric | P(eq) | P(non-inf) | Posterior CI90 | Bayes Pass |")
+        lines.append("|---|---|---:|---:|---|---:|")
+        for task in report.get("tasks", []):
+            task_id = str(task.get("task_id", "-"))
+            metrics = task.get("metrics", {})
+            if not isinstance(metrics, dict):
+                continue
+            for metric_name, metric in metrics.items():
+                lines.append(_bayes_metric_row(task_id, metric_name, metric))
+        lines.append("")
+
     lines.append("## Task Summary")
     lines.append("")
-    lines.append("| Task | Primary Pass | All Metrics Pass |")
-    lines.append("|---|---:|---:|")
+    lines.append("| Task | Primary Pass | All Metrics Pass | Bayesian Pass |")
+    lines.append("|---|---:|---:|---:|")
     for task in report.get("tasks", []):
         lines.append(
             f"| {task.get('task_id', '-')} | {_fmt_bool(task.get('task_pass_primary'))} | "
-            f"{_fmt_bool(task.get('task_pass_all_metrics'))} |"
+            f"{_fmt_bool(task.get('task_pass_all_metrics'))} | "
+            f"{_fmt_bool(task.get('task_pass_bayesian'))} |"
         )
 
     lines.append("")
@@ -145,8 +225,12 @@ def _render(report: dict[str, Any]) -> str:
     lines.append("- TOST on paired log-ratio with equivalence bounds ±5%.")
     lines.append("- One-sided non-inferiority bound at -5%.")
     lines.append("- Holm correction applied to multiple hypotheses.")
+    lines.append("- Bayesian bootstrap estimates posterior P(eq) and P(non-inferior).")
     lines.append("- Validity gate must pass in proof mode (no mock/random shortcuts).")
-    lines.append("- Final pass requires all-metrics pass, zero missing pairs, and validity pass.")
+    lines.append(
+        "- Final pass requires frequentist pass, optional Bayesian pass (when dual-pass is enabled), "
+        "zero missing pairs, and validity pass."
+    )
 
     return "\n".join(lines) + "\n"
 

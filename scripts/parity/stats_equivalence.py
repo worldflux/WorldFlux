@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import sys
@@ -21,6 +22,7 @@ if str(SCRIPT_DIR) not in sys.path:
 
 from contract_schema import SuiteContract, load_suite_contract
 from metric_transforms import equivalence_bounds, transform_pair
+from stats_bayesian import bayesian_equivalence_report
 from validity_gate import evaluate_validity
 
 
@@ -39,6 +41,16 @@ class TaskMetricConfig:
     equivalence_margin: float
     noninferiority_margin: float
     alpha: float
+
+
+@dataclass(frozen=True)
+class BayesianConfig:
+    enabled: bool
+    draws: int
+    seed: int
+    probability_threshold_equivalence: float
+    probability_threshold_noninferiority: float
+    dual_pass_required: bool
 
 
 def _parse_args() -> argparse.Namespace:
@@ -91,6 +103,23 @@ def _parse_args() -> argparse.Namespace:
         default=None,
         help="Optional path for validity report JSON output.",
     )
+    parser.add_argument(
+        "--bayes-enable",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Enable Bayesian bootstrap equivalence analysis.",
+    )
+    parser.add_argument("--bayes-draws", type=int, default=None)
+    parser.add_argument("--bayes-seed", type=int, default=None)
+    parser.add_argument("--bayes-prob-threshold-equivalence", type=float, default=None)
+    parser.add_argument("--bayes-prob-threshold-noninferiority", type=float, default=None)
+    parser.add_argument(
+        "--dual-pass-required",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Require both frequentist and Bayesian pass for parity_pass_final. "
+        "Defaults to true when --proof-mode and Bayesian are enabled.",
+    )
     return parser.parse_args()
 
 
@@ -123,6 +152,97 @@ def _load_manifest_payload(path: Path) -> dict[str, Any]:
     if not isinstance(loaded, dict):
         raise RuntimeError("Manifest root must be object.")
     return loaded
+
+
+def _resolve_bayesian_config(
+    *,
+    args: argparse.Namespace,
+    manifest_payload: dict[str, Any] | None,
+) -> BayesianConfig:
+    defaults = {
+        "enabled": False,
+        "draws": 20000,
+        "seed": 20260220,
+        "probability_threshold_equivalence": 0.95,
+        "probability_threshold_noninferiority": 0.975,
+        "dual_pass_required": False,
+    }
+
+    manifest_bayes: dict[str, Any] = {}
+    if isinstance(manifest_payload, dict):
+        statistical = manifest_payload.get("statistical")
+        if isinstance(statistical, dict):
+            bayes = statistical.get("bayesian")
+            if isinstance(bayes, dict):
+                manifest_bayes = bayes
+
+    enabled = (
+        bool(args.bayes_enable)
+        if args.bayes_enable is not None
+        else bool(manifest_bayes.get("enable", defaults["enabled"]))
+    )
+    draws = (
+        int(args.bayes_draws)
+        if args.bayes_draws is not None
+        else int(manifest_bayes.get("draws", defaults["draws"]))
+    )
+    seed = (
+        int(args.bayes_seed)
+        if args.bayes_seed is not None
+        else int(manifest_bayes.get("seed", defaults["seed"]))
+    )
+    threshold_equivalence = (
+        float(args.bayes_prob_threshold_equivalence)
+        if args.bayes_prob_threshold_equivalence is not None
+        else float(
+            manifest_bayes.get(
+                "probability_threshold_equivalence",
+                defaults["probability_threshold_equivalence"],
+            )
+        )
+    )
+    threshold_noninferiority = (
+        float(args.bayes_prob_threshold_noninferiority)
+        if args.bayes_prob_threshold_noninferiority is not None
+        else float(
+            manifest_bayes.get(
+                "probability_threshold_noninferiority",
+                defaults["probability_threshold_noninferiority"],
+            )
+        )
+    )
+    dual_pass_required = (
+        bool(args.dual_pass_required)
+        if args.dual_pass_required is not None
+        else bool(manifest_bayes.get("dual_pass_required", defaults["dual_pass_required"]))
+    )
+
+    if args.dual_pass_required is None and enabled and bool(args.proof_mode):
+        dual_pass_required = True
+
+    if draws <= 0:
+        raise SystemExit("--bayes-draws must be > 0")
+    if seed < 0:
+        raise SystemExit("--bayes-seed must be >= 0")
+    if not (0.0 < threshold_equivalence <= 1.0):
+        raise SystemExit("--bayes-prob-threshold-equivalence must be in (0, 1]")
+    if not (0.0 < threshold_noninferiority <= 1.0):
+        raise SystemExit("--bayes-prob-threshold-noninferiority must be in (0, 1]")
+
+    return BayesianConfig(
+        enabled=enabled,
+        draws=draws,
+        seed=seed,
+        probability_threshold_equivalence=threshold_equivalence,
+        probability_threshold_noninferiority=threshold_noninferiority,
+        dual_pass_required=dual_pass_required,
+    )
+
+
+def _stable_bayes_seed(*, base_seed: int, task_id: str, metric: str) -> int:
+    material = f"{base_seed}:{task_id}:{metric}".encode()
+    digest = hashlib.sha256(material).hexdigest()
+    return int(digest[:8], 16)
 
 
 def _derive_task_configs(
@@ -486,12 +606,15 @@ def main() -> int:
 
     suite_contract: SuiteContract | None = None
     suite_requirements: dict[str, Any] = {}
+    manifest_payload: dict[str, Any] | None = None
     if args.manifest is not None:
-        suite_contract = load_suite_contract(_load_manifest_payload(args.manifest))
+        manifest_payload = _load_manifest_payload(args.manifest)
+        suite_contract = load_suite_contract(manifest_payload)
         suite_requirements = dict(suite_contract.validity_requirements)
         for metric in (suite_contract.primary_metric, *suite_contract.secondary_metrics):
             if metric not in metrics:
                 metrics.append(metric)
+    bayesian_cfg = _resolve_bayesian_config(args=args, manifest_payload=manifest_payload)
 
     entries = _load_jsonl(args.input)
     task_configs = _derive_task_configs(
@@ -542,9 +665,28 @@ def main() -> int:
                 "proof_mode": bool(args.proof_mode or args.strict_validity),
                 "policy_mode_required": args.policy_mode_required,
                 "manifest": str(args.manifest) if args.manifest else None,
+                "bayesian": {
+                    "enabled": bayesian_cfg.enabled,
+                    "draws": bayesian_cfg.draws,
+                    "seed": bayesian_cfg.seed,
+                    "probability_threshold_equivalence": (
+                        bayesian_cfg.probability_threshold_equivalence
+                    ),
+                    "probability_threshold_noninferiority": (
+                        bayesian_cfg.probability_threshold_noninferiority
+                    ),
+                    "dual_pass_required": bayesian_cfg.dual_pass_required,
+                },
             },
             "completeness": completeness,
             "validity": validity,
+            "bayesian": {
+                "enabled": bayesian_cfg.enabled,
+                "tasks_total": 0,
+                "tasks_pass_all_metrics": 0,
+                "parity_pass_all_metrics": False if bayesian_cfg.enabled else None,
+                "posterior_summary": {},
+            },
             "holm": {
                 "primary": {},
                 "all_metrics": {},
@@ -556,6 +698,9 @@ def main() -> int:
                 "tasks_pass_all_metrics": 0,
                 "parity_pass_primary": False,
                 "parity_pass_all_metrics": False,
+                "parity_pass_frequentist": False,
+                "tasks_pass_bayesian": 0,
+                "parity_pass_bayesian": False if bayesian_cfg.enabled else None,
                 "parity_pass_final": False,
                 "strict_mode_failed": True,
                 "missing_pairs": int(completeness["missing_pairs"]),
@@ -571,9 +716,11 @@ def main() -> int:
 
     task_set: set[str] = set()
     metric_reports: dict[str, dict[str, dict[str, Any]]] = defaultdict(dict)
+    paired_by_metric: dict[str, dict[str, list[PairSample]]] = {}
 
     for metric in metrics:
         paired = _collect_pairs(entries, metric=metric)
+        paired_by_metric[metric] = paired
         task_set.update(paired.keys())
         for task_id, samples in paired.items():
             task_cfg = task_configs.get(
@@ -634,6 +781,8 @@ def main() -> int:
     holm_all = _holm_adjustments(all_p_values, args.alpha)
 
     task_reports: list[dict[str, Any]] = []
+    bayesian_metric_equivalence_probs: list[float] = []
+    bayesian_metric_noninferior_probs: list[float] = []
     for task_id in ordered_tasks:
         task_cfg = task_configs.get(
             task_id,
@@ -649,6 +798,7 @@ def main() -> int:
         per_metric: dict[str, Any] = {}
         primary_pass = True
         all_metrics_pass = True
+        bayesian_task_pass = bool(bayesian_cfg.enabled)
 
         for metric in metrics:
             report = metric_reports.get(task_id, {}).get(metric)
@@ -678,10 +828,59 @@ def main() -> int:
                 primary_pass = False
                 all_metrics_pass = False
 
+            if bayesian_cfg.enabled:
+                samples = paired_by_metric.get(metric, {}).get(task_id, [])
+                bounds = equivalence_bounds(
+                    transform=task_cfg.effect_transform,
+                    equivalence_margin=task_cfg.equivalence_margin,
+                    noninferiority_margin=task_cfg.noninferiority_margin,
+                )
+                effects = [
+                    transform_pair(
+                        transform=task_cfg.effect_transform,
+                        official=sample.official,
+                        worldflux=sample.worldflux,
+                        higher_is_better=task_cfg.higher_is_better,
+                        eps=args.eps,
+                    )
+                    for sample in samples
+                ]
+                bayesian_report = bayesian_equivalence_report(
+                    effects=effects,
+                    draws=bayesian_cfg.draws,
+                    seed=_stable_bayes_seed(
+                        base_seed=bayesian_cfg.seed, task_id=task_id, metric=metric
+                    ),
+                    lower_equivalence=bounds.lower_equivalence,
+                    upper_equivalence=bounds.upper_equivalence,
+                    lower_noninferiority=bounds.lower_noninferiority,
+                    probability_threshold_equivalence=(
+                        bayesian_cfg.probability_threshold_equivalence
+                    ),
+                    probability_threshold_noninferiority=(
+                        bayesian_cfg.probability_threshold_noninferiority
+                    ),
+                    min_pairs=args.min_pairs,
+                )
+                report["bayesian"] = bayesian_report
+                metric_bayesian_pass = bool(
+                    bayesian_report.get("status") == "ok" and bayesian_report.get("pass_all")
+                )
+                report["pass_with_bayesian"] = metric_bayesian_pass
+                bayesian_task_pass = bayesian_task_pass and metric_bayesian_pass
+                if bayesian_report.get("status") == "ok":
+                    bayesian_metric_equivalence_probs.append(
+                        float(bayesian_report.get("p_equivalence", 0.0))
+                    )
+                    bayesian_metric_noninferior_probs.append(
+                        float(bayesian_report.get("p_noninferior", 0.0))
+                    )
+
             per_metric[metric] = report
 
         if task_cfg.primary_metric not in per_metric:
             primary_pass = False
+            bayesian_task_pass = False
 
         task_reports.append(
             {
@@ -690,11 +889,34 @@ def main() -> int:
                 "metrics": per_metric,
                 "task_pass_primary": bool(primary_pass),
                 "task_pass_all_metrics": bool(all_metrics_pass),
+                "task_pass_bayesian": bool(bayesian_task_pass) if bayesian_cfg.enabled else None,
             }
         )
 
     tasks_pass_primary = sum(1 for t in task_reports if t["task_pass_primary"])
     tasks_pass_all = sum(1 for t in task_reports if t["task_pass_all_metrics"])
+    tasks_pass_bayesian = sum(1 for t in task_reports if t.get("task_pass_bayesian") is True)
+
+    parity_pass_frequentist = bool(task_reports) and tasks_pass_all == len(task_reports)
+    parity_pass_bayesian: bool | None
+    if bayesian_cfg.enabled:
+        parity_pass_bayesian = bool(task_reports) and tasks_pass_bayesian == len(task_reports)
+    else:
+        parity_pass_bayesian = None
+
+    parity_gate_pass = parity_pass_frequentist
+    if bayesian_cfg.dual_pass_required:
+        parity_gate_pass = parity_gate_pass and bool(parity_pass_bayesian)
+
+    posterior_summary: dict[str, Any] = {}
+    if bayesian_cfg.enabled and bayesian_metric_equivalence_probs:
+        posterior_summary = {
+            "metric_count": len(bayesian_metric_equivalence_probs),
+            "mean_p_equivalence": _sample_mean(bayesian_metric_equivalence_probs),
+            "min_p_equivalence": min(bayesian_metric_equivalence_probs),
+            "mean_p_noninferior": _sample_mean(bayesian_metric_noninferior_probs),
+            "min_p_noninferior": min(bayesian_metric_noninferior_probs),
+        }
 
     output: dict[str, Any] = {
         "schema_version": "parity.v1",
@@ -714,9 +936,28 @@ def main() -> int:
             "proof_mode": bool(args.proof_mode or args.strict_validity),
             "policy_mode_required": args.policy_mode_required,
             "manifest": str(args.manifest) if args.manifest else None,
+            "bayesian": {
+                "enabled": bayesian_cfg.enabled,
+                "draws": bayesian_cfg.draws,
+                "seed": bayesian_cfg.seed,
+                "probability_threshold_equivalence": (
+                    bayesian_cfg.probability_threshold_equivalence
+                ),
+                "probability_threshold_noninferiority": (
+                    bayesian_cfg.probability_threshold_noninferiority
+                ),
+                "dual_pass_required": bayesian_cfg.dual_pass_required,
+            },
         },
         "completeness": completeness,
         "validity": validity,
+        "bayesian": {
+            "enabled": bayesian_cfg.enabled,
+            "tasks_total": len(task_reports),
+            "tasks_pass_all_metrics": tasks_pass_bayesian if bayesian_cfg.enabled else None,
+            "parity_pass_all_metrics": parity_pass_bayesian,
+            "posterior_summary": posterior_summary,
+        },
         "holm": {
             "primary": holm_primary,
             "all_metrics": holm_all,
@@ -727,9 +968,12 @@ def main() -> int:
             "tasks_pass_primary": tasks_pass_primary,
             "tasks_pass_all_metrics": tasks_pass_all,
             "parity_pass_primary": bool(task_reports) and tasks_pass_primary == len(task_reports),
-            "parity_pass_all_metrics": bool(task_reports) and tasks_pass_all == len(task_reports),
+            "parity_pass_all_metrics": parity_pass_frequentist,
+            "parity_pass_frequentist": parity_pass_frequentist,
+            "tasks_pass_bayesian": tasks_pass_bayesian if bayesian_cfg.enabled else None,
+            "parity_pass_bayesian": parity_pass_bayesian,
             "parity_pass_final": bool(task_reports)
-            and tasks_pass_all == len(task_reports)
+            and parity_gate_pass
             and int(completeness["missing_pairs"]) == 0
             and bool(validity.get("pass", False)),
             "strict_mode_failed": False,
