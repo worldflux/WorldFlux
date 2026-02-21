@@ -66,6 +66,11 @@ def _patch_dataset_template(content: str) -> str:
             '            _info(f"Online Atari collection is unavailable: {exc}")',
             "dataset online atari log",
         ),
+        (
+            '            warnings.warn(f"Online MuJoCo collection is unavailable: {exc}")',
+            '            _info(f"Online MuJoCo collection is unavailable: {exc}")',
+            "dataset online mujoco log",
+        ),
     )
     for old, new, label in replacements:
         content = _replace_exact(content, old, new, label=label)
@@ -441,7 +446,9 @@ def render_worldflux_toml(context: dict[str, Any]) -> str:
     total_steps = max(1, int(context.get("training_total_steps", 100000)))
     batch_size = max(1, int(context.get("training_batch_size", 16)))
 
-    online_default = environment == "atari" and model_type.startswith("dreamer")
+    online_default = (
+        environment == "atari" and model_type.startswith("dreamer")
+    ) or environment == "mujoco"
     data_source = "gym" if online_default else "random"
     gameplay_enabled = "true" if online_default else "false"
     online_enabled = "true" if online_default else "false"
