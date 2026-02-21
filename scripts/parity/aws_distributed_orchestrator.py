@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import math
 import shlex
@@ -368,13 +369,46 @@ def _parse_requested_gpu_slots(raw: Any) -> int | None:
     return value
 
 
+_KNOWN_GPU_COUNTS: dict[str, int] = {
+    "p4d.24xlarge": 8,
+    "p4de.24xlarge": 8,
+    "p5.48xlarge": 8,
+    "g5.xlarge": 1,
+    "g5.2xlarge": 1,
+    "g5.4xlarge": 1,
+    "g5.8xlarge": 1,
+    "g5.12xlarge": 4,
+    "g5.16xlarge": 1,
+    "g5.24xlarge": 4,
+    "g5.48xlarge": 8,
+    "g6.xlarge": 1,
+    "g6.2xlarge": 1,
+    "g6.4xlarge": 1,
+    "g6.8xlarge": 1,
+    "g6.12xlarge": 4,
+    "g6.16xlarge": 1,
+    "g6.24xlarge": 4,
+    "g6.48xlarge": 8,
+}
+
+
 def _resolve_instance_gpu_counts(
     *,
     region: str,
     instance_ids: list[str],
+    instance_type_hint: str = "",
 ) -> tuple[dict[str, int], dict[str, str]]:
     if not instance_ids:
         return {}, {}
+
+    # Fast path: when instance type is known and GPU count is in the lookup
+    # table, skip EC2 API calls entirely (useful when running on instances
+    # without ec2:DescribeInstances permission).
+    if instance_type_hint and instance_type_hint in _KNOWN_GPU_COUNTS:
+        gpu_count = _KNOWN_GPU_COUNTS[instance_type_hint]
+        id_to_gpu = {iid: gpu_count for iid in instance_ids}
+        id_to_type = {iid: instance_type_hint for iid in instance_ids}
+        return id_to_gpu, id_to_type
 
     describe_instances = [
         "aws",
@@ -759,31 +793,42 @@ def _sync_command(remote_run_root: str, shard_prefix: str) -> str:
     return f"aws s3 sync {remote_run_root} {shard_prefix} {include_args}"
 
 
-def _progress_update_command() -> str:
-    code = (
-        "import datetime,json,os,pathlib;"
-        "root=pathlib.Path(os.environ['WF_PROGRESS_RUN_ROOT']);"
-        "expected=int(os.environ.get('WF_PROGRESS_EXPECTED','0'));"
-        "manifest=root/'command_manifest.txt';"
-        "runs=root/'parity_runs.jsonl';"
-        "started=sum(1 for _ in manifest.open('r',encoding='utf-8')) if manifest.exists() else 0;"
-        "text=runs.read_text(encoding='utf-8') if runs.exists() else '';"
-        'success=text.count(\'"status": "success"\');'
-        'failed=text.count(\'"status": "failed"\');'
-        "running=max(0,started-success-failed);"
-        "payload={"
-        "'schema_version':'parity.v1',"
-        "'generated_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),"
-        "'expected':expected,"
-        "'started':started,"
-        "'success':success,"
-        "'failed':failed,"
-        "'running':running"
-        "};"
-        "root.mkdir(parents=True,exist_ok=True);"
-        "(root/'phase_progress.json').write_text(json.dumps(payload,indent=2,sort_keys=True)+'\\n',encoding='utf-8')"
+_PROGRESS_HELPER_PATH = "/tmp/_parity_progress_update.py"
+
+
+def _progress_update_code() -> str:
+    """Raw Python source for the progress-update helper script."""
+    return (
+        "\n".join(
+            [
+                "import datetime,json,os,pathlib",
+                "root=pathlib.Path(os.environ['WF_PROGRESS_RUN_ROOT'])",
+                "expected=int(os.environ.get('WF_PROGRESS_EXPECTED','0'))",
+                "manifest=root/'command_manifest.txt'",
+                "runs=root/'parity_runs.jsonl'",
+                "started=sum(1 for _ in manifest.open('r',encoding='utf-8')) if manifest.exists() else 0",
+                "text=runs.read_text(encoding='utf-8') if runs.exists() else ''",
+                'success=text.count(\'"status": "success"\')',
+                'failed=text.count(\'"status": "failed"\')',
+                "running=max(0,started-success-failed)",
+                "payload={'schema_version':'parity.v1','generated_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'expected':expected,'started':started,'success':success,'failed':failed,'running':running}",
+                "root.mkdir(parents=True,exist_ok=True)",
+                "(root/'phase_progress.json').write_text(json.dumps(payload,indent=2,sort_keys=True)+'\\n',encoding='utf-8')",
+            ]
+        )
+        + "\n"
     )
-    return f"python3 -c {shlex.quote(code)}"
+
+
+def _write_progress_helper_command() -> str:
+    """Shell command that writes the progress helper script to disk."""
+    b64 = base64.b64encode(_progress_update_code().encode()).decode()
+    return f"echo {b64} | base64 -d > {_PROGRESS_HELPER_PATH}"
+
+
+def _progress_update_command() -> str:
+    """Shell command that runs the progress-update helper."""
+    return f"python3 {_PROGRESS_HELPER_PATH}"
 
 
 def _build_remote_commands(
@@ -810,6 +855,7 @@ def _build_remote_commands(
     remote_run_root = f"reports/parity/{shard.shard_run_id}"
     shard_prefix = f"{s3_prefix.rstrip('/')}/shards/{shard.shard_id:02d}"
     sync_cmd = _sync_command(remote_run_root, shard_prefix)
+    write_progress_cmd = _write_progress_helper_command()
     progress_cmd = _progress_update_command()
 
     task_filter = ",".join(shard.task_ids)
@@ -854,7 +900,7 @@ def _build_remote_commands(
                 '[ -d worldflux/.git ] || { echo "Missing bootstrap repo: worldflux"; exit 2; }',
                 '[ -d dreamerv3-official/.git ] || { echo "Missing bootstrap repo: dreamerv3-official"; exit 2; }',
                 '[ -d tdmpc2-official/.git ] || { echo "Missing bootstrap repo: tdmpc2-official"; exit 2; }',
-                '[ -x .venv/bin/python3 ] || { echo "Missing bootstrap venv"; exit 2; }',
+                '[ -f .venv/bin/activate ] || { echo "Missing bootstrap venv"; exit 2; }',
                 "cd worldflux",
                 ". ../.venv/bin/activate",
                 "flock -u 9",
@@ -871,7 +917,11 @@ def _build_remote_commands(
                 f"cd ../tdmpc2-official && git fetch origin --tags --prune && git checkout {shlex.quote(tdmpc2_sha)}",
                 "cd ../worldflux",
                 "if [ ! -f ../.venv/.parity_ready_v2 ]; then",
-                "  if [ ! -x ../.venv/bin/python3 ]; then python3 -m venv ../.venv; fi",
+                "  if [ ! -f ../.venv/bin/activate ]; then",
+                "    rm -rf ../.venv",
+                "    sudo apt-get update -qq > /dev/null 2>&1 && sudo apt-get install -y -qq python3-venv > /dev/null 2>&1 || true",
+                "    python3 -m venv ../.venv",
+                "  fi",
                 "  . ../.venv/bin/activate",
                 "  python -m pip install --upgrade pip",
                 "  python -m pip install -e .",
@@ -890,6 +940,7 @@ def _build_remote_commands(
             f"mkdir -p {shlex.quote(remote_run_root)}",
             f"export WF_PROGRESS_EXPECTED={int(expected_pairs)}",
             f"export WF_PROGRESS_RUN_ROOT={shlex.quote(remote_run_root)}",
+            write_progress_cmd,
             progress_cmd,
         ]
     )
@@ -957,7 +1008,12 @@ def _send_command(
     timeout_seconds: int,
     commands: list[str],
 ) -> str:
-    payload = json.dumps(commands)
+    params = json.dumps(
+        {
+            "commands": commands,
+            "executionTimeout": [str(timeout_seconds)],
+        }
+    )
     cli = [
         "aws",
         "ssm",
@@ -971,7 +1027,7 @@ def _send_command(
         "--timeout-seconds",
         str(timeout_seconds),
         "--parameters",
-        f"commands={payload}",
+        params,
         "--query",
         "Command.CommandId",
         "--output",
@@ -984,6 +1040,15 @@ def _send_command(
 
 
 TERMINAL_STATUSES = {"Success", "Failed", "Cancelled", "TimedOut", "Undeliverable", "Terminated"}
+
+# Delay between consecutive SSM send-command calls to avoid overwhelming the
+# SSM agent on the target instance.  The agent can handle concurrent sessions
+# but rapid-fire dispatches (10+ within seconds) cause it to become
+# unresponsive and require an instance reboot to recover.
+_SSM_DISPATCH_DELAY_SEC = 1.5
+
+
+_API_RETRY_DELAYS = (5, 15, 30, 60)
 
 
 def _get_command_invocation(
@@ -1005,12 +1070,20 @@ def _get_command_invocation(
         "--output",
         "json",
     ]
-    result = _run_cli(cli)
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"get-command-invocation failed for {instance_id} command {command_id}: {result.stderr}"
-        )
-    return json.loads(result.stdout)
+    last_err = ""
+    for attempt, delay in enumerate((*_API_RETRY_DELAYS, 0)):
+        result = _run_cli(cli)
+        if result.returncode == 0:
+            return json.loads(result.stdout)
+        last_err = result.stderr
+        # Transient network / throttle errors → retry
+        if delay and ("Could not connect" in last_err or "Throttling" in last_err):
+            time.sleep(delay)
+            continue
+        break
+    raise RuntimeError(
+        f"get-command-invocation failed for {instance_id} command {command_id}: {last_err}"
+    )
 
 
 def _slot_key(shard: ShardPlan) -> tuple[str, int]:
@@ -1103,7 +1176,9 @@ def _dispatch_with_slot_scheduler(
         submissions.append(item)
         active[slot] = item
 
-    for slot in sorted(by_slot):
+    for i, slot in enumerate(sorted(by_slot)):
+        if i > 0:
+            time.sleep(_SSM_DISPATCH_DELAY_SEC)
         submit_next(slot)
 
     while active:
@@ -1599,6 +1674,7 @@ def _resolve_seed_system_runtime(
     instance_gpu_counts, instance_types = _resolve_instance_gpu_counts(
         region=args.region,
         instance_ids=instance_ids,
+        instance_type_hint=str(getattr(args, "instance_type", "")),
     )
     _validate_cpu_affinity_policy(
         policy=str(args.cpu_affinity_policy),
@@ -1742,16 +1818,19 @@ def _execute_phase(
             s3_prefix=s3_prefix,
         )
     else:
-        submissions = [
-            _submit_shard(
-                args=args,
-                shard=shard,
-                manifest_rel=manifest_rel,
-                run_id=run_id,
-                s3_prefix=s3_prefix,
+        submissions = []
+        for i, shard in enumerate(shards):
+            if i > 0:
+                time.sleep(_SSM_DISPATCH_DELAY_SEC)
+            submissions.append(
+                _submit_shard(
+                    args=args,
+                    shard=shard,
+                    manifest_rel=manifest_rel,
+                    run_id=run_id,
+                    s3_prefix=s3_prefix,
+                )
             )
-            for shard in shards
-        ]
         if args.wait:
             results = _poll_all_submissions(args=args, submissions=submissions)
         else:
