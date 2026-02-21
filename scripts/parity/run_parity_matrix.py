@@ -163,6 +163,12 @@ def _parse_args() -> argparse.Namespace:
         default=1,
         help="Total shard count for distributed execution.",
     )
+    parser.add_argument(
+        "--plot-curves",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Generate learning-curve plots after the run.",
+    )
     return parser.parse_args()
 
 
