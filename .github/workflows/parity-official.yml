@@ -60,7 +60,9 @@ jobs:
             tests/test_scripts/test_suite_contract_schema_v2.py \
             tests/test_scripts/test_metric_transforms_effect_size.py \
             tests/test_scripts/test_family_plugin_registry.py \
-            tests/test_scripts/test_validity_gate_rejects_random_policy_in_proof_mode.py
+            tests/test_scripts/test_validity_gate_rejects_random_policy_in_proof_mode.py \
+            tests/test_parity/test_ci_smoke_dreamerv3.py \
+            tests/test_parity/test_ci_smoke_tdmpc2.py
 
   parity-full-distributed:
     if: ${{ github.event_name != 'pull_request' }}
