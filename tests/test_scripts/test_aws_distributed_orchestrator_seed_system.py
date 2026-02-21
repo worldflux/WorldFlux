@@ -86,7 +86,7 @@ def test_seed_system_sharding_routes_systems_to_split_fleets(tmp_path: Path) -> 
         systems=("official", "worldflux"),
         official_instances=["i-off0", "i-off1"],
         worldflux_instances=["i-wf0", "i-wf1"],
-        gpu_slots_per_instance=2,
+        instance_slot_caps={"i-off0": 2, "i-off1": 2, "i-wf0": 2, "i-wf1": 2},
         seed_shard_unit="packed",
     )
 
@@ -155,7 +155,7 @@ def test_seed_system_pair_unit_splits_each_seed_into_own_shard(tmp_path: Path) -
         systems=("official", "worldflux"),
         official_instances=["i-off0"],
         worldflux_instances=["i-wf0"],
-        gpu_slots_per_instance=2,
+        instance_slot_caps={"i-off0": 2, "i-wf0": 2},
         seed_shard_unit="pair",
     )
 

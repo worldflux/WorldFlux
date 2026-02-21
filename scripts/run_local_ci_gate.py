@@ -22,6 +22,11 @@ class GateCommand:
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+RUFF_VERSION = "0.8.4"
+
+
+def _ruff_command(*args: str) -> tuple[str, ...]:
+    return ("uvx", "--from", f"ruff=={RUFF_VERSION}", "ruff", *args)
 
 
 def _is_docs_domain_reachable(timeout_seconds: float = 5.0) -> bool:
@@ -92,13 +97,11 @@ def build_gate_commands() -> tuple[GateCommand, ...]:
         ),
         GateCommand(
             name="Ruff lint",
-            argv=("uvx", "ruff", "check", "src/", "tests/", "examples/", "benchmarks/", "scripts/"),
+            argv=_ruff_command("check", "src/", "tests/", "examples/", "benchmarks/", "scripts/"),
         ),
         GateCommand(
             name="Ruff format check",
-            argv=(
-                "uvx",
-                "ruff",
+            argv=_ruff_command(
                 "format",
                 "--check",
                 "src/",

@@ -447,9 +447,31 @@ jobs:
       - name: Validate release-checklist gates are wired in CI
         run: python scripts/check_release_checklist_gate.py
 
+  parity-smoke-train:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.11"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
+        with:
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Run parity smoke training tests
+        run: uv run pytest tests/test_parity/test_ci_smoke_dreamerv3.py tests/test_parity/test_ci_smoke_tdmpc2.py -v --timeout=300
+
   build:
     runs-on: ubuntu-latest
-    needs: [test, lint, typecheck, test-examples, security, api-v2, legacy-bridge, docs, critical-hardening, planner-boundary, v3-migration, public-contract, release-checklist]
+    needs: [test, lint, typecheck, test-examples, security, api-v2, legacy-bridge, docs, critical-hardening, planner-boundary, v3-migration, public-contract, release-checklist, parity-smoke-train]
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 

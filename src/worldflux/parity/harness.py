@@ -342,6 +342,33 @@ def run_suite(
         "pass": passed,
     }
 
+    try:
+        from .paper_comparison import compare_against_paper
+
+        task_scores: dict[str, list[float]] = {}
+        for pair in pairs:
+            task_scores.setdefault(pair["task"], []).append(float(pair["worldflux_score"]))
+        mean_scores = {task: sum(s) / len(s) for task, s in task_scores.items()}
+        comparison = compare_against_paper(suite.suite_id, mean_scores)
+        if comparison is not None:
+            result["paper_comparison"] = {
+                "suite_id": comparison.suite_id,
+                "mean_relative_delta_pct": comparison.mean_relative_delta_pct,
+                "tasks_within_5pct": comparison.tasks_within_5pct,
+                "deltas": [
+                    {
+                        "task": d.task,
+                        "paper_score": d.paper_score,
+                        "run_score": d.run_score,
+                        "absolute_delta": d.absolute_delta,
+                        "relative_delta_pct": d.relative_delta_pct,
+                    }
+                    for d in comparison.deltas
+                ],
+            }
+    except Exception:  # pragma: no cover - optional enrichment
+        pass
+
     out_path = _resolve_output_path(suite.suite_id, output_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")

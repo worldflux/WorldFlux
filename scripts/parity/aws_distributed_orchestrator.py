@@ -147,7 +147,19 @@ def _parse_args() -> argparse.Namespace:
         choices=["none", "p4d_8gpu_12vcpu"],
         default="none",
     )
-    parser.add_argument("--gpu-slots-per-instance", type=int, default=8)
+    parser.add_argument(
+        "--gpu-slots-per-instance",
+        type=str,
+        default="auto",
+        help="Per-instance GPU slots. Use 'auto' to detect from EC2 instance type.",
+    )
+    parser.add_argument(
+        "--gpu-slot-mismatch-policy",
+        type=str,
+        choices=["fail_fast", "clamp"],
+        default="fail_fast",
+        help="Behavior when requested GPU slots exceed detected GPU count.",
+    )
 
     parser.add_argument(
         "--auto-provision",
@@ -169,6 +181,18 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--key-name", type=str, default="")
     parser.add_argument("--volume-size-gb", type=int, default=200)
     parser.add_argument("--provision-timeout-sec", type=int, default=1800)
+    parser.add_argument(
+        "--auto-quota",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Auto-detect GPU quota to determine fleet size and instance type.",
+    )
+    parser.add_argument(
+        "--post-run-hooks",
+        type=str,
+        default="",
+        help="Comma-separated post-run actions (e.g. paper_comparison,plot_curves).",
+    )
     return parser.parse_args()
 
 
@@ -334,6 +358,181 @@ def _parse_security_group_ids(raw: str) -> list[str]:
     return [part.strip() for part in raw.split(",") if part.strip()]
 
 
+def _parse_requested_gpu_slots(raw: Any) -> int | None:
+    text = str(raw).strip().lower()
+    if not text or text == "auto":
+        return None
+    value = int(text)
+    if value < 1:
+        raise RuntimeError("--gpu-slots-per-instance must be >= 1 or 'auto'")
+    return value
+
+
+def _resolve_instance_gpu_counts(
+    *,
+    region: str,
+    instance_ids: list[str],
+) -> tuple[dict[str, int], dict[str, str]]:
+    if not instance_ids:
+        return {}, {}
+
+    describe_instances = [
+        "aws",
+        "ec2",
+        "describe-instances",
+        "--region",
+        region,
+        "--instance-ids",
+        *instance_ids,
+        "--output",
+        "json",
+    ]
+    instances_result = _run_cli(describe_instances)
+    if instances_result.returncode != 0:
+        raise RuntimeError(f"describe-instances failed: {instances_result.stderr}")
+
+    payload = json.loads(instances_result.stdout)
+    id_to_type: dict[str, str] = {}
+    for reservation in payload.get("Reservations", []):
+        if not isinstance(reservation, dict):
+            continue
+        for instance in reservation.get("Instances", []):
+            if not isinstance(instance, dict):
+                continue
+            instance_id = str(instance.get("InstanceId", "")).strip()
+            instance_type = str(instance.get("InstanceType", "")).strip()
+            if instance_id and instance_type:
+                id_to_type[instance_id] = instance_type
+
+    missing_instances = [
+        instance_id for instance_id in instance_ids if instance_id not in id_to_type
+    ]
+    if missing_instances:
+        raise RuntimeError(
+            f"Failed to resolve instance types for instances: {sorted(missing_instances)}"
+        )
+
+    unique_types = sorted(set(id_to_type.values()))
+    describe_types = [
+        "aws",
+        "ec2",
+        "describe-instance-types",
+        "--region",
+        region,
+        "--instance-types",
+        *unique_types,
+        "--output",
+        "json",
+    ]
+    types_result = _run_cli(describe_types)
+    if types_result.returncode != 0:
+        raise RuntimeError(f"describe-instance-types failed: {types_result.stderr}")
+
+    types_payload = json.loads(types_result.stdout)
+    type_to_gpu_count: dict[str, int] = {}
+    for row in types_payload.get("InstanceTypes", []):
+        if not isinstance(row, dict):
+            continue
+        instance_type = str(row.get("InstanceType", "")).strip()
+        gpu_count = 0
+        gpu_info = row.get("GpuInfo")
+        if isinstance(gpu_info, dict):
+            gpus = gpu_info.get("Gpus", [])
+            if isinstance(gpus, list):
+                for gpu in gpus:
+                    if isinstance(gpu, dict):
+                        count = gpu.get("Count", 0)
+                        if isinstance(count, int):
+                            gpu_count += max(0, count)
+        if instance_type:
+            type_to_gpu_count[instance_type] = int(gpu_count)
+
+    missing_types = [
+        instance_type for instance_type in unique_types if instance_type not in type_to_gpu_count
+    ]
+    if missing_types:
+        raise RuntimeError(f"Failed to resolve GPU counts for instance types: {missing_types}")
+
+    id_to_gpu_count: dict[str, int] = {}
+    for instance_id, instance_type in id_to_type.items():
+        gpu_count = int(type_to_gpu_count.get(instance_type, 0))
+        if gpu_count <= 0:
+            raise RuntimeError(
+                "Proof run requires GPU instances, but detected zero GPUs for "
+                f"instance {instance_id} (type={instance_type})."
+            )
+        id_to_gpu_count[instance_id] = gpu_count
+
+    return id_to_gpu_count, id_to_type
+
+
+def _resolve_instance_slot_caps(
+    *,
+    instance_ids: list[str],
+    instance_gpu_counts: dict[str, int],
+    requested_slots_raw: Any,
+    mismatch_policy: str,
+) -> tuple[dict[str, int], list[dict[str, Any]]]:
+    if mismatch_policy not in {"fail_fast", "clamp"}:
+        raise RuntimeError("--gpu-slot-mismatch-policy must be fail_fast or clamp")
+
+    requested_slots = _parse_requested_gpu_slots(requested_slots_raw)
+    slot_caps: dict[str, int] = {}
+    mismatch_events: list[dict[str, Any]] = []
+
+    for instance_id in instance_ids:
+        detected_slots = int(instance_gpu_counts.get(instance_id, 0))
+        if detected_slots <= 0:
+            raise RuntimeError(
+                f"Detected zero GPU slots for instance {instance_id}; cannot execute proof run."
+            )
+
+        if requested_slots is None:
+            slot_caps[instance_id] = detected_slots
+            continue
+
+        if requested_slots <= detected_slots:
+            slot_caps[instance_id] = requested_slots
+            continue
+
+        event = {
+            "instance_id": instance_id,
+            "requested_slots": int(requested_slots),
+            "detected_slots": int(detected_slots),
+            "policy": mismatch_policy,
+        }
+        mismatch_events.append(event)
+        if mismatch_policy == "fail_fast":
+            raise RuntimeError(
+                "Requested GPU slots exceed detected GPU devices "
+                f"for instance {instance_id}: requested={requested_slots}, detected={detected_slots}."
+            )
+        slot_caps[instance_id] = detected_slots
+
+    return slot_caps, mismatch_events
+
+
+def _validate_cpu_affinity_policy(
+    *,
+    policy: str,
+    instance_gpu_counts: dict[str, int],
+    instance_types: dict[str, str],
+) -> None:
+    if policy != "p4d_8gpu_12vcpu":
+        return
+
+    mismatched: list[str] = []
+    for instance_id, gpu_count in sorted(instance_gpu_counts.items()):
+        if int(gpu_count) != 8:
+            instance_type = instance_types.get(instance_id, "unknown")
+            mismatched.append(f"{instance_id}(type={instance_type},gpus={gpu_count})")
+    if mismatched:
+        raise RuntimeError(
+            "cpu-affinity-policy p4d_8gpu_12vcpu requires exactly 8 GPUs on every worker. "
+            f"Mismatched instances: {', '.join(mismatched)}"
+        )
+
+
 def _manifest_relpath(manifest: Path) -> str:
     repo_root = Path.cwd().resolve()
     manifest_resolved = manifest.resolve()
@@ -455,14 +654,12 @@ def _build_seed_system_shards(
     systems: tuple[str, ...],
     official_instances: list[str],
     worldflux_instances: list[str],
-    gpu_slots_per_instance: int,
+    instance_slot_caps: dict[str, int],
     seed_shard_unit: str,
     empirical_duration_per_seed: dict[tuple[str, str], float] | None = None,
 ) -> list[ShardPlan]:
     if not seed_values:
         raise RuntimeError("seed_system sharding requires non-empty seed list")
-    if gpu_slots_per_instance < 1:
-        raise RuntimeError("--gpu-slots-per-instance must be >= 1")
     if not official_instances:
         raise RuntimeError("seed_system sharding requires at least one official instance")
     if not worldflux_instances:
@@ -470,17 +667,32 @@ def _build_seed_system_shards(
     if seed_shard_unit not in {"packed", "pair"}:
         raise RuntimeError("--seed-shard-unit must be packed or pair")
 
+    for instance_id in official_instances + worldflux_instances:
+        slot_cap = int(instance_slot_caps.get(instance_id, 0))
+        if slot_cap < 1:
+            raise RuntimeError(
+                "seed_system sharding requires >=1 GPU slot per worker instance, "
+                f"but instance {instance_id} has slot cap {slot_cap}."
+            )
+
     task_by_id = {task.task_id: task for task in tasks}
 
     slot_load: dict[tuple[str, int], float] = {}
-    for instance_id in official_instances + worldflux_instances:
-        for slot in range(gpu_slots_per_instance):
+    for instance_id, slot_cap in sorted(instance_slot_caps.items()):
+        for slot in range(int(slot_cap)):
             slot_load[(instance_id, slot)] = 0.0
 
     def select_slot(system: str) -> tuple[str, int]:
         candidates = official_instances if system == "official" else worldflux_instances
+        slot_candidates = [
+            (instance, slot)
+            for instance in candidates
+            for slot in range(int(instance_slot_caps.get(instance, 0)))
+        ]
+        if not slot_candidates:
+            raise RuntimeError(f"No GPU slots available for {system} fleet.")
         return min(
-            ((instance, slot) for instance in candidates for slot in range(gpu_slots_per_instance)),
+            slot_candidates,
             key=lambda key: (slot_load[key], key[0], key[1]),
         )
 
@@ -711,26 +923,28 @@ def _build_remote_commands(
             'kill "$SYNC_PID" >/dev/null 2>&1 || true',
             f"{progress_cmd} >/dev/null 2>&1 || true",
             f"{sync_cmd} >/dev/null 2>&1 || true",
-            '[ "$RUNNER_RC" -eq 0 ] || exit "$RUNNER_RC"',
             (
-                "python3 scripts/parity/validate_matrix_completeness.py "
+                "if ! python3 scripts/parity/validate_matrix_completeness.py "
                 f"--manifest {shlex.quote(manifest_rel)} "
                 f"--runs {shlex.quote(remote_run_root + '/parity_runs.jsonl')} "
                 f"--seed-plan {shlex.quote(remote_run_root + '/seed_plan.json')} "
                 f"--run-context {shlex.quote(remote_run_root + '/run_context.json')} "
                 f"--output {shlex.quote(remote_run_root + '/coverage_report.json')} "
                 f"--systems {shlex.quote(systems_csv)} "
-                "--max-missing-pairs 0"
+                "--max-missing-pairs 0; then "
+                "COVERAGE_RC=1; else COVERAGE_RC=0; fi"
             ),
-            f"aws s3 cp {shlex.quote(remote_run_root + '/parity_runs.jsonl')} {shlex.quote(shard_prefix + '/parity_runs.jsonl')}",
-            f"aws s3 cp {shlex.quote(remote_run_root + '/seed_plan.json')} {shlex.quote(shard_prefix + '/seed_plan.json')}",
-            f"aws s3 cp {shlex.quote(remote_run_root + '/run_context.json')} {shlex.quote(shard_prefix + '/run_context.json')}",
-            f"aws s3 cp {shlex.quote(remote_run_root + '/run_summary.json')} {shlex.quote(shard_prefix + '/run_summary.json')}",
-            f"aws s3 cp {shlex.quote(remote_run_root + '/coverage_report.json')} {shlex.quote(shard_prefix + '/coverage_report.json')}",
+            f"aws s3 cp {shlex.quote(remote_run_root + '/parity_runs.jsonl')} {shlex.quote(shard_prefix + '/parity_runs.jsonl')} || true",
+            f"aws s3 cp {shlex.quote(remote_run_root + '/seed_plan.json')} {shlex.quote(shard_prefix + '/seed_plan.json')} || true",
+            f"aws s3 cp {shlex.quote(remote_run_root + '/run_context.json')} {shlex.quote(shard_prefix + '/run_context.json')} || true",
+            f"aws s3 cp {shlex.quote(remote_run_root + '/run_summary.json')} {shlex.quote(shard_prefix + '/run_summary.json')} || true",
+            f"aws s3 cp {shlex.quote(remote_run_root + '/coverage_report.json')} {shlex.quote(shard_prefix + '/coverage_report.json')} || true",
             f"aws s3 cp {shlex.quote(remote_run_root + '/phase_progress.json')} {shlex.quote(shard_prefix + '/phase_progress.json')} || true",
             f"aws s3 cp {shlex.quote(remote_run_root + '/command_manifest.txt')} {shlex.quote(shard_prefix + '/command_manifest.txt')} || true",
             f"aws s3 cp {shlex.quote(remote_run_root + '/runner.stdout.log')} {shlex.quote(shard_prefix + '/runner.stdout.log')} || true",
             f"aws s3 cp {shlex.quote(remote_run_root + '/runner.stderr.log')} {shlex.quote(shard_prefix + '/runner.stderr.log')} || true",
+            '[ "$RUNNER_RC" -eq 0 ] || exit "$RUNNER_RC"',
+            '[ "$COVERAGE_RC" -eq 0 ] || exit 1',
         ]
     )
     return commands
@@ -1117,7 +1331,9 @@ def _build_rerun_command(
         "--seed-shard-unit",
         str(args.seed_shard_unit),
         "--gpu-slots-per-instance",
-        str(int(args.gpu_slots_per_instance)),
+        str(args.gpu_slots_per_instance),
+        "--gpu-slot-mismatch-policy",
+        str(args.gpu_slot_mismatch_policy),
         "--thread-limit-profile",
         str(args.thread_limit_profile),
         "--cpu-affinity-policy",
@@ -1369,6 +1585,35 @@ def _resolve_fleets(args: argparse.Namespace) -> tuple[list[str], list[str], lis
     return official_ids, worldflux_ids, base_ids, created_ids
 
 
+def _resolve_seed_system_runtime(
+    *,
+    args: argparse.Namespace,
+    official_instances: list[str],
+    worldflux_instances: list[str],
+) -> tuple[dict[str, int], dict[str, str], dict[str, int], list[dict[str, Any]]]:
+    instance_ids = sorted(set(official_instances + worldflux_instances))
+    if not instance_ids:
+        raise RuntimeError(
+            "seed_system sharding requires explicit official/worldflux worker instances."
+        )
+    instance_gpu_counts, instance_types = _resolve_instance_gpu_counts(
+        region=args.region,
+        instance_ids=instance_ids,
+    )
+    _validate_cpu_affinity_policy(
+        policy=str(args.cpu_affinity_policy),
+        instance_gpu_counts=instance_gpu_counts,
+        instance_types=instance_types,
+    )
+    instance_slot_caps, mismatch_events = _resolve_instance_slot_caps(
+        instance_ids=instance_ids,
+        instance_gpu_counts=instance_gpu_counts,
+        requested_slots_raw=args.gpu_slots_per_instance,
+        mismatch_policy=str(args.gpu_slot_mismatch_policy),
+    )
+    return instance_gpu_counts, instance_types, instance_slot_caps, mismatch_events
+
+
 def _estimate_required_seed_count_from_runs(
     *,
     runs_path: Path,
@@ -1451,12 +1696,20 @@ def _execute_phase(
     official_instances: list[str],
     worldflux_instances: list[str],
     all_instances: list[str],
+    instance_gpu_counts: dict[str, int] | None = None,
+    instance_slot_caps: dict[str, int] | None = None,
+    slot_mismatch_events: list[dict[str, Any]] | None = None,
 ) -> PhaseResult:
     task_costs = _manifest_task_costs(manifest_path)
     manifest_rel = _manifest_relpath(manifest_path)
     empirical_duration_per_seed = _collect_empirical_duration_per_seed(args.output_dir.resolve())
 
     if args.sharding_mode == "seed_system":
+        if not instance_slot_caps:
+            raise RuntimeError(
+                "seed_system sharding requires resolved instance_slot_caps; "
+                "resolve runtime GPU slots before execute_phase."
+            )
         shards = _build_seed_system_shards(
             run_id,
             task_costs,
@@ -1464,7 +1717,7 @@ def _execute_phase(
             systems=systems,
             official_instances=official_instances,
             worldflux_instances=worldflux_instances,
-            gpu_slots_per_instance=int(args.gpu_slots_per_instance),
+            instance_slot_caps=instance_slot_caps,
             seed_shard_unit=str(args.seed_shard_unit),
             empirical_duration_per_seed=empirical_duration_per_seed,
         )
@@ -1530,6 +1783,11 @@ def _execute_phase(
                 ),
                 "actual_wait_duration_sec": None,
                 "timeout_seconds": int(args.timeout_seconds),
+            },
+            "runtime_resolution": {
+                "resolved_gpu_counts": dict(instance_gpu_counts or {}),
+                "resolved_slot_caps": dict(instance_slot_caps or {}),
+                "slot_mismatch_events": list(slot_mismatch_events or []),
             },
         }
         summary_path = local_root / "orchestrator_summary.json"
@@ -1741,6 +1999,11 @@ def _execute_phase(
         "errors": {
             "stats_or_report": stats_error,
         },
+        "runtime_resolution": {
+            "resolved_gpu_counts": dict(instance_gpu_counts or {}),
+            "resolved_slot_caps": dict(instance_slot_caps or {}),
+            "slot_mismatch_events": list(slot_mismatch_events or []),
+        },
     }
 
     summary_path = local_root / "orchestrator_summary.json"
@@ -1788,6 +2051,21 @@ def _run_single_phase(args: argparse.Namespace) -> int:
 
     official_instances, worldflux_instances, all_instances, created_ids = _resolve_fleets(args)
 
+    instance_gpu_counts: dict[str, int] = {}
+    instance_slot_caps: dict[str, int] = {}
+    slot_mismatch_events: list[dict[str, Any]] = []
+    if args.sharding_mode == "seed_system":
+        (
+            instance_gpu_counts,
+            _instance_types,
+            instance_slot_caps,
+            slot_mismatch_events,
+        ) = _resolve_seed_system_runtime(
+            args=args,
+            official_instances=official_instances,
+            worldflux_instances=worldflux_instances,
+        )
+
     try:
         phase = _execute_phase(
             args=args,
@@ -1799,6 +2077,9 @@ def _run_single_phase(args: argparse.Namespace) -> int:
             official_instances=official_instances,
             worldflux_instances=worldflux_instances,
             all_instances=all_instances,
+            instance_gpu_counts=instance_gpu_counts,
+            instance_slot_caps=instance_slot_caps,
+            slot_mismatch_events=slot_mismatch_events,
         )
         return int(phase.return_code)
     finally:
@@ -1807,6 +2088,9 @@ def _run_single_phase(args: argparse.Namespace) -> int:
 
 
 def _run_two_stage_proof(args: argparse.Namespace) -> int:
+    if not args.wait:
+        raise RuntimeError("two_stage_proof requires --wait")
+
     systems = _parse_systems(args.systems)
     if systems != ("official", "worldflux"):
         raise RuntimeError("two_stage_proof requires --systems official,worldflux")
@@ -1816,6 +2100,21 @@ def _run_two_stage_proof(args: argparse.Namespace) -> int:
         raise RuntimeError("--pilot-seed-list must not be empty")
 
     official_instances, worldflux_instances, all_instances, created_ids = _resolve_fleets(args)
+    instance_gpu_counts: dict[str, int] = {}
+    instance_types: dict[str, str] = {}
+    instance_slot_caps: dict[str, int] = {}
+    slot_mismatch_events: list[dict[str, Any]] = []
+    if args.sharding_mode == "seed_system":
+        (
+            instance_gpu_counts,
+            instance_types,
+            instance_slot_caps,
+            slot_mismatch_events,
+        ) = _resolve_seed_system_runtime(
+            args=args,
+            official_instances=official_instances,
+            worldflux_instances=worldflux_instances,
+        )
     root_dir = (args.output_dir / args.run_id).resolve()
     root_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1837,6 +2136,12 @@ def _run_two_stage_proof(args: argparse.Namespace) -> int:
             "all": all_instances,
             "created": created_ids,
         },
+        "runtime_resolution": {
+            "resolved_gpu_counts": dict(instance_gpu_counts),
+            "resolved_instance_types": dict(instance_types),
+            "resolved_slot_caps": dict(instance_slot_caps),
+            "slot_mismatch_events": list(slot_mismatch_events),
+        },
     }
 
     try:
@@ -1852,6 +2157,9 @@ def _run_two_stage_proof(args: argparse.Namespace) -> int:
             official_instances=official_instances,
             worldflux_instances=worldflux_instances,
             all_instances=all_instances,
+            instance_gpu_counts=instance_gpu_counts,
+            instance_slot_caps=instance_slot_caps,
+            slot_mismatch_events=slot_mismatch_events,
         )
         two_stage_summary["phases"]["pilot"] = {
             "run_id": pilot_phase.run_id,
@@ -1867,9 +2175,16 @@ def _run_two_stage_proof(args: argparse.Namespace) -> int:
             )
             return 1
 
-        merged_runs_path = Path(pilot_phase.summary.get("artifacts", {}).get("merged_runs", ""))
-        if not merged_runs_path.exists():
-            raise RuntimeError("Pilot merged runs artifact missing")
+        merged_runs_raw = str(
+            pilot_phase.summary.get("artifacts", {}).get("merged_runs", "")
+        ).strip()
+        if not merged_runs_raw:
+            raise RuntimeError("Pilot merged runs artifact path is missing.")
+        merged_runs_path = Path(merged_runs_raw)
+        if not merged_runs_path.exists() or merged_runs_path.is_dir():
+            raise RuntimeError(
+                f"Pilot merged runs artifact missing or invalid. resolved_path={merged_runs_path}"
+            )
 
         n_required = _estimate_required_seed_count_from_runs(
             runs_path=merged_runs_path,
@@ -1895,6 +2210,9 @@ def _run_two_stage_proof(args: argparse.Namespace) -> int:
             official_instances=official_instances,
             worldflux_instances=worldflux_instances,
             all_instances=all_instances,
+            instance_gpu_counts=instance_gpu_counts,
+            instance_slot_caps=instance_slot_caps,
+            slot_mismatch_events=slot_mismatch_events,
         )
         two_stage_summary["phases"]["full"] = {
             "run_id": full_phase.run_id,
@@ -1931,6 +2249,9 @@ def _run_two_stage_proof(args: argparse.Namespace) -> int:
                 official_instances=official_instances,
                 worldflux_instances=worldflux_instances,
                 all_instances=all_instances,
+                instance_gpu_counts=instance_gpu_counts,
+                instance_slot_caps=instance_slot_caps,
+                slot_mismatch_events=slot_mismatch_events,
             )
             two_stage_summary["phases"]["suite65"] = {
                 "run_id": suite_phase.run_id,

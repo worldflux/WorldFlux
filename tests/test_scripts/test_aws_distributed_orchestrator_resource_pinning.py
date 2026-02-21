@@ -6,6 +6,8 @@ import importlib.util
 import sys
 from pathlib import Path
 
+import pytest
+
 
 def _load_module():
     script_path = (
@@ -66,3 +68,14 @@ def test_build_remote_commands_includes_thread_and_cpu_gpu_pinning() -> None:
     assert "taskset -c 60-71" in joined  # gpu slot 5 in p4d_8gpu_12vcpu map
     assert "--systems worldflux" in joined
     assert "--seed-list 3" in joined
+
+
+def test_cpu_affinity_policy_rejects_non_p4d_gpu_workers() -> None:
+    mod = _load_module()
+
+    with pytest.raises(RuntimeError, match="requires exactly 8 GPUs"):
+        mod._validate_cpu_affinity_policy(
+            policy="p4d_8gpu_12vcpu",
+            instance_gpu_counts={"i-g6": 1},
+            instance_types={"i-g6": "g6.2xlarge"},
+        )

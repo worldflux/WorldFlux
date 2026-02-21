@@ -63,7 +63,8 @@ def _args(tmp_path: Path) -> argparse.Namespace:
         equivalence_margin=0.05,
         thread_limit_profile="strict1",
         cpu_affinity_policy="p4d_8gpu_12vcpu",
-        gpu_slots_per_instance=8,
+        gpu_slots_per_instance="8",
+        gpu_slot_mismatch_policy="fail_fast",
         auto_provision=False,
         auto_terminate=False,
         fleet_size=4,
@@ -125,6 +126,16 @@ def test_two_stage_gate_blocks_suite65_when_full_phase_fails_gate(
         )
 
     monkeypatch.setattr(mod, "_resolve_fleets", fake_resolve_fleets)
+    monkeypatch.setattr(
+        mod,
+        "_resolve_seed_system_runtime",
+        lambda **_kwargs: (
+            {"i-off": 8, "i-wf": 8},
+            {"i-off": "p4d.24xlarge", "i-wf": "p4d.24xlarge"},
+            {"i-off": 8, "i-wf": 8},
+            [],
+        ),
+    )
     monkeypatch.setattr(
         mod,
         "_estimate_required_seed_count_from_runs",

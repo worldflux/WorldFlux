@@ -219,6 +219,33 @@ def _render(report: dict[str, Any]) -> str:
             f"{_fmt_bool(task.get('task_pass_bayesian'))} |"
         )
 
+    paper_cmp = report.get("paper_comparison")
+    if isinstance(paper_cmp, dict):
+        lines.append("")
+        lines.append("## Paper Baseline Comparison")
+        lines.append("")
+        lines.append(f"Suite: `{paper_cmp.get('suite_id', '-')}`")
+        lines.append("")
+        lines.append("| Task | Paper Score | Run Score | Delta | Relative % |")
+        lines.append("|---|---:|---:|---:|---:|")
+        for delta in paper_cmp.get("deltas", []):
+            if not isinstance(delta, dict):
+                continue
+            lines.append(
+                f"| {delta.get('task', '-')} | {float(delta.get('paper_score', 0)):.1f} "
+                f"| {float(delta.get('run_score', 0)):.1f} "
+                f"| {float(delta.get('absolute_delta', 0)):+.1f} "
+                f"| {float(delta.get('relative_delta_pct', 0)):+.1f}% |"
+            )
+        lines.append("")
+        lines.append(
+            f"Mean relative delta: **{float(paper_cmp.get('mean_relative_delta_pct', 0)):+.1f}%**"
+        )
+        lines.append(
+            f"Tasks within 5%: **{paper_cmp.get('tasks_within_5pct', 0)}** "
+            f"/ {len(paper_cmp.get('deltas', []))}"
+        )
+
     lines.append("")
     lines.append("## Decision Rule")
     lines.append("")
