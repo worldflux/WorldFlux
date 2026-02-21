@@ -8,8 +8,8 @@ import sys
 from pathlib import Path
 
 REQUIRED_CI_SNIPPETS: tuple[str, ...] = (
-    "uvx ruff check src/ tests/ examples/ benchmarks/ scripts/",
-    "uvx ruff format --check src/ tests/ examples/ benchmarks/ scripts/",
+    "ruff check src/ tests/ examples/ benchmarks/ scripts/",
+    "ruff format --check src/ tests/ examples/ benchmarks/ scripts/",
     "uv run mypy src/worldflux/",
     "uv run pytest tests/ -v --tb=short",
     "scripts/update_public_contract_snapshot.py",
