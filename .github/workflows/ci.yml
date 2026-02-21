@@ -65,10 +65,10 @@ jobs:
           cache-dependency-glob: pyproject.toml
 
       - name: Run ruff linter
-        run: uvx ruff check src/ tests/ examples/ benchmarks/ scripts/
+        run: uvx --from ruff==0.8.4 ruff check src/ tests/ examples/ benchmarks/ scripts/
 
       - name: Run ruff formatter check
-        run: uvx ruff format --check src/ tests/ examples/ benchmarks/ scripts/
+        run: uvx --from ruff==0.8.4 ruff format --check src/ tests/ examples/ benchmarks/ scripts/
 
   typecheck:
     runs-on: ubuntu-latest
@@ -467,7 +467,7 @@ jobs:
         run: uv sync --extra dev
 
       - name: Run parity smoke training tests
-        run: uv run pytest tests/test_parity/test_ci_smoke_dreamerv3.py tests/test_parity/test_ci_smoke_tdmpc2.py -v --timeout=300
+        run: uv run --with pytest-timeout pytest tests/test_parity/test_ci_smoke_dreamerv3.py tests/test_parity/test_ci_smoke_tdmpc2.py -v --timeout=300
 
   build:
     runs-on: ubuntu-latest
