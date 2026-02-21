@@ -134,9 +134,9 @@ def test_generate_project_overwrites_when_force_enabled(tmp_path: Path) -> None:
     assert "action_dim = 4" in toml_content
     assert "total_steps = 75000" in toml_content
     assert "batch_size = 24" in toml_content
-    assert 'source = "random"' in toml_content
-    assert "[gameplay]\nenabled = false" in toml_content
-    assert "[online_collection]\nenabled = false" in toml_content
+    assert 'source = "gym"' in toml_content
+    assert "[gameplay]\nenabled = true" in toml_content
+    assert "[online_collection]\nenabled = true" in toml_content
 
 
 def test_generate_project_rejects_file_target(tmp_path: Path) -> None:
