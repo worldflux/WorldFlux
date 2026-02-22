@@ -1,5 +1,6 @@
 """WorldFlux upstream-parity harness utilities."""
 
+from .badge import generate_badge_svg, save_badge
 from .campaign import (
     CampaignRunOptions,
     CampaignSpec,
@@ -36,4 +37,6 @@ __all__ = [
     "PaperDelta",
     "PaperComparisonReport",
     "compare_against_paper",
+    "generate_badge_svg",
+    "save_badge",
 ]
