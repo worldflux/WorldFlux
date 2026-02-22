@@ -152,7 +152,7 @@ def _evaluation_manifest(generated_at_utc: str) -> dict[str, Any]:
     cuda_version: str | None = None
     try:
         import torch  # type: ignore[import-not-found]
-    except Exception:
+    except ImportError:
         torch_version = None
         cuda_version = None
     else:  # pragma: no branch - tiny branch for optional metadata
@@ -366,7 +366,7 @@ def run_suite(
                     for d in comparison.deltas
                 ],
             }
-    except Exception:  # pragma: no cover - optional enrichment
+    except (ImportError, TypeError, ValueError, KeyError):  # pragma: no cover - optional enrichment
         pass
 
     out_path = _resolve_output_path(suite.suite_id, output_path)
