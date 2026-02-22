@@ -80,7 +80,7 @@ class ConfigRegistry:
         cls._registry[model_type] = config_class
 
     @classmethod
-    def from_pretrained(cls, name_or_path: str, **kwargs) -> WorldModelConfig:
+    def from_pretrained(cls, name_or_path: str, **kwargs: Any) -> WorldModelConfig:
         if os.path.exists(name_or_path):
             config_path = os.path.join(name_or_path, "config.json")
             _validate_config_json(config_path)
@@ -129,8 +129,8 @@ class WorldModelRegistry:
         cls,
         model_type: str,
         config_class: type[WorldModelConfig] | None = None,
-    ):
-        def decorator(model_class: type):
+    ) -> Any:
+        def decorator(model_class: type) -> type:
             if model_type in cls._model_registry:
                 existing_class = cls._model_registry[model_type]
                 raise ConfigurationError(
@@ -248,7 +248,7 @@ class WorldModelRegistry:
             return Version(current) in spec
         except ConfigurationError:
             raise
-        except Exception:
+        except (ImportError, ValueError):
             # Conservative fallback: only accept default experimental range.
             return specifier.strip() == ">=0.1.0,<0.2.0"
 
@@ -304,12 +304,12 @@ class WorldModelRegistry:
                 )
 
     @classmethod
-    def from_pretrained(cls, name_or_path: str, **kwargs) -> WorldModel:
+    def from_pretrained(cls, name_or_path: str, **kwargs: Any) -> WorldModel:
         cls.load_entrypoint_plugins()
         if not cls._model_registry:
             try:
                 import worldflux.models  # noqa: F401
-            except Exception:
+            except ImportError:
                 pass
         if os.path.exists(name_or_path):
             config = ConfigRegistry.from_pretrained(name_or_path, **kwargs)
@@ -356,7 +356,7 @@ class WorldModelRegistry:
         if not cls._model_registry:
             try:
                 import worldflux.models  # noqa: F401
-            except Exception:
+            except ImportError:
                 pass
         return dict(cls._model_registry)
 
@@ -402,7 +402,7 @@ class WorldModelRegistry:
     def _iter_entry_points(group: str) -> list[Any]:
         try:
             entries = importlib_metadata.entry_points()
-        except Exception:
+        except (TypeError, AttributeError):
             return []
         if hasattr(entries, "select"):
             return list(entries.select(group=group))
@@ -436,7 +436,7 @@ class WorldModelRegistry:
                 )
             except ConfigurationError:
                 raise
-            except Exception as exc:
+            except (ImportError, TypeError, RuntimeError, AttributeError) as exc:
                 warnings.warn(
                     f"Failed to load entry point '{entry_point.name}' from group '{group}': {exc}",
                     RuntimeWarning,
@@ -555,7 +555,7 @@ class AutoWorldModel:
     """HuggingFace AutoModel-style alias."""
 
     @staticmethod
-    def from_pretrained(name_or_path: str, **kwargs) -> WorldModel:
+    def from_pretrained(name_or_path: str, **kwargs: Any) -> WorldModel:
         return WorldModelRegistry.from_pretrained(name_or_path, **kwargs)
 
 

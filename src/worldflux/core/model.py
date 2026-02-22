@@ -12,7 +12,7 @@ from abc import ABC, abstractmethod
 from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
 from enum import Enum
-from typing import cast
+from typing import Any, cast
 
 import torch
 import torch.nn as nn
@@ -58,7 +58,58 @@ from .trajectory import Trajectory
 
 
 class WorldModel(nn.Module, ABC):
-    """Base class for all world models."""
+    """Abstract base class for all world models in the WorldFlux framework.
+
+    ``WorldModel`` defines the canonical interface that every world model must
+    implement.  It inherits from :class:`torch.nn.Module` and exposes a
+    *composable component architecture* where each stage of the
+    observe-predict-decode pipeline can be overridden independently:
+
+    1. **observation_encoder** -- encodes raw observations into a latent
+       :class:`~worldflux.core.state.State`.
+    2. **action_conditioner** -- fuses action and condition information into
+       the dynamics input representation.
+    3. **dynamics_model** -- predicts the next latent state given the current
+       state and conditioned inputs.
+    4. **decoder_module** -- maps a latent state back to observable
+       predictions (reconstructed observations, rewards, continuation flags).
+    5. **rollout_executor** -- executes multi-step open-loop rollouts by
+       chaining ``transition`` and ``decode``.
+
+    Subclasses must implement :meth:`loss` (training objective).  The default
+    implementations of :meth:`encode`, :meth:`transition`, :meth:`decode`, and
+    :meth:`rollout` delegate to the pluggable components listed above; they
+    raise :class:`NotImplementedError` when the corresponding component is
+    ``None``.
+
+    Attributes:
+        capabilities: Set of :class:`~worldflux.core.spec.Capability` flags
+            advertised by this model (e.g. ``REWARD_PRED``, ``PLANNING``).
+        observation_encoder: Pluggable encoder component.
+        action_conditioner: Pluggable action/condition fusion component.
+        dynamics_model: Pluggable latent dynamics component.
+        decoder_module: Pluggable decoder component.
+        rollout_executor: Pluggable rollout executor component.
+        composable_support: Set of component slot names that are effective
+            in runtime execution paths for this model.
+
+    Example::
+
+        from worldflux import create_world_model
+
+        model = create_world_model("dreamerv3:size12m", obs_shape=(3, 64, 64), action_dim=6)
+        state = model.encode(obs)
+        next_state = model.transition(state, action)
+        output = model.decode(next_state)
+
+    Note:
+        When subclassing, implement :meth:`loss` at a minimum.  Override
+        :meth:`encode`, :meth:`transition`, and :meth:`decode` only when the
+        default component-delegation behaviour is insufficient.  Attach
+        concrete component instances in ``__init__`` and declare supported
+        :class:`~worldflux.core.spec.Capability` flags in
+        ``self.capabilities``.
+    """
 
     capabilities: set[Capability]
 
@@ -107,7 +158,7 @@ class WorldModel(nn.Module, ABC):
         return [part for part in normalized.split(".") if part]
 
     @classmethod
-    def _resolve_batch_key(cls, batch: Batch, key: str):
+    def _resolve_batch_key(cls, batch: Batch, key: str) -> Any:
         parts = cls._split_batch_key(key)
         if not parts:
             return None
@@ -337,7 +388,26 @@ class WorldModel(nn.Module, ABC):
         obs: Tensor | dict[str, Tensor] | WorldModelInput,
         deterministic: bool = False,
     ) -> State:
-        """Encode observation to latent state."""
+        """Encode observations into a latent :class:`~worldflux.core.state.State`.
+
+        Delegates to the attached ``observation_encoder`` component.  Input
+        observations are first coerced to :class:`WorldModelInput` and
+        validated against the model's I/O contract.
+
+        Args:
+            obs: Raw observation tensor, a dict of named modality tensors,
+                or a :class:`WorldModelInput` wrapping both.
+            deterministic: If ``True``, use deterministic encoding (e.g.
+                posterior mean rather than a sample).
+
+        Returns:
+            A :class:`~worldflux.core.state.State` containing the latent
+            representation.
+
+        Raises:
+            NotImplementedError: If no ``observation_encoder`` is attached.
+            ValidationError: If required input modalities are missing.
+        """
         if self.observation_encoder is None:
             raise NotImplementedError(
                 f"{self.__class__.__name__}.encode(...) is not implemented and no observation_encoder is attached"
@@ -353,7 +423,31 @@ class WorldModel(nn.Module, ABC):
         conditions: ConditionPayload | None = None,
         deterministic: bool = False,
     ) -> State:
-        """Predict next state (prior/imagination)."""
+        """Predict the next latent state given current state and action.
+
+        Performs a single imagination step through the dynamics model.  The
+        action is coerced to :class:`ActionPayload` and validated against the
+        I/O contract.  If an ``action_conditioner`` is attached, it fuses the
+        action and condition information before passing them to the dynamics
+        model.
+
+        Args:
+            state: Current latent state.
+            action: Action to condition on.  Accepts a raw tensor, an
+                :class:`ActionPayload`, or ``None`` for unconditional
+                transition.
+            conditions: Optional auxiliary condition signals
+                (e.g. goal embeddings, context vectors).
+            deterministic: If ``True``, use deterministic dynamics (e.g.
+                mean prediction rather than a sample).
+
+        Returns:
+            The predicted next :class:`~worldflux.core.state.State`.
+
+        Raises:
+            NotImplementedError: If no ``dynamics_model`` is attached.
+            ValidationError: If action or conditions violate the I/O contract.
+        """
         if self.dynamics_model is None:
             raise NotImplementedError(
                 f"{self.__class__.__name__}.transition(...) is not implemented and no dynamics_model is attached"
@@ -384,9 +478,9 @@ class WorldModel(nn.Module, ABC):
         component: object,
         async_name: str,
         sync_name: str,
-        *args,
-        **kwargs,
-    ):
+        *args: Any,
+        **kwargs: Any,
+    ) -> Any:
         async_fn = getattr(component, async_name, None)
         if callable(async_fn):
             maybe_awaitable = async_fn(*args, **kwargs)
@@ -517,7 +611,24 @@ class WorldModel(nn.Module, ABC):
         return self.encode(obs)
 
     def decode(self, state: State, conditions: ConditionPayload | None = None) -> ModelOutput:
-        """Decode latent state to predictions."""
+        """Decode a latent state into observable predictions.
+
+        Maps the latent representation back to the observation space and any
+        auxiliary prediction heads (reward, continuation flag).  Delegates to
+        the attached ``decoder_module`` component.
+
+        Args:
+            state: Latent state to decode.
+            conditions: Optional auxiliary condition signals.
+
+        Returns:
+            A :class:`~worldflux.core.output.ModelOutput` containing the
+            ``predictions`` dict and the originating ``state``.
+
+        Raises:
+            CapabilityError: If no ``decoder_module`` is attached.
+            ValidationError: If conditions violate the I/O contract.
+        """
         condition_payload = self.coerce_condition_payload(conditions)
         self._validate_condition_payload(condition_payload)
         if self.decoder_module is None:
@@ -604,7 +715,32 @@ class WorldModel(nn.Module, ABC):
         deterministic: bool = False,
         mode: str = "autoregressive",
     ) -> Trajectory:
-        """Default rollout implementation using transition + decode."""
+        """Execute a multi-step open-loop rollout from an initial state.
+
+        Starting from ``initial_state``, the method iteratively applies
+        :meth:`transition` and :meth:`decode` for each action in the
+        sequence, collecting states, predicted rewards, and continuation
+        flags into a :class:`~worldflux.core.trajectory.Trajectory`.
+
+        If a ``rollout_executor`` component is attached, execution is
+        delegated to it; otherwise the default loop is used.
+
+        Args:
+            initial_state: Starting latent state for the rollout.
+            action_sequence: Sequence of actions to apply.  Accepts a
+                :class:`Tensor` of shape ``(horizon, ...)``, an
+                :class:`ActionSequence`, a single :class:`ActionPayload`,
+                or ``None``.
+            conditions: Optional auxiliary condition signals applied at each
+                step.
+            deterministic: If ``True``, use deterministic transitions.
+            mode: Rollout mode.  Only ``"autoregressive"`` is supported in
+                v0.2+; other values emit a deprecation warning.
+
+        Returns:
+            A :class:`~worldflux.core.trajectory.Trajectory` containing
+            the collected states, actions, rewards, and continuation flags.
+        """
         api_version = self._get_api_version()
         if mode != "autoregressive":
             msg = (
@@ -805,7 +941,22 @@ class WorldModel(nn.Module, ABC):
 
     @abstractmethod
     def loss(self, batch: Batch) -> LossOutput:
-        """Compute training loss."""
+        """Compute the training loss for a single batch.
+
+        This is the only method that subclasses **must** implement.  It
+        should run the full forward pass (encode, transition/predict, decode)
+        and return a :class:`~worldflux.core.output.LossOutput` containing
+        the scalar loss and per-component breakdowns.
+
+        Args:
+            batch: A :class:`~worldflux.core.batch.Batch` of training data
+                that conforms to the model's I/O contract.
+
+        Returns:
+            A :class:`~worldflux.core.output.LossOutput` with ``loss``
+            (scalar tensor), ``components`` (dict of named sub-losses),
+            and optional ``metrics``.
+        """
         ...
 
     def save_pretrained(self, path: str) -> None:
@@ -835,10 +986,10 @@ class WorldModel(nn.Module, ABC):
             f.write("\n")
 
     @staticmethod
-    def _normalize_contract_value(value):
+    def _normalize_contract_value(value: Any) -> Any:
         if isinstance(value, Enum):
             return value.value
-        if is_dataclass(value):
+        if is_dataclass(value) and not isinstance(value, type):
             return {k: WorldModel._normalize_contract_value(v) for k, v in asdict(value).items()}
         if isinstance(value, dict):
             return {str(k): WorldModel._normalize_contract_value(v) for k, v in value.items()}
@@ -856,7 +1007,7 @@ class WorldModel(nn.Module, ABC):
             return version("worldflux")
         except PackageNotFoundError:
             return "0.1.0.dev0"
-        except Exception:
+        except (ImportError, ValueError):
             return "0.1.0.dev0"
 
     def contract_fingerprint(self) -> str:
@@ -866,7 +1017,7 @@ class WorldModel(nn.Module, ABC):
         return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
     @classmethod
-    def from_pretrained(cls, name_or_path: str, **kwargs) -> WorldModel:
+    def from_pretrained(cls, name_or_path: str, **kwargs: Any) -> WorldModel:
         from .registry import WorldModelRegistry
 
         model = WorldModelRegistry.from_pretrained(name_or_path, **kwargs)

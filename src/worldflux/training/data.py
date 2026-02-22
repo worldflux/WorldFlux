@@ -32,6 +32,12 @@ class ReplayBuffer:
 
     Raises:
         ConfigurationError: If capacity, obs_shape, or action_dim are invalid.
+
+    Warning:
+        This class is NOT thread-safe. Concurrent calls to ``add_episode()``
+        from multiple threads may cause race conditions on internal state
+        (``_position``, ``_size``). Use a single writer thread or external
+        synchronization when writing from multiple threads.
     """
 
     def __init__(
@@ -382,21 +388,21 @@ class ReplayBuffer:
 
             try:
                 obs_shape = tuple(int(v) for v in np.asarray(data["obs_shape"]).tolist())
-            except Exception as exc:
+            except (TypeError, ValueError) as exc:
                 raise BufferError(f"Invalid obs_shape metadata: {exc}") from exc
             if not obs_shape or any(dim <= 0 for dim in obs_shape):
                 raise BufferError(f"Invalid obs_shape metadata: {obs_shape}")
 
             try:
                 action_dim = int(np.asarray(data["action_dim"]).item())
-            except Exception as exc:
+            except (TypeError, ValueError) as exc:
                 raise BufferError(f"Invalid action_dim metadata: {exc}") from exc
             if action_dim <= 0:
                 raise BufferError(f"Invalid action_dim metadata: {action_dim}")
 
             try:
                 capacity = int(np.asarray(data["capacity"]).item())
-            except Exception as exc:
+            except (TypeError, ValueError) as exc:
                 raise BufferError(f"Invalid capacity metadata: {exc}") from exc
             if capacity <= 0:
                 raise BufferError(f"Invalid capacity metadata: {capacity}")

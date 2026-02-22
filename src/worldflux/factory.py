@@ -264,6 +264,14 @@ def create_world_model(
             - DreamerV3: (3, 64, 64) for images
             - TD-MPC2: Must be specified for vector observations
         action_dim: Action dimension. Default: 6
+        observation_modalities: Optional dict describing multi-modal
+            observation inputs.  Keys are modality names and values are
+            dicts with ``"kind"`` and ``"shape"`` entries, e.g.
+            ``{"image": {"kind": "image", "shape": (3, 64, 64)}}``.
+        action_spec: Optional dict overriding the default action
+            specification.  Recognized keys include ``"kind"``
+            (``"continuous"``, ``"discrete"``, etc.), ``"dim"``, and
+            ``"num_actions"``.
         device: Device to place model on. Default: "cpu"
         component_overrides: Optional component-slot overrides. Values may be:
             - Registered component id (str)
