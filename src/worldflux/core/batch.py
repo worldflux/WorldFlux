@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Generator
 from dataclasses import dataclass, field, is_dataclass, replace
 from typing import Any, Protocol
 
@@ -12,7 +13,7 @@ from .exceptions import ShapeMismatchError
 from .spec import SequenceFieldSpec
 
 
-def _map_tensors(value: Any, fn) -> Any:
+def _map_tensors(value: Any, fn: Any) -> Any:
     if isinstance(value, Tensor):
         return fn(value)
     if isinstance(value, dict):
@@ -31,7 +32,7 @@ def _map_tensors(value: Any, fn) -> Any:
     return value
 
 
-def _iter_tensors(value: Any):
+def _iter_tensors(value: Any) -> Generator[Tensor, None, None]:
     if isinstance(value, Tensor):
         yield value
     elif isinstance(value, dict):
@@ -400,7 +401,7 @@ class Batch:
         return 1 if tensor.dim() >= 2 else None
 
     @staticmethod
-    def _iter_named(value: Any, prefix: str = ""):
+    def _iter_named(value: Any, prefix: str = "") -> Generator[tuple[str, Tensor], None, None]:
         if isinstance(value, Tensor):
             yield prefix, value
             return

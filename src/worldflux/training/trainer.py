@@ -6,7 +6,9 @@ import inspect
 import logging
 import math
 import os
+import pickle
 import time
+import zipfile
 from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -87,6 +89,18 @@ class Trainer:
         >>>
         >>> trainer = Trainer(model, config)
         >>> trainer.train(buffer)
+
+    Note:
+        **Gradient accumulation** -- set
+        ``TrainingConfig.gradient_accumulation_steps > 1`` to accumulate
+        gradients over multiple forward/backward passes before updating
+        weights.  The effective batch size becomes
+        ``batch_size * gradient_accumulation_steps``.
+
+        **Mixed precision** -- set ``TrainingConfig.mixed_precision = True``
+        to enable ``torch.amp`` automatic mixed-precision training.  A
+        :class:`torch.amp.GradScaler` is used to scale loss and maintain
+        numerical stability with float16 computations.
     """
 
     def __init__(
@@ -162,7 +176,7 @@ class Trainer:
         if callable(contract_fn):
             try:
                 maybe_contract = contract_fn()
-            except Exception as e:
+            except (TypeError, ValueError, RuntimeError) as e:
                 raise TrainingError(f"Failed to build model I/O contract: {e}") from e
             if not isinstance(maybe_contract, ModelIOContract):
                 raise TrainingError(
@@ -178,7 +192,7 @@ class Trainer:
         if hasattr(data, "batch_layout"):
             try:
                 layout = data.batch_layout()  # type: ignore[attr-defined]
-            except Exception:
+            except (TypeError, AttributeError):
                 layout = None
             if isinstance(layout, dict) and layout:
                 batch = batch.with_layouts(layout, strict=True)
@@ -668,7 +682,16 @@ class Trainer:
                     if key not in test_load:
                         raise CheckpointError(f"Checkpoint validation failed: missing key '{key}'")
                 del test_load
-            except Exception as e:
+            except CheckpointError:
+                raise
+            except (
+                RuntimeError,
+                OSError,
+                KeyError,
+                ValueError,
+                pickle.UnpicklingError,
+                zipfile.BadZipFile,
+            ) as e:
                 raise CheckpointError(f"Checkpoint validation failed: {e}") from e
 
             # Atomic rename (on POSIX systems)
@@ -699,7 +722,7 @@ class Trainer:
             checkpoint = torch.load(  # nosec B614
                 path, map_location=self.device, weights_only=False
             )
-        except Exception as e:
+        except (RuntimeError, OSError, ValueError, pickle.UnpicklingError, zipfile.BadZipFile) as e:
             raise CheckpointError(f"Failed to load checkpoint from {path}: {e}") from e
 
         try:

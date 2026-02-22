@@ -121,7 +121,7 @@ from .utils import set_seed
 
 
 # Lazy import for training module (optional dependency)
-def __getattr__(name: str):
+def __getattr__(name: str) -> object:
     if name == "training":
         from . import training
 

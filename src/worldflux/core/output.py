@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import ItemsView
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -77,7 +78,7 @@ class ModelOutput:
                 if key not in self.predictions:
                     raise ShapeMismatchError(f"Prediction spec requires missing key: {key}")
 
-    def items(self):
+    def items(self) -> ItemsView[str, Tensor]:
         """Compatibility helper for iterating over predictions."""
         return self.predictions.items()
 
@@ -94,6 +95,6 @@ class LossOutput:
     components: dict[str, Tensor] = field(default_factory=dict)
     metrics: dict[str, float] = field(default_factory=dict)
 
-    def items(self):
+    def items(self) -> ItemsView[str, Tensor]:
         """Compatibility helper for iterating over losses."""
         return {"loss": self.loss, **self.components}.items()

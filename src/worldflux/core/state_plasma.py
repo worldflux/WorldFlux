@@ -11,7 +11,7 @@ from typing import Any
 from .state import State
 
 
-def _plasma_module():
+def _plasma_module() -> Any:
     try:
         import pyarrow.plasma as plasma  # type: ignore[import-not-found]
     except ModuleNotFoundError as exc:

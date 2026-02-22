@@ -105,7 +105,7 @@ class RolloutExecutor(Protocol):
         action_sequence: ActionSequence | Tensor | None,
         conditions: ConditionPayload | None = None,
         deterministic: bool = False,
-    ): ...
+    ) -> Any: ...
 
 
 @runtime_checkable
@@ -119,7 +119,7 @@ class AsyncRolloutExecutor(Protocol):
         action_sequence: ActionSequence | Tensor | None,
         conditions: ConditionPayload | None = None,
         deterministic: bool = False,
-    ): ...
+    ) -> Any: ...
 
 
 @runtime_checkable
@@ -138,7 +138,7 @@ class RolloutEngine(Protocol):
         conditions: ConditionPayload | None = None,
         deterministic: bool = False,
         mode: str = "autoregressive",
-    ): ...
+    ) -> Any: ...
 
 
 async def _await_if_needed(value: Any) -> Any:
@@ -231,7 +231,7 @@ class AsyncRolloutExecutorAdapter:
         action_sequence: ActionSequence | Tensor | None,
         conditions: ConditionPayload | None = None,
         deterministic: bool = False,
-    ):
+    ) -> Any:
         async_fn = getattr(self._executor, "rollout_open_loop_async", None)
         if callable(async_fn):
             return await _await_if_needed(

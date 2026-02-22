@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from torch import Tensor
 
@@ -17,7 +17,7 @@ class Planner(Protocol):
 
     def plan(
         self,
-        model,
+        model: Any,
         state: State,
         conditions: ConditionPayload | None = None,
     ) -> ActionPayload: ...
@@ -32,7 +32,7 @@ class PlannerObjective(Protocol):
 
     def score_step(
         self,
-        model,
+        model: Any,
         step_output: ModelOutput,
         step_state: State,
         step: int,
@@ -48,7 +48,7 @@ class RewardObjective:
 
     def score_step(
         self,
-        model,
+        model: Any,
         step_output: ModelOutput,
         step_state: State,
         step: int,

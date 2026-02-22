@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import torch
 from torch import Tensor
 
@@ -81,7 +83,7 @@ class DiffusionSampler:
 
     def step(
         self,
-        model,
+        model: Any,
         x: Tensor,
         action: Tensor | None = None,
         timesteps: Tensor | None = None,
@@ -96,7 +98,7 @@ class DiffusionSampler:
 
     def sample(
         self,
-        model,
+        model: Any,
         x: Tensor,
         action: Tensor | None = None,
         steps: int = 1,
