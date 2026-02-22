@@ -484,13 +484,91 @@ def build_gate_commands() -> tuple[GateCommand, ...]:
         ),
         GateCommand(
             name="Release checklist gate wiring",
-            argv=("python", "scripts/check_release_checklist_gate.py"),
+            argv=("uv", "run", "python", "scripts/check_release_checklist_gate.py"),
         ),
         GateCommand(
             name="Build package",
             argv=("uv", "run", "--with", "build", "python", "-m", "build"),
         ),
         _twine_check_command(),
+    )
+
+
+def build_fast_gate_commands() -> tuple[GateCommand, ...]:
+    """Build a fast subset of CI-mirrored checks for commit-time validation."""
+    return (
+        GateCommand(
+            name="Bandit security linter",
+            argv=(
+                "uv",
+                "run",
+                "--with",
+                "bandit",
+                "bandit",
+                "-r",
+                "src/worldflux/",
+                "scripts/parity/",
+                "-ll",
+            ),
+        ),
+        GateCommand(
+            name="API v0.2 tests",
+            argv=(
+                "uv",
+                "run",
+                "--extra",
+                "dev",
+                "python",
+                "-m",
+                "pytest",
+                "-q",
+                "tests/test_core/test_payloads.py",
+                "tests/test_core/test_interfaces.py",
+                "tests/test_core/test_contract_v2.py",
+            ),
+        ),
+        GateCommand(
+            name="Legacy bridge tests",
+            argv=(
+                "uv",
+                "run",
+                "--extra",
+                "dev",
+                "python",
+                "-m",
+                "pytest",
+                "-q",
+                "tests/test_integration/test_legacy_bridge_v02.py",
+            ),
+        ),
+        GateCommand(
+            name="Planner boundary tests",
+            argv=(
+                "uv",
+                "run",
+                "--extra",
+                "dev",
+                "python",
+                "-m",
+                "pytest",
+                "-q",
+                "tests/test_planners/test_cem.py",
+                "tests/test_integration/test_planner_dynamics_decoupling.py",
+            ),
+        ),
+        GateCommand(
+            name="Parity suite policy check",
+            argv=(
+                "uv",
+                "run",
+                "python",
+                "scripts/check_parity_suite_coverage.py",
+                "--policy",
+                "reports/parity/suite_policy.json",
+                "--lock",
+                "reports/parity/upstream_lock.json",
+            ),
+        ),
     )
 
 
@@ -555,6 +633,12 @@ def run_commands(
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
+        "--profile",
+        choices=("full", "fast"),
+        default="full",
+        help="Gate profile to run. Use 'fast' for commit-time quick checks.",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Print commands without executing them.",
@@ -572,7 +656,7 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    commands = build_gate_commands()
+    commands = build_fast_gate_commands() if args.profile == "fast" else build_gate_commands()
     return run_commands(
         commands,
         dry_run=args.dry_run,
