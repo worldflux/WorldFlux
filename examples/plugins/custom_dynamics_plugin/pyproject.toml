@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "worldflux-custom-dynamics"
+version = "0.1.0"
+description = "Example: custom residual dynamics plugin for WorldFlux"
+requires-python = ">=3.10"
+dependencies = ["worldflux>=0.1.0"]
+
+[project.entry-points."worldflux.components"]
+custom_dynamics = "worldflux_custom_dynamics:register_components"
+
+[tool.setuptools.packages.find]
+where = ["src"]
