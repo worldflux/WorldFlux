@@ -13,10 +13,7 @@ from pathlib import Path
 
 def _load_module():
     script_path = (
-        Path(__file__).resolve().parents[2]
-        / "scripts"
-        / "parity"
-        / "aws_progress_audit.py"
+        Path(__file__).resolve().parents[2] / "scripts" / "parity" / "aws_progress_audit.py"
     )
     spec = importlib.util.spec_from_file_location("aws_progress_audit", script_path)
     if spec is None or spec.loader is None:
@@ -246,7 +243,9 @@ def test_run_audit_happy_path_with_mocked_aws(monkeypatch) -> None:
                 command, 0, stdout=json.dumps(control_plane_instances), stderr=""
             )
         if "ssm list-commands" in cmd and "InProgress" in cmd:
-            return subprocess.CompletedProcess(command, 0, stdout=json.dumps(command_payload), stderr="")
+            return subprocess.CompletedProcess(
+                command, 0, stdout=json.dumps(command_payload), stderr=""
+            )
         if "ssm list-command-invocations" in cmd and "--command-id cmd-inprogress" in cmd:
             return subprocess.CompletedProcess(
                 command, 0, stdout=json.dumps(command_invocations), stderr=""
