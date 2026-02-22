@@ -922,6 +922,143 @@ def test_parity_proof_report_runs_completeness_stats_and_markdown(
     assert "Parity Proof Report" in result.stdout
 
 
+def test_parity_proof_combined_runs_all_phases(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    manifest = tmp_path / "manifest.yaml"
+    manifest.write_text("schema_version: parity.manifest.v1\n", encoding="utf-8")
+    output_dir = tmp_path / "proof_combined"
+    calls: list[tuple[str, list[str]]] = []
+
+    def _run(script_name: str, args: list[str]) -> str:
+        calls.append((script_name, list(args)))
+        if script_name == "run_parity_matrix.py":
+            run_output_dir = Path(args[args.index("--output-dir") + 1])
+            run_output_dir.mkdir(parents=True, exist_ok=True)
+            (run_output_dir / "parity_runs.jsonl").write_text("", encoding="utf-8")
+            (run_output_dir / "seed_plan.json").write_text(
+                '{"seed_values":[0,1]}', encoding="utf-8"
+            )
+            (run_output_dir / "run_context.json").write_text(
+                '{"systems":["official","worldflux"]}',
+                encoding="utf-8",
+            )
+            return "proof-run-ok"
+        if script_name == "validate_matrix_completeness.py":
+            Path(args[args.index("--output") + 1]).write_text(
+                '{"missing_pairs":0,"pass":true}',
+                encoding="utf-8",
+            )
+            return ""
+        if script_name == "stats_equivalence.py":
+            Path(args[args.index("--output") + 1]).write_text(
+                json.dumps(
+                    {
+                        "global": {
+                            "parity_pass_final": True,
+                            "validity_pass": True,
+                            "missing_pairs": 0,
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            Path(args[args.index("--validity-report") + 1]).write_text("{}", encoding="utf-8")
+            return ""
+        if script_name == "report_markdown.py":
+            Path(args[args.index("--output") + 1]).write_text("# Proof\n", encoding="utf-8")
+            return ""
+        raise AssertionError(f"unexpected script: {script_name}")
+
+    monkeypatch.setattr(cli, "_run_parity_proof_script", _run)
+
+    result = runner.invoke(
+        cli.app,
+        [
+            "parity",
+            "proof",
+            str(manifest),
+            "--output-dir",
+            str(output_dir),
+            "--seed-list",
+            "0,1",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert [name for name, _args in calls] == [
+        "run_parity_matrix.py",
+        "validate_matrix_completeness.py",
+        "stats_equivalence.py",
+        "report_markdown.py",
+    ]
+    run_args = calls[0][1]
+    assert "--seed-list" in run_args
+    coverage_args = calls[1][1]
+    assert "--seed-plan" in coverage_args
+    assert "--run-context" in coverage_args
+    assert (output_dir / "coverage_report.json").exists()
+    assert (output_dir / "equivalence_report.json").exists()
+    assert (output_dir / "equivalence_report.md").exists()
+
+
+def test_parity_proof_combined_enforce_exits_on_failed_verdict(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    manifest = tmp_path / "manifest.yaml"
+    manifest.write_text("schema_version: parity.manifest.v1\n", encoding="utf-8")
+    output_dir = tmp_path / "proof_combined_fail"
+
+    def _run(script_name: str, args: list[str]) -> str:
+        if script_name == "run_parity_matrix.py":
+            run_output_dir = Path(args[args.index("--output-dir") + 1])
+            run_output_dir.mkdir(parents=True, exist_ok=True)
+            (run_output_dir / "parity_runs.jsonl").write_text("", encoding="utf-8")
+            return ""
+        if script_name == "validate_matrix_completeness.py":
+            Path(args[args.index("--output") + 1]).write_text(
+                '{"missing_pairs":0,"pass":true}',
+                encoding="utf-8",
+            )
+            return ""
+        if script_name == "stats_equivalence.py":
+            Path(args[args.index("--output") + 1]).write_text(
+                json.dumps(
+                    {
+                        "global": {
+                            "parity_pass_final": False,
+                            "validity_pass": True,
+                            "missing_pairs": 0,
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            Path(args[args.index("--validity-report") + 1]).write_text("{}", encoding="utf-8")
+            return ""
+        if script_name == "report_markdown.py":
+            Path(args[args.index("--output") + 1]).write_text("# Proof\n", encoding="utf-8")
+            return ""
+        raise AssertionError(f"unexpected script: {script_name}")
+
+    monkeypatch.setattr(cli, "_run_parity_proof_script", _run)
+
+    result = runner.invoke(
+        cli.app,
+        [
+            "parity",
+            "proof",
+            str(manifest),
+            "--output-dir",
+            str(output_dir),
+            "--enforce",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "Verify - Combined Summary" in result.stdout
+
+
 def test_parity_report_rejects_non_object_payload() -> None:
     with runner.isolated_filesystem():
         aggregate = Path("aggregate.json")
