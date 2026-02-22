@@ -38,6 +38,31 @@ def test_build_gate_commands_contains_core_ci_steps(monkeypatch) -> None:
     assert "Check built artifacts" in names
 
 
+def test_build_fast_gate_commands_contains_quick_ci_steps() -> None:
+    mod = _load_module()
+    commands = mod.build_fast_gate_commands()
+    names = {command.name for command in commands}
+
+    assert "Bandit security linter" in names
+    assert "API v0.2 tests" in names
+    assert "Legacy bridge tests" in names
+    assert "Planner boundary tests" in names
+    assert "Parity suite policy check" in names
+    assert "Build docs (strict)" not in names
+    assert "Build package" not in names
+
+
+def test_release_checklist_gate_uses_uv_run_python(monkeypatch) -> None:
+    mod = _load_module()
+    monkeypatch.setattr(mod, "_is_docs_domain_reachable", lambda timeout_seconds=5.0: True)
+
+    commands = mod.build_gate_commands()
+    release_gate = next(
+        command for command in commands if command.name == "Release checklist gate wiring"
+    )
+    assert release_gate.argv == ("uv", "run", "python", "scripts/check_release_checklist_gate.py")
+
+
 def test_lychee_command_excludes_worldflux_domain_when_unreachable(monkeypatch) -> None:
     mod = _load_module()
     monkeypatch.setattr(mod, "_is_docs_domain_reachable", lambda timeout_seconds=5.0: False)
