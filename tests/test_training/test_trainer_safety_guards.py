@@ -198,6 +198,9 @@ def test_checkpoint_roundtrip_preserves_scheduler_and_scaler_state(tmp_path: Pat
     checkpoint_path = tmp_path / "checkpoint_with_states.pt"
     trainer.save_checkpoint(str(checkpoint_path))
 
+    # weights_only=False is required here to load optimizer/scheduler/scaler
+    # state dicts, which contain non-tensor objects.  Only use this on
+    # checkpoints produced by the same trusted codebase.
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     assert "scheduler_state_dict" in checkpoint
     assert "scaler_state_dict" in checkpoint

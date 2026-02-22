@@ -100,7 +100,7 @@
   "worldmodel_signatures": {
     "decode": "(self, state: 'State', conditions: 'ConditionPayload | None' = None) -> 'ModelOutput'",
     "encode": "(self, obs: 'Tensor | dict[str, Tensor] | WorldModelInput', deterministic: 'bool' = False) -> 'State'",
-    "from_pretrained": "(name_or_path: 'str', **kwargs) -> 'WorldModel'",
+    "from_pretrained": "(name_or_path: 'str', **kwargs: 'Any') -> 'WorldModel'",
     "io_contract": "(self) -> 'ModelIOContract'",
     "loss": "(self, batch: 'Batch') -> 'LossOutput'",
     "rollout": "(self, initial_state: 'State', action_sequence: 'ActionSequence | ActionPayload | Tensor | None', conditions: 'ConditionPayload | None' = None, deterministic: 'bool' = False, mode: 'str' = 'autoregressive') -> 'Trajectory'",
