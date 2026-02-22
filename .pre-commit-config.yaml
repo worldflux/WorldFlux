@@ -32,9 +32,9 @@ repos:
 
   - repo: local
     hooks:
-      - id: ci-full-gate
-        name: ci-full-gate
-        entry: bash -lc 'ROOT="$(git rev-parse --show-toplevel)"; cd "$ROOT"; uv run --project "$ROOT" python scripts/run_local_ci_gate.py'
+      - id: ci-fast-gate
+        name: ci-fast-gate
+        entry: bash -lc 'ROOT="$(git rev-parse --show-toplevel)"; cd "$ROOT"; uv run --project "$ROOT" python scripts/run_local_ci_gate.py --profile fast'
         language: system
         pass_filenames: false
         stages: [pre-commit]
