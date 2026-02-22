@@ -17,15 +17,14 @@ def test_mkdocs_nav_exposes_cpu_success_and_reference_guides():
     assert "    - Installation: getting-started/installation.md" in mkdocs
     assert "    - Quick Start: getting-started/quickstart.md" in mkdocs
     assert "    - CPU Success Path: getting-started/cpu-success.md" in mkdocs
-    assert "    - Core Concepts (Legacy): getting-started/concepts.md" in mkdocs
-    assert "- Tutorials:" in mkdocs
-    assert "    - Train First Model (Placeholder): tutorials/train-first-model.md" in mkdocs
+
+    # Core Concepts (Legacy) and Tutorials sections removed in nav cleanup
+    assert "Core Concepts (Legacy)" not in mkdocs
 
     assert "- Reference:" in mkdocs
     assert "    - Benchmarks: reference/benchmarks.md" in mkdocs
     assert "    - Observation Shape and Action Dim: reference/observation-action.md" in mkdocs
     assert "    - Parity Harness: reference/parity.md" in mkdocs
-    assert "    - Tutorial Placeholder Policy: reference/tutorial-policy.md" in mkdocs
     assert "    - Unified Comparison: reference/unified-comparison.md" in mkdocs
     assert "    - Publishing: reference/publishing.md" in mkdocs
     assert "    - WASR Metrics: reference/wasr.md" in mkdocs
