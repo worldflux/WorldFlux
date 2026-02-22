@@ -35,9 +35,12 @@ from worldflux.parity import (
     render_markdown_report,
     run_campaign,
     run_suite,
+    save_badge,
 )
 from worldflux.parity.errors import ParityError
+from worldflux.parity.fmt_utils import fmt_bool as _fmt_bool
 from worldflux.scaffold import generate_project
+from worldflux.verify import ParityVerifier, VerifyResult
 
 app = typer.Typer(help="WorldFlux command-line interface.")
 parity_app = typer.Typer(
@@ -105,9 +108,20 @@ __        __         _     _ _____ _
 """
 
 
+def _debug_callback(debug: bool) -> None:
+    """Enable debug logging when --debug is passed."""
+    if debug:
+        import logging
+
+        logging.basicConfig(level=logging.DEBUG, format="%(name)s %(levelname)s %(message)s")
+
+
 @app.callback()
-def main() -> None:
-    """WorldFlux CLI commands."""
+def main(
+    debug: bool = typer.Option(False, "--debug", help="Enable debug logging."),
+) -> None:
+    """WorldFlux command-line interface."""
+    _debug_callback(debug)
 
 
 def _parse_obs_shape(value: str) -> list[int]:
@@ -866,12 +880,6 @@ def _run_parity_proof_script(script_name: str, args: list[str]) -> str:
     return stdout
 
 
-def _fmt_bool(value: Any) -> str:
-    if isinstance(value, bool):
-        return "PASS" if value else "FAIL"
-    return "-"
-
-
 @parity_app.command("run")
 def parity_run(
     suite: Path = typer.Argument(..., help="Path to parity suite specification file."),
@@ -1347,6 +1355,276 @@ def parity_campaign_resume(
         pair_output_root=pair_output_root,
         resume=True,
         dry_run=False,
+    )
+
+
+@parity_app.command("proof")
+def parity_proof_combined(
+    manifest: Path = typer.Argument(
+        ..., help="Proof manifest (parity.manifest.v1 or parity.suite.v2)."
+    ),
+    device: str = typer.Option("cpu", "--device", help="Execution device."),
+    output_dir: Path = typer.Option(
+        Path("reports/parity"),
+        "--output-dir",
+        help="Output directory root for proof artifacts.",
+    ),
+    seed_list: str = typer.Option("", "--seed-list", help="Optional seed override, e.g. 0,1,2."),
+    max_retries: int = typer.Option(1, "--max-retries", help="Max retries per task/system pair."),
+    enforce: bool = typer.Option(
+        False,
+        "--enforce/--no-enforce",
+        help="Exit non-zero when final parity verdict fails.",
+    ),
+) -> None:
+    """Run proof-grade parity verification (proof-run + proof-report) in a single step."""
+    # --- Phase 1: proof-run ---------------------------------------------------
+    run_args = [
+        "--manifest",
+        str(manifest),
+        "--output-dir",
+        str(output_dir),
+        "--device",
+        device,
+        "--max-retries",
+        str(max_retries),
+        "--resume",
+    ]
+    if seed_list.strip():
+        run_args.extend(["--seed-list", seed_list.strip()])
+
+    try:
+        run_stdout = _run_parity_proof_script("run_parity_matrix.py", run_args)
+    except ParityError as exc:
+        console.print(f"[bold red]Verify proof-run failed:[/bold red] {exc}")
+        raise typer.Exit(code=1) from None
+
+    if run_stdout:
+        console.print(run_stdout)
+
+    console.print(
+        Panel.fit(
+            "\n".join(
+                [
+                    "Phase 1/2: proof-run complete",
+                    f"Manifest: {manifest.resolve()}",
+                    f"Output dir: {output_dir.resolve()}",
+                ]
+            ),
+            title="Verify - Proof Run",
+            border_style="cyan",
+        )
+    )
+
+    # --- Phase 2: proof-report ------------------------------------------------
+    resolved_output_dir = output_dir.resolve()
+    runs_path = resolved_output_dir / "parity_runs.jsonl"
+    if not runs_path.exists():
+        console.print(
+            f"[bold red]Expected run log not found:[/bold red] {runs_path}\n"
+            "proof-run may have written output to a different location."
+        )
+        raise typer.Exit(code=1)
+
+    report_root = resolved_output_dir
+    report_root.mkdir(parents=True, exist_ok=True)
+
+    coverage_report = report_root / "coverage_report.json"
+    validity_report = report_root / "validity_report.json"
+    equivalence_report = report_root / "equivalence_report.json"
+    markdown_report = report_root / "equivalence_report.md"
+
+    seed_plan = resolved_output_dir / "seed_plan.json"
+    run_context = resolved_output_dir / "run_context.json"
+
+    try:
+        coverage_args = [
+            "--manifest",
+            str(manifest),
+            "--runs",
+            str(runs_path),
+            "--output",
+            str(coverage_report),
+            "--max-missing-pairs",
+            "0",
+        ]
+        if seed_plan.exists():
+            coverage_args.extend(["--seed-plan", str(seed_plan)])
+        if run_context.exists():
+            coverage_args.extend(["--run-context", str(run_context)])
+        _run_parity_proof_script("validate_matrix_completeness.py", coverage_args)
+
+        _run_parity_proof_script(
+            "stats_equivalence.py",
+            [
+                "--input",
+                str(runs_path),
+                "--output",
+                str(equivalence_report),
+                "--manifest",
+                str(manifest),
+                "--strict-completeness",
+                "--strict-validity",
+                "--proof-mode",
+                "--validity-report",
+                str(validity_report),
+            ],
+        )
+        _run_parity_proof_script(
+            "report_markdown.py",
+            [
+                "--input",
+                str(equivalence_report),
+                "--output",
+                str(markdown_report),
+            ],
+        )
+    except ParityError as exc:
+        console.print(f"[bold red]Verify proof-report failed:[/bold red] {exc}")
+        raise typer.Exit(code=1) from None
+
+    # --- Combined summary -----------------------------------------------------
+    report_payload = json.loads(equivalence_report.read_text(encoding="utf-8"))
+    global_block = report_payload.get("global", {})
+    final_pass = bool(global_block.get("parity_pass_final"))
+    verdict = "[bold green]PASS[/bold green]" if final_pass else "[bold red]FAIL[/bold red]"
+    console.print(
+        Panel.fit(
+            "\n".join(
+                [
+                    "Mode: proof-grade official equivalence path",
+                    f"Manifest: {manifest.resolve()}",
+                    f"Device: {device}",
+                    f"Final verdict: {verdict}",
+                    f"Validity pass: {_fmt_bool(global_block.get('validity_pass'))}",
+                    f"Missing pairs: {global_block.get('missing_pairs', '-')}",
+                    f"Equivalence JSON: {equivalence_report}",
+                    f"Markdown report: {markdown_report}",
+                ]
+            ),
+            title="Verify - Combined Summary",
+            border_style="green",
+        )
+    )
+    if enforce and not final_pass:
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def verify(
+    target: str = typer.Option(..., "--target", help="Path or registry ID of your custom model."),
+    baseline: str = typer.Option(
+        "official/dreamerv3", "--baseline", help="Baseline to compare against."
+    ),
+    env: str = typer.Option("atari/pong", "--env", help="Target simulation environment."),
+    demo: bool = typer.Option(False, "--demo", help="Mock mode for demonstrations and VC pitches."),
+    device: str = typer.Option("cpu", "--device", help="Execution device."),
+) -> None:
+    """Verify your model against an official baseline."""
+    from rich.status import Status
+
+    console.print(
+        Panel.fit(
+            "\n".join(
+                [
+                    f"Mode: {'demo (synthetic)' if demo else 'real'}",
+                    f"Target: {target}",
+                    f"Baseline: {baseline}",
+                    f"Env: {env}",
+                    f"Device: {device}",
+                ]
+            ),
+            title="Verify - Configuration",
+            border_style="cyan",
+        )
+    )
+
+    with Status(
+        "[bold cyan]Running Bayesian Equivalence Engine (TOST)...[/bold cyan]",
+        console=console,
+        spinner="dots",
+    ):
+        try:
+            result: VerifyResult = ParityVerifier.run(
+                target=target,
+                baseline=baseline,
+                env=env,
+                demo=demo,
+                device=device,
+            )
+        except NotImplementedError as exc:
+            console.print(f"[bold red]Verification unavailable:[/bold red] {exc}")
+            raise typer.Exit(code=1) from None
+
+    stats = result.stats
+    if result.passed:
+        title = "\u2705 PASS: Mathematically Guaranteed Parity"
+        border = "green"
+    else:
+        title = "\u274c FAIL: Parity Threshold Not Met"
+        border = "red"
+    lines = [
+        f"Bayesian Equivalence HDI: [bold]{stats.get('bayesian_equivalence_hdi', '-')}[/bold]",
+        f"TOST p-value: [bold]{stats.get('tost_p_value', '-')}[/bold]",
+        f"Samples: {stats.get('samples', '-')}",
+        f"Mean drop ratio: {stats.get('mean_drop_ratio', '-')}",
+        f"CI upper (one-sided): {stats.get('ci_upper_ratio', '-')}",
+        f"Margin: {stats.get('margin_ratio', '-')}",
+        f"Elapsed: {result.elapsed_seconds:.3f}s",
+    ]
+    console.print(
+        Panel.fit(
+            "\n".join(lines),
+            title=title,
+            border_style=border,
+        )
+    )
+    if result.demo:
+        console.print("[dim]Results are synthetic (--demo mode)[/dim]")
+    if not result.passed:
+        raise typer.Exit(code=1)
+
+
+@parity_app.command("badge")
+def parity_badge(
+    family: str = typer.Option(..., "--family", help="Model family name (e.g. DreamerV3)."),
+    passed: bool = typer.Option(True, "--passed/--no-passed", help="Whether parity passed."),
+    confidence: float = typer.Option(0.95, "--confidence", help="Confidence level (0-1)."),
+    margin: float = typer.Option(0.05, "--margin", help="Margin ratio (0-1)."),
+    output: Path = typer.Option(
+        Path("parity-badge.svg"),
+        "--output",
+        help="Output SVG file path.",
+    ),
+) -> None:
+    """Generate a shields.io-style SVG badge for parity proof results."""
+    try:
+        save_badge(
+            path=output,
+            family=family,
+            passed=passed,
+            confidence=confidence,
+            margin=margin,
+        )
+    except OSError as exc:
+        console.print(f"[bold red]Badge generation failed:[/bold red] {exc}")
+        raise typer.Exit(code=1) from None
+
+    status = "PASS" if passed else "FAIL"
+    console.print(
+        Panel.fit(
+            "\n".join(
+                [
+                    f"Family: {family}",
+                    f"Status: {status}",
+                    f"Confidence: {confidence:.0%}",
+                    f"Margin: {margin:.0%}",
+                    f"Written: {output.resolve()}",
+                ]
+            ),
+            title="Parity Badge",
+            border_style="green" if passed else "red",
+        )
     )
 
 

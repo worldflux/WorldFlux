@@ -430,6 +430,12 @@ def _obs_shape_toml(obs_shape: list[int]) -> str:
     return "[" + ", ".join(str(dim) for dim in obs_shape) + "]"
 
 
+def _default_verify_env(environment: str) -> str:
+    if environment == "mujoco":
+        return "mujoco/halfcheetah"
+    return "atari/pong"
+
+
 def _default_gym_env(environment: str) -> str:
     if environment == "atari":
         return "ALE/Breakout-v5"
@@ -452,6 +458,8 @@ def render_worldflux_toml(context: dict[str, Any]) -> str:
     data_source = "gym" if online_default else "random"
     gameplay_enabled = "true" if online_default else "false"
     online_enabled = "true" if online_default else "false"
+
+    verify_env = _default_verify_env(environment)
 
     return (
         dedent(
@@ -503,6 +511,10 @@ def render_worldflux_toml(context: dict[str, Any]) -> str:
         refresh_ms = 1000
         history_max_points = 2000
         open_browser = false
+
+        [verify]
+        baseline = "official/dreamerv3"
+        env = "{verify_env}"
         """
         ).strip()
         + "\n"
@@ -716,6 +728,18 @@ def render_readme_md(context: dict[str, Any]) -> str:
         - `visualization.port`
         - `visualization.refresh_ms`
         - `visualization.open_browser`
+
+        ## Verify Your Model
+
+        Run parity verification against a baseline:
+
+        ```bash
+        # Demo mode (instant synthetic results for presentations)
+        worldflux verify --target ./outputs/checkpoint_best.pt --demo
+
+        # Real verification (requires parity suite)
+        worldflux verify --target ./outputs/checkpoint_best.pt
+        ```
 
         ## Gym Data Collection (Optional)
 
