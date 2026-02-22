@@ -26,10 +26,6 @@ This page is generated from Python docstrings via `mkdocstrings`.
 
 ::: worldflux.core.output.LossOutput
 
-## State
-
-::: worldflux.core.state.State
-
 ## Trajectory
 
 ::: worldflux.core.trajectory.Trajectory
