@@ -42,9 +42,69 @@ Examples:
 - Entering `action_dim=1` for a discrete environment with multiple actions
 - Changing `obs_shape` after checkpoints are created (can break load/inference)
 
+## Shape Reference Table
+
+| Environment Type | obs_shape | action_dim | action_type | Notes |
+|-----------------|-----------|------------|-------------|-------|
+| Atari (standard) | `3, 64, 64` | 18 | discrete | Channel-first RGB |
+| Atari (grayscale stack) | `4, 84, 84` | 18 | discrete | 4-frame stack |
+| MuJoCo HalfCheetah | `17` | 6 | continuous | Flat state vector |
+| MuJoCo Humanoid | `376` | 17 | continuous | High-dim state |
+| DMControl Walker | `24` | 6 | continuous | Proprioceptive |
+| DMControl Pixels | `3, 84, 84` | varies | continuous | Visual observation |
+| Custom image env | `C, H, W` | varies | varies | Channel-first required |
+
+## Multi-Modal Observations (v3 API)
+
+WorldFlux v3 supports multi-modal observation specifications via `observation_modalities`:
+
+```python
+model = create_world_model(
+    "dreamerv3:size12m",
+    observation_modalities={
+        "image": {"shape": (3, 64, 64), "kind": "image"},
+        "proprio": {"shape": (12,), "kind": "vector"},
+    },
+    action_dim=6,
+)
+```
+
+Each modality entry requires:
+
+- `shape`: Tensor shape per time step (excluding batch dimension)
+- `kind`: One of `"image"`, `"vector"`, `"video"`, `"tokens"`, `"text"`, `"other"`
+- `dtype` (optional): `"float32"` (default), `"float16"`, or `"bfloat16"`
+
+## Action Specifications (v3 API)
+
+For explicit action control, use `action_spec`:
+
+```python
+model = create_world_model(
+    "tdmpc2:5m",
+    obs_shape=(39,),
+    action_spec={"kind": "continuous", "dim": 6},
+)
+```
+
+Supported `kind` values: `"continuous"`, `"discrete"`, `"token"`, `"latent"`, `"none"`.
+
+## Programmatic Inspection
+
+```python
+from worldflux import get_config
+
+config = get_config("dreamerv3:size12m")
+print(f"obs_shape: {config.obs_shape}")        # (3, 64, 64)
+print(f"action_dim: {config.action_dim}")      # 6
+print(f"action_type: {config.action_type}")    # continuous
+print(f"modalities: {config.observation_modalities}")
+```
+
 ## Related Docs
 
 - [Quick Start](../getting-started/quickstart.md)
 - [Model Choice in `worldflux init`](../getting-started/quickstart.md#4-choosing-a-model-in-worldflux-init)
 - [Configuration Reference](config.md)
+- [State Reference](../api/state.md)
 - [Troubleshooting](troubleshooting.md)
