@@ -5,8 +5,17 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from typing import Any
+
+# Allow imports from the worldflux source tree
+_SRC_ROOT = str(Path(__file__).resolve().parents[2] / "src")
+if _SRC_ROOT not in sys.path:
+    sys.path.insert(0, _SRC_ROOT)
+
+from worldflux.parity.fmt_utils import fmt_bool as _fmt_bool  # noqa: E402
+from worldflux.parity.fmt_utils import fmt_float as _fmt_float  # noqa: E402
 
 
 def _parse_args() -> argparse.Namespace:
@@ -14,18 +23,6 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--input", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     return parser.parse_args()
-
-
-def _fmt_float(value: Any, digits: int = 4) -> str:
-    if isinstance(value, int | float):
-        return f"{float(value):.{digits}f}"
-    return "-"
-
-
-def _fmt_bool(value: Any) -> str:
-    if isinstance(value, bool):
-        return "PASS" if value else "FAIL"
-    return "-"
 
 
 def _metric_row(task_id: str, metric_name: str, metric: dict[str, Any]) -> str:

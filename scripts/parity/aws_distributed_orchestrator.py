@@ -643,6 +643,7 @@ def _build_task_shards(
     *,
     seed_values: list[int],
     systems: tuple[str, ...],
+    instance_slot_caps: dict[str, int] | None = None,
 ) -> list[ShardPlan]:
     if not instances:
         raise RuntimeError("At least one instance is required for task sharding")
@@ -657,23 +658,32 @@ def _build_task_shards(
         target["cost"] = float(target["cost"]) + task.estimated_cost
         target["duration"] = float(target["duration"]) + task.estimated_duration_sec
 
+    instance_next_slot: dict[str, int] = {}
     plans: list[ShardPlan] = []
     for idx, bucket in enumerate(buckets):
         chunk: list[TaskCost] = list(bucket["tasks"])
         if not chunk:
             continue
         task_ids = tuple(sorted(task.task_id for task in chunk))
+        instance_id = str(bucket["instance_id"])
+        gpu_slot: int | None = None
+        if instance_slot_caps:
+            cap = int(instance_slot_caps.get(instance_id, 0))
+            if cap > 0:
+                current = instance_next_slot.get(instance_id, 0)
+                gpu_slot = current % cap
+                instance_next_slot[instance_id] = current + 1
         plans.append(
             ShardPlan(
                 shard_id=idx,
-                instance_id=str(bucket["instance_id"]),
+                instance_id=instance_id,
                 task_ids=task_ids,
                 shard_run_id=f"{run_id}_shard{idx:02d}",
                 estimated_cost=float(bucket["cost"]),
                 estimated_duration_sec=float(bucket["duration"]),
                 seed_values=tuple(seed_values),
                 systems=systems,
-                gpu_slot=None,
+                gpu_slot=gpu_slot,
             )
         )
     if not plans:
@@ -938,6 +948,7 @@ def _build_remote_commands(
 
     commands.extend(
         [
+            "export PYTHONUNBUFFERED=1",
             f"mkdir -p {shlex.quote(remote_run_root)}",
             f"export WF_PROGRESS_EXPECTED={int(expected_pairs)}",
             f"export WF_PROGRESS_RUN_ROOT={shlex.quote(remote_run_root)}",
@@ -961,6 +972,8 @@ def _build_remote_commands(
         commands.append(f"export {key}={shlex.quote(value)}")
     if shard.gpu_slot is not None:
         commands.append(f"export CUDA_VISIBLE_DEVICES={int(shard.gpu_slot)}")
+    commands.append("export XLA_PYTHON_CLIENT_PREALLOCATE=false")
+    commands.append("export XLA_PYTHON_CLIENT_MEM_FRACTION=0.80")
 
     commands.extend(
         [
@@ -1805,11 +1818,10 @@ def _execute_phase(
             all_instances,
             seed_values=seed_values,
             systems=systems,
+            instance_slot_caps=instance_slot_caps,
         )
 
-    use_slot_scheduler = bool(
-        args.wait and args.sharding_mode == "seed_system" and args.seed_shard_unit == "pair"
-    )
+    use_slot_scheduler = bool(args.wait and any(s.gpu_slot is not None for s in shards))
     if use_slot_scheduler:
         submissions, results = _dispatch_with_slot_scheduler(
             args=args,
@@ -2145,6 +2157,13 @@ def _run_single_phase(args: argparse.Namespace) -> int:
             official_instances=official_instances,
             worldflux_instances=worldflux_instances,
         )
+    else:
+        requested_slots = _parse_requested_gpu_slots(args.gpu_slots_per_instance)
+        if requested_slots is None:
+            instance_type_hint = str(getattr(args, "instance_type", ""))
+            requested_slots = _KNOWN_GPU_COUNTS.get(instance_type_hint)
+        if requested_slots is not None and requested_slots > 0:
+            instance_slot_caps = {iid: requested_slots for iid in all_instances}
 
     try:
         phase = _execute_phase(
@@ -2195,6 +2214,13 @@ def _run_two_stage_proof(args: argparse.Namespace) -> int:
             official_instances=official_instances,
             worldflux_instances=worldflux_instances,
         )
+    else:
+        requested_slots = _parse_requested_gpu_slots(args.gpu_slots_per_instance)
+        if requested_slots is None:
+            instance_type_hint = str(getattr(args, "instance_type", ""))
+            requested_slots = _KNOWN_GPU_COUNTS.get(instance_type_hint)
+        if requested_slots is not None and requested_slots > 0:
+            instance_slot_caps = {iid: requested_slots for iid in all_instances}
     root_dir = (args.output_dir / args.run_id).resolve()
     root_dir.mkdir(parents=True, exist_ok=True)
 

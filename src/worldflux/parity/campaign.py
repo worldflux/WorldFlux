@@ -35,7 +35,7 @@ def _read_json_or_yaml(path: Path) -> dict[str, Any]:
     except json.JSONDecodeError:
         try:
             import yaml  # type: ignore[import-not-found,import-untyped]
-        except Exception as exc:  # pragma: no cover - optional dependency path
+        except ImportError as exc:  # pragma: no cover - optional dependency path
             raise ParityError(
                 f"Failed to parse campaign file {path}. Use JSON-compatible YAML or install pyyaml."
             ) from exc

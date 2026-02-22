@@ -4,10 +4,66 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, Protocol, runtime_checkable
 
 import torch
 from torch import Tensor
+
+# ---------------------------------------------------------------------------
+# Protocols for model-specific component access (replaces cast(Any) usage)
+# ---------------------------------------------------------------------------
+
+
+class _RSSMProtocol(Protocol):
+    """Structural typing for DreamerV3 RSSM sub-module."""
+
+    deter_dim: int
+    embed_dim: int
+    stoch_dim: int
+    action_dim: int
+    feature_dim: int
+    prior_net: Callable[..., Tensor]
+    posterior_net: Callable[..., Tensor]
+    gru: Callable[..., Tensor]
+
+
+@runtime_checkable
+class _DreamerV3ModelProtocol(Protocol):
+    """Structural typing for DreamerV3 WorldModel used in component matching."""
+
+    encoder: torch.nn.Module
+    rssm: _RSSMProtocol
+    decoder: torch.nn.Module
+    reward_head: torch.nn.Module
+    continue_head: torch.nn.Module
+
+    def load_state_dict(self, state_dict: Any, strict: bool = ...) -> Any: ...
+    def eval(self) -> Any: ...
+    def parameters(self) -> Any: ...
+
+
+class _TDMPC2ConfigProtocol(Protocol):
+    """Structural typing for TD-MPC2 config used in component matching."""
+
+    obs_shape: tuple[int, ...]
+    latent_dim: int
+    action_dim: int
+
+
+@runtime_checkable
+class _TDMPC2ModelProtocol(Protocol):
+    """Structural typing for TD-MPC2 WorldModel used in component matching."""
+
+    config: _TDMPC2ConfigProtocol
+    encoder: torch.nn.Module
+    dynamics: torch.nn.Module
+    reward_head: torch.nn.Module
+    q_networks: Sequence[torch.nn.Module]
+    policy: torch.nn.Module
+
+    def load_state_dict(self, state_dict: Any, strict: bool = ...) -> Any: ...
+    def eval(self) -> Any: ...
+    def parameters(self) -> Any: ...
 
 
 @dataclass(frozen=True)
@@ -146,8 +202,10 @@ def run_dreamerv3_component_match(
     The official_state should already be converted to WorldFlux format
     via weight_map.official_to_worldflux.
     """
+    if not isinstance(worldflux_model, _DreamerV3ModelProtocol):
+        raise TypeError(f"Expected a DreamerV3 WorldModel, got {type(worldflux_model).__name__}")
+    model: _DreamerV3ModelProtocol = worldflux_model
     results: list[MatchResult] = []
-    model = cast(Any, worldflux_model)
 
     # Load weights into model
     model.load_state_dict(official_state, strict=False)
@@ -158,10 +216,13 @@ def run_dreamerv3_component_match(
     device = next(model.parameters()).device
 
     # --- Encoder ---
-    encoder_obj = cast(Any, model.encoder)
-    encoder = cast(Callable[..., Tensor], encoder_obj)
-    obs_dim = (
-        encoder_obj.mlp[0].in_features if hasattr(encoder_obj, "mlp") else encoder_obj._output_dim
+    encoder_obj = model.encoder
+    encoder: Callable[..., Tensor] = encoder_obj  # type: ignore[assignment]
+    mlp = getattr(encoder_obj, "mlp", None)
+    obs_dim: int = (
+        mlp[0].in_features  # type: ignore[index]
+        if mlp is not None
+        else getattr(encoder_obj, "_output_dim")
     )
     torch.manual_seed(42)
     obs_input = torch.randn(batch, obs_dim, device=device)
@@ -170,7 +231,7 @@ def run_dreamerv3_component_match(
     results.append(result)
 
     # --- RSSM Prior ---
-    rssm = cast(Any, model.rssm)
+    rssm = model.rssm
     torch.manual_seed(43)
     prior_input = torch.randn(batch, rssm.deter_dim, device=device)
 
@@ -195,7 +256,7 @@ def run_dreamerv3_component_match(
     results.append(result)
 
     # --- Decoder ---
-    decoder = cast(Callable[..., Tensor], model.decoder)
+    decoder: Callable[..., Tensor] = model.decoder  # type: ignore[assignment]
     torch.manual_seed(46)
     feat_dim = rssm.feature_dim
     feat_input = torch.randn(batch, feat_dim, device=device)
@@ -204,7 +265,7 @@ def run_dreamerv3_component_match(
     results.append(result)
 
     # --- Reward Head ---
-    reward_head = cast(Callable[..., Tensor], model.reward_head)
+    reward_head: Callable[..., Tensor] = model.reward_head  # type: ignore[assignment]
     torch.manual_seed(47)
     feat_input_rw = torch.randn(batch, feat_dim, device=device)
 
@@ -212,7 +273,7 @@ def run_dreamerv3_component_match(
     results.append(result)
 
     # --- Continue Head ---
-    continue_head = cast(Callable[..., Tensor], model.continue_head)
+    continue_head: Callable[..., Tensor] = model.continue_head  # type: ignore[assignment]
     torch.manual_seed(48)
     feat_input_cont = torch.randn(batch, feat_dim, device=device)
 
@@ -234,18 +295,20 @@ def run_tdmpc2_component_match(
     The official_state should already be converted to WorldFlux format
     via weight_map.official_to_worldflux.
     """
+    if not isinstance(worldflux_model, _TDMPC2ModelProtocol):
+        raise TypeError(f"Expected a TDMPC2 WorldModel, got {type(worldflux_model).__name__}")
+    model: _TDMPC2ModelProtocol = worldflux_model
     results: list[MatchResult] = []
-    model = cast(Any, worldflux_model)
 
     model.load_state_dict(official_state, strict=False)
     model.eval()
 
     batch = 2
     device = next(model.parameters()).device
-    config = cast(Any, model.config)
+    config = model.config
 
     # --- Encoder ---
-    encoder_mlp = cast(Callable[..., Tensor], model.encoder)
+    encoder_mlp: Callable[..., Tensor] = model.encoder  # type: ignore[assignment]
     torch.manual_seed(42)
     obs_input = torch.randn(batch, config.obs_shape[0], device=device)
 
@@ -253,7 +316,7 @@ def run_tdmpc2_component_match(
     results.append(result)
 
     # --- Dynamics ---
-    dynamics_mlp = cast(Callable[..., Tensor], model.dynamics)
+    dynamics_mlp: Callable[..., Tensor] = model.dynamics  # type: ignore[assignment]
     torch.manual_seed(43)
     dyn_input = torch.randn(batch, config.latent_dim + config.action_dim, device=device)
 
@@ -261,7 +324,7 @@ def run_tdmpc2_component_match(
     results.append(result)
 
     # --- Reward Head ---
-    reward_mlp = cast(Callable[..., Tensor], model.reward_head)
+    reward_mlp: Callable[..., Tensor] = model.reward_head  # type: ignore[assignment]
     torch.manual_seed(44)
     rw_input = torch.randn(batch, config.latent_dim + config.action_dim, device=device)
 
@@ -269,16 +332,16 @@ def run_tdmpc2_component_match(
     results.append(result)
 
     # --- Q Ensemble ---
-    q_networks = cast(Sequence[Callable[..., Tensor]], model.q_networks)
     torch.manual_seed(45)
     q_input = torch.randn(batch, config.latent_dim + config.action_dim, device=device)
 
-    for qi, q_net in enumerate(q_networks):
-        result = match_forward(q_net, q_net, [q_input], component=f"q_network_{qi}")
+    for qi, q_net in enumerate(model.q_networks):
+        q_fn: Callable[..., Tensor] = q_net  # type: ignore[assignment]
+        result = match_forward(q_fn, q_fn, [q_input], component=f"q_network_{qi}")
         results.append(result)
 
     # --- Policy ---
-    policy_mlp = cast(Callable[..., Tensor], model.policy)
+    policy_mlp: Callable[..., Tensor] = model.policy  # type: ignore[assignment]
     torch.manual_seed(46)
     pol_input = torch.randn(batch, config.latent_dim, device=device)
 

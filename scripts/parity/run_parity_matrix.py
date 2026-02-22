@@ -192,16 +192,7 @@ def _load_manifest(path: Path) -> dict[str, Any]:
     return data
 
 
-def _require_object(value: Any, *, name: str) -> dict[str, Any]:
-    if not isinstance(value, dict):
-        raise RuntimeError(f"{name} must be an object.")
-    return value
-
-
-def _require_string(value: Any, *, name: str) -> str:
-    if not isinstance(value, str) or not value.strip():
-        raise RuntimeError(f"{name} must be a non-empty string.")
-    return value
+from _validation_utils import _require_object, _require_string
 
 
 def _coerce_command(value: Any, *, name: str) -> list[str]:
@@ -631,6 +622,21 @@ def _run_one(
                 f"non-zero exit code ({proc.returncode}); stderr tail: "
                 f"{proc.stderr[-500:] if proc.stderr else '<empty>'}"
             )
+            stderr_tail = proc.stderr[-2000:] if proc.stderr else ""
+            is_oom = any(
+                marker in stderr_tail
+                for marker in (
+                    "RESOURCE_EXHAUSTED",
+                    "Out of memory",
+                    "OutOfMemoryError",
+                    "CUDA out of memory",
+                    "oom-kill",
+                )
+            )
+            if is_oom:
+                last_error = f"OOM: {last_error}"
+                if attempt < context.max_retries:
+                    time.sleep(5)  # GPU memory reclaim grace period
         except Exception as exc:  # pragma: no cover - runtime guard
             last_error = str(exc)
 
