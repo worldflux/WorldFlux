@@ -85,6 +85,9 @@ logging = [
 cli = [
     "inquirerpy>=0.3.4",
 ]
+hub = [
+    "huggingface_hub>=0.24.0,<1.0.0",
+]
 docs = [
     "mkdocs>=1.5.0,<2.0.0",
     "mkdocs-material>=9.0.0,<10.0.0",
@@ -96,7 +99,7 @@ docs = [
     "pymdown-extensions>=10.0.0,<11.0.0",
 ]
 all = [
-    "worldflux[dev,training,env,atari,viz,logging,docs,cli]",
+    "worldflux[dev,training,env,atari,viz,logging,docs,cli,hub]",
 ]
 
 [project.entry-points."worldflux.models"]

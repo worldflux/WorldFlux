@@ -7,6 +7,7 @@ import hashlib
 import inspect
 import json
 import os
+import tempfile
 import warnings
 from abc import ABC, abstractmethod
 from dataclasses import asdict, is_dataclass
@@ -984,6 +985,41 @@ class WorldModel(nn.Module, ABC):
         with open(os.path.join(path, "worldflux_meta.json"), "w", encoding="utf-8") as f:
             json.dump(metadata, f, indent=2, sort_keys=True)
             f.write("\n")
+
+    def push_to_hub(
+        self,
+        repo_id: str,
+        *,
+        token: str | None = None,
+        private: bool | None = None,
+        commit_message: str | None = None,
+    ) -> str:
+        """Upload this model to the Hugging Face Hub.
+
+        Requires optional dependency group ``worldflux[hub]``.
+        """
+        try:
+            from huggingface_hub import HfApi
+        except ModuleNotFoundError as exc:  # pragma: no cover - optional dependency guard
+            raise ValidationError(
+                "Hugging Face Hub support requires optional dependency "
+                '`huggingface_hub`. Install with: uv pip install "worldflux[hub]"'
+            ) from exc
+
+        api = HfApi(token=token)
+        api.create_repo(repo_id=repo_id, private=private, repo_type="model", exist_ok=True)
+
+        with tempfile.TemporaryDirectory(prefix="worldflux-hub-") as tmpdir:
+            self.save_pretrained(tmpdir)
+            api.upload_folder(
+                repo_id=repo_id,
+                repo_type="model",
+                folder_path=tmpdir,
+                commit_message=commit_message or f"Upload {self.__class__.__name__} from WorldFlux",
+                token=token,
+            )
+
+        return f"https://huggingface.co/{repo_id}"
 
     @staticmethod
     def _normalize_contract_value(value: Any) -> Any:
