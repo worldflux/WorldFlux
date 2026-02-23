@@ -515,6 +515,17 @@ def render_worldflux_toml(context: dict[str, Any]) -> str:
         [verify]
         baseline = "official/dreamerv3"
         env = "{verify_env}"
+
+        [cloud]
+        gpu_type = "a100"
+        spot = true
+        region = "us-east-1"
+        timeout_hours = 24
+
+        [flywheel]
+        opt_in = false
+        privacy_epsilon = 1.0
+        privacy_delta = 1e-5
         """
         ).strip()
         + "\n"
@@ -677,11 +688,10 @@ def render_readme_md(context: dict[str, Any]) -> str:
         ## Quick Start
 
         ```bash
-        # Preferred launcher:
-        # 1) uv run python
-        # 2) python
-        # 3) python3
-        # 4) py
+        # Train your model
+        worldflux train
+
+        # Or use the Python script directly
         {context.get("preferred_python_launcher", "uv run python")} train.py
         ```
 
@@ -692,6 +702,12 @@ def render_readme_md(context: dict[str, Any]) -> str:
         ```
 
         If port `8765` is already in use, it automatically falls back to the next available port.
+
+        Verify your trained model:
+
+        ```bash
+        worldflux verify --target ./outputs
+        ```
 
         Run inference or imagination checks:
 
