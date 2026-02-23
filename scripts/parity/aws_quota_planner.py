@@ -11,11 +11,13 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-# On-demand pricing per hour (USD) for common GPU instance types.
+# On-demand pricing per hour (USD) for common GPU instance types in us-west-2.
+# Updated from AWS Pricing API on 2026-02-23 where available.
 _ON_DEMAND_HOURLY_USD: dict[str, float] = {
-    "p4d.24xlarge": 32.77,
-    "p4de.24xlarge": 40.97,
+    "p4d.24xlarge": 21.95764,
+    "p4de.24xlarge": 27.44705,
     "p5.48xlarge": 98.32,
+    "p5.4xlarge": 6.88,
     "g5.xlarge": 1.006,
     "g5.2xlarge": 1.212,
     "g5.4xlarge": 1.624,
@@ -30,6 +32,7 @@ _INSTANCE_GPU_COUNTS: dict[str, int] = {
     "p4d.24xlarge": 8,
     "p4de.24xlarge": 8,
     "p5.48xlarge": 8,
+    "p5.4xlarge": 1,
     "g5.xlarge": 1,
     "g5.2xlarge": 1,
     "g5.4xlarge": 1,
@@ -207,6 +210,7 @@ def compute_optimal_fleet(
         "p4d.24xlarge",
         "p4de.24xlarge",
         "p5.48xlarge",
+        "p5.4xlarge",
         "g5.48xlarge",
         "g5.12xlarge",
         "g5.4xlarge",
