@@ -17,6 +17,81 @@ from .exceptions import ConfigurationError
 from .interfaces import ComponentSpec
 from .model import WorldModel
 
+_HF_DOWNLOAD_KWARGS: set[str] = {
+    "revision",
+    "token",
+    "cache_dir",
+    "local_files_only",
+    "force_download",
+    "allow_patterns",
+    "ignore_patterns",
+}
+
+
+def _split_hf_download_kwargs(kwargs: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    download_kwargs: dict[str, Any] = {}
+    passthrough_kwargs: dict[str, Any] = {}
+    for key, value in kwargs.items():
+        if key in _HF_DOWNLOAD_KWARGS:
+            download_kwargs[key] = value
+        else:
+            passthrough_kwargs[key] = value
+    return download_kwargs, passthrough_kwargs
+
+
+def _parse_hf_repo_id(identifier: str) -> tuple[str, str | None] | None:
+    value = str(identifier).strip()
+    if not value:
+        return None
+    if os.path.exists(value):
+        return None
+    if ":" in value:
+        return None
+
+    revision: str | None = None
+    if "@" in value:
+        value, revision = value.split("@", 1)
+        value = value.strip()
+        revision = revision.strip() or None
+
+    parts = value.split("/")
+    if len(parts) != 2:
+        return None
+    if not all(part.strip() for part in parts):
+        return None
+    return value, revision
+
+
+def _download_hf_snapshot(identifier: str, *, download_kwargs: dict[str, Any]) -> str:
+    try:
+        from huggingface_hub import snapshot_download
+    except ModuleNotFoundError as exc:
+        raise ConfigurationError(
+            "Hub repository identifiers require optional dependency `huggingface_hub`. "
+            'Install with: uv pip install "worldflux[hub]"'
+        ) from exc
+
+    parsed = _parse_hf_repo_id(identifier)
+    if parsed is None:
+        raise ConfigurationError(f"Invalid Hugging Face repository identifier: {identifier!r}")
+
+    repo_id, parsed_revision = parsed
+    final_download_kwargs = dict(download_kwargs)
+    if "revision" not in final_download_kwargs:
+        final_download_kwargs["revision"] = parsed_revision or "main"
+
+    final_download_kwargs.setdefault(
+        "allow_patterns",
+        ["config.json", "model.pt", "worldflux_meta.json"],
+    )
+    return str(
+        snapshot_download(
+            repo_id=repo_id,
+            repo_type="model",
+            **final_download_kwargs,
+        )  # nosec B615
+    )
+
 
 @dataclass(frozen=True)
 class PluginManifest:
@@ -81,6 +156,12 @@ class ConfigRegistry:
 
     @classmethod
     def from_pretrained(cls, name_or_path: str, **kwargs: Any) -> WorldModelConfig:
+        download_kwargs, config_kwargs = _split_hf_download_kwargs(dict(kwargs))
+
+        if _parse_hf_repo_id(name_or_path) is not None:
+            local_snapshot = _download_hf_snapshot(name_or_path, download_kwargs=download_kwargs)
+            return cls.from_pretrained(local_snapshot, **config_kwargs)
+
         if os.path.exists(name_or_path):
             config_path = os.path.join(name_or_path, "config.json")
             _validate_config_json(config_path)
@@ -98,8 +179,8 @@ class ConfigRegistry:
                 model_type = alias_map.get(model_type, model_type)
             config_class = cls._registry.get(model_type, WorldModelConfig)
             if hasattr(config_class, "from_size"):
-                return config_class.from_size(size, **kwargs)
-            return config_class(model_name=size, **kwargs)
+                return config_class.from_size(size, **config_kwargs)
+            return config_class(model_name=size, **config_kwargs)
 
         raise ValueError(f"Invalid config identifier: {name_or_path}")
 
@@ -305,6 +386,12 @@ class WorldModelRegistry:
 
     @classmethod
     def from_pretrained(cls, name_or_path: str, **kwargs: Any) -> WorldModel:
+        download_kwargs, model_kwargs = _split_hf_download_kwargs(dict(kwargs))
+
+        if _parse_hf_repo_id(name_or_path) is not None:
+            local_snapshot = _download_hf_snapshot(name_or_path, download_kwargs=download_kwargs)
+            return cls.from_pretrained(local_snapshot, **model_kwargs)
+
         cls.load_entrypoint_plugins()
         if not cls._model_registry:
             try:
@@ -312,7 +399,7 @@ class WorldModelRegistry:
             except ImportError:
                 pass
         if os.path.exists(name_or_path):
-            config = ConfigRegistry.from_pretrained(name_or_path, **kwargs)
+            config = ConfigRegistry.from_pretrained(name_or_path, **model_kwargs)
             if config.model_type not in cls._model_registry:
                 raise ConfigurationError(
                     f"Model type '{config.model_type}' not registered. "
@@ -344,7 +431,7 @@ class WorldModelRegistry:
                     f"Unknown model type: {model_type}. "
                     f"Available: {list(cls._model_registry.keys())}"
                 )
-            config = ConfigRegistry.from_pretrained(f"{model_type}:{size}", **kwargs)
+            config = ConfigRegistry.from_pretrained(f"{model_type}:{size}", **model_kwargs)
             model_class = cls._model_registry[model_type]
             return model_class(config)
 

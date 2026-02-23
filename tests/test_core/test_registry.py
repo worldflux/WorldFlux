@@ -1,6 +1,7 @@
 """Tests for registry and alias resolution."""
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -152,6 +153,48 @@ class TestConfigRegistryErrors:
         config_path.write_text(json.dumps({"model_type": "unknown"}))
         with pytest.raises(ConfigurationError):
             WorldModelRegistry.from_pretrained(str(tmp_path))
+
+
+class TestHubResolution:
+    def test_config_registry_resolves_hf_repo_id(self, monkeypatch, tmp_path: Path):
+        snapshot_dir = tmp_path / "snapshot"
+        model = WorldModelRegistry.from_pretrained(
+            "dreamer:ci", obs_shape=(3, 64, 64), action_dim=6
+        )
+        model.save_pretrained(str(snapshot_dir))
+
+        calls: dict[str, object] = {}
+
+        def _fake_download(identifier: str, *, download_kwargs: dict[str, object]) -> str:
+            calls["identifier"] = identifier
+            calls["download_kwargs"] = dict(download_kwargs)
+            return str(snapshot_dir)
+
+        monkeypatch.setattr("worldflux.core.registry._download_hf_snapshot", _fake_download)
+
+        config = ConfigRegistry.from_pretrained("worldflux/dreamer-ci", revision="main")
+        assert config.model_type == "dreamer"
+        assert calls["identifier"] == "worldflux/dreamer-ci"
+        assert calls["download_kwargs"] == {"revision": "main"}
+
+    def test_world_model_registry_resolves_hf_repo_id(self, monkeypatch, tmp_path: Path):
+        snapshot_dir = tmp_path / "snapshot"
+        expected = WorldModelRegistry.from_pretrained("tdmpc2:ci", obs_shape=(4,), action_dim=2)
+        expected.save_pretrained(str(snapshot_dir))
+
+        calls: dict[str, object] = {}
+
+        def _fake_download(identifier: str, *, download_kwargs: dict[str, object]) -> str:
+            calls["identifier"] = identifier
+            calls["download_kwargs"] = dict(download_kwargs)
+            return str(snapshot_dir)
+
+        monkeypatch.setattr("worldflux.core.registry._download_hf_snapshot", _fake_download)
+
+        loaded = WorldModelRegistry.from_pretrained("worldflux/tdmpc2-ci", revision="main")
+        assert loaded.config.model_type == "tdmpc2"
+        assert calls["identifier"] == "worldflux/tdmpc2-ci"
+        assert calls["download_kwargs"] == {"revision": "main"}
 
 
 class TestComponentOverrides:
