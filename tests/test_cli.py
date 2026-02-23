@@ -123,8 +123,8 @@ def test_init_uses_bootstrap_launcher_in_next_steps(monkeypatch: pytest.MonkeyPa
     with runner.isolated_filesystem():
         result = runner.invoke(cli.app, ["init"])
         assert result.exit_code == 0
-        assert "/tmp/bootstrap/bin/python train.py" in result.stdout
-        assert "/tmp/bootstrap/bin/python inference.py" in result.stdout
+        assert "worldflux train" in result.stdout
+        assert "worldflux verify" in result.stdout
 
 
 def test_init_shows_guided_intro_panel(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -239,8 +239,8 @@ def test_init_next_steps_uses_resolved_launcher(monkeypatch: pytest.MonkeyPatch)
     with runner.isolated_filesystem():
         result = runner.invoke(cli.app, ["init"])
         assert result.exit_code == 0
-        assert "python3 train.py" in result.stdout
-        assert "python3 inference.py" in result.stdout
+        assert "worldflux train" in result.stdout
+        assert "worldflux verify" in result.stdout
 
 
 def test_parse_obs_shape_accepts_comma_separated_dims() -> None:
@@ -1247,3 +1247,117 @@ def test_parity_campaign_export_invokes_exporter(
 def test_cli_module_does_not_require_optional_cli_extra_hint() -> None:
     source = Path(cli.__file__).read_text(encoding="utf-8")
     assert ".[cli]" not in source
+
+
+# ---------------------------------------------------------------------------
+# train command
+# ---------------------------------------------------------------------------
+
+
+class TestTrainCLI:
+    def test_train_command_exists(self) -> None:
+        """Verify that `train` is registered as a CLI command."""
+        result = runner.invoke(cli.app, ["train", "--help"])
+        assert result.exit_code == 0
+        assert "train" in result.output.lower()
+
+    def test_train_help(self) -> None:
+        result = runner.invoke(cli.app, ["train", "--help"])
+        assert result.exit_code == 0
+        assert "worldflux.toml" in result.output.lower() or "config" in result.output.lower()
+
+    def test_train_missing_config_fails(self) -> None:
+        with runner.isolated_filesystem():
+            result = runner.invoke(cli.app, ["train"])
+            assert result.exit_code == 1
+            assert "Configuration error" in result.output or "not found" in result.output.lower()
+
+    def test_train_with_valid_config(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        toml_path = tmp_path / "worldflux.toml"
+        toml_path.write_text(
+            """\
+project_name = "test-train"
+environment = "custom"
+model = "dreamer:ci"
+model_type = "dreamer"
+
+[architecture]
+obs_shape = [3, 64, 64]
+action_dim = 6
+hidden_dim = 32
+
+[training]
+total_steps = 2
+batch_size = 2
+sequence_length = 10
+learning_rate = 3e-4
+device = "cpu"
+output_dir = "{output_dir}"
+""".format(output_dir=str(tmp_path / "outputs")),
+            encoding="utf-8",
+        )
+
+        result = runner.invoke(
+            cli.app,
+            ["train", "--config", str(toml_path), "--steps", "2"],
+        )
+        assert result.exit_code == 0
+        assert "Training Complete" in result.output
+        assert "Final step" in result.output
+
+    def test_train_steps_override(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        toml_path = tmp_path / "worldflux.toml"
+        toml_path.write_text(
+            """\
+project_name = "steps-override"
+model = "dreamer:ci"
+
+[architecture]
+obs_shape = [3, 64, 64]
+action_dim = 6
+
+[training]
+total_steps = 999999
+batch_size = 2
+device = "cpu"
+output_dir = "{output_dir}"
+""".format(output_dir=str(tmp_path / "outputs")),
+            encoding="utf-8",
+        )
+
+        result = runner.invoke(
+            cli.app,
+            ["train", "--config", str(toml_path), "--steps", "2"],
+        )
+        assert result.exit_code == 0
+        assert "Training Complete" in result.output
+
+
+# ---------------------------------------------------------------------------
+# verify format options
+# ---------------------------------------------------------------------------
+
+
+class TestVerifyFormatOptions:
+    def test_verify_json_format(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from worldflux.verify import VerifyResult
+
+        fake_result = VerifyResult(
+            passed=True,
+            target="m.pt",
+            baseline="official/dreamerv3",
+            env="atari/pong",
+            demo=True,
+            elapsed_seconds=3.1,
+            stats={"samples": 500, "mean_drop_ratio": 0.01},
+            verdict_reason="Demo mode: synthetic pass",
+        )
+        monkeypatch.setattr(cli.ParityVerifier, "run", classmethod(lambda cls, **kw: fake_result))
+        # Force proof mode
+        result = runner.invoke(
+            cli.app,
+            ["verify", "--target", "m.pt", "--demo", "--format", "json", "--mode", "proof"],
+        )
+        assert result.exit_code == 0
+        output = result.output
+        assert '"passed": true' in output or '"passed":true' in output
