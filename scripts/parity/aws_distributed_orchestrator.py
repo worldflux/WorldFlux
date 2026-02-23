@@ -10,7 +10,6 @@ import math
 import shlex
 import subprocess
 import sys
-import tempfile
 import time
 from collections import defaultdict
 from dataclasses import dataclass
@@ -804,7 +803,9 @@ def _sync_command(remote_run_root: str, shard_prefix: str) -> str:
     return f"aws s3 sync {remote_run_root} {shard_prefix} {include_args}"
 
 
-_PROGRESS_HELPER_PATH = str(Path(tempfile.gettempdir()) / "_parity_progress_update.py")
+# This path is evaluated locally but used inside remote SSM shell scripts.
+# Use a stable Linux path that exists on worker instances.
+_PROGRESS_HELPER_PATH = "/tmp/_parity_progress_update.py"  # nosec B108
 
 
 def _progress_update_code() -> str:
