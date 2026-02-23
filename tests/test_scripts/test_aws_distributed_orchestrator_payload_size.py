@@ -73,6 +73,7 @@ def test_progress_update_code_is_valid_python() -> None:
     mod = _load_module()
     code = mod._progress_update_code()
     compile(code, "<progress_update>", "exec")
+    assert "os.replace(" in code
 
 
 def test_write_progress_helper_produces_base64_command() -> None:
@@ -87,3 +88,28 @@ def test_write_progress_helper_produces_base64_command() -> None:
     b64_part = cmd.split("echo ", 1)[1].split(" | ", 1)[0]
     decoded = base64.b64decode(b64_part).decode()
     assert decoded == mod._progress_update_code()
+
+
+def test_upload_artifact_skips_zero_byte_json(monkeypatch, tmp_path: Path) -> None:
+    mod = _load_module()
+    calls: list[list[str]] = []
+
+    def fake_run_cli(command: list[str]):
+        calls.append(command)
+        return type("Result", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    monkeypatch.setattr(mod, "_run_cli", fake_run_cli)
+
+    empty_json = tmp_path / "empty.json"
+    empty_json.write_text("", encoding="utf-8")
+    mod._upload_artifact(region="us-west-2", artifact=empty_json, final_prefix="s3://bucket/final")
+    assert not calls
+
+    nonempty_json = tmp_path / "ok.json"
+    nonempty_json.write_text("{}", encoding="utf-8")
+    mod._upload_artifact(
+        region="us-west-2",
+        artifact=nonempty_json,
+        final_prefix="s3://bucket/final",
+    )
+    assert calls

@@ -11,6 +11,7 @@ import json
 import math
 import os
 import shlex
+import shutil
 import subprocess
 import sys
 import time
@@ -115,6 +116,7 @@ class RunContext:
     systems: tuple[str, ...]
     shard_index: int
     num_shards: int
+    artifact_retention: str
 
 
 def _parse_args() -> argparse.Namespace:
@@ -168,6 +170,13 @@ def _parse_args() -> argparse.Namespace:
         action=argparse.BooleanOptionalAction,
         default=False,
         help="Generate learning-curve plots after the run.",
+    )
+    parser.add_argument(
+        "--artifact-retention",
+        type=str,
+        choices=["full", "minimal"],
+        default="minimal",
+        help="Retention policy for per-run artifacts after successful execution.",
     )
     return parser.parse_args()
 
@@ -407,6 +416,55 @@ def _append_jsonl(path: Path, payload: dict[str, Any]) -> None:
         f.write(json.dumps(payload, sort_keys=True) + "\n")
 
 
+def _atomic_write_text(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f"{path.name}.tmp")
+    tmp.write_text(text, encoding="utf-8")
+    tmp.replace(path)
+
+
+_RETENTION_KEEP_FILENAMES = {"metrics.json", "stdout.log", "stderr.log"}
+_RETENTION_HEAVY_DIR_NAMES = {
+    "checkpoint",
+    "checkpoints",
+    "replay",
+    "replay_buffer",
+    "rollouts",
+    "tb",
+    "tensorboard",
+    "videos",
+}
+_RETENTION_HEAVY_FILE_SUFFIXES = (
+    ".pt",
+    ".pth",
+    ".ckpt",
+    ".npy",
+    ".npz",
+    ".h5",
+    ".hdf5",
+    ".pkl",
+    ".zst",
+)
+
+
+def _prune_system_artifacts(system_dir: Path) -> None:
+    if not system_dir.exists():
+        return
+    for path in sorted(system_dir.rglob("*"), reverse=True):
+        if not path.exists():
+            continue
+        if path.is_dir() and path.name.lower() in _RETENTION_HEAVY_DIR_NAMES:
+            shutil.rmtree(path, ignore_errors=True)
+            continue
+        if not path.is_file():
+            continue
+        if path.name in _RETENTION_KEEP_FILENAMES:
+            continue
+        name = path.name.lower()
+        if name.endswith(_RETENTION_HEAVY_FILE_SUFFIXES) or name.endswith((".tar", ".tar.gz")):
+            path.unlink(missing_ok=True)
+
+
 def _hash_file(path: Path) -> str:
     digest = hashlib.sha256()
     digest.update(path.read_bytes())
@@ -616,6 +674,8 @@ def _run_one(
                     "error": "",
                 }
                 _append_jsonl(run_jsonl, record)
+                if context.artifact_retention == "minimal":
+                    _prune_system_artifacts(system_dir)
                 return record
 
             last_error = (
@@ -895,6 +955,7 @@ def _write_run_context(
         "device": context.device,
         "dry_run": context.dry_run,
         "max_retries": context.max_retries,
+        "artifact_retention": context.artifact_retention,
         "task_filter": list(context.task_filter),
         "systems": list(context.systems),
         "shard_index": context.shard_index,
@@ -941,9 +1002,9 @@ def _write_run_context(
             "runs_jsonl": str(run_jsonl),
         },
     }
-    (context.run_root / "run_context.json").write_text(
+    _atomic_write_text(
+        context.run_root / "run_context.json",
         json.dumps(payload, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
     )
 
 
@@ -973,6 +1034,7 @@ def main() -> int:
         systems=_parse_systems(args.systems),
         shard_index=int(args.shard_index),
         num_shards=int(args.num_shards),
+        artifact_retention=str(args.artifact_retention),
     )
 
     run_jsonl = run_root / "parity_runs.jsonl"
@@ -1121,9 +1183,9 @@ def main() -> int:
         seed_plan["n_required"] = int(n_required)
         seed_plan["seed_values"] = sorted(seed_values)
 
-    (run_root / "seed_plan.json").write_text(
+    _atomic_write_text(
+        run_root / "seed_plan.json",
         json.dumps(seed_plan, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
     )
 
     entries = _load_jsonl(run_jsonl)
@@ -1147,6 +1209,7 @@ def main() -> int:
         "systems": list(context.systems),
         "shard_index": context.shard_index,
         "num_shards": context.num_shards,
+        "artifact_retention": context.artifact_retention,
         "artifacts": {
             "run_context": str(run_root / "run_context.json"),
             "seed_plan": str(run_root / "seed_plan.json"),
@@ -1154,9 +1217,9 @@ def main() -> int:
             "command_manifest": str(command_manifest),
         },
     }
-    (run_root / "run_summary.json").write_text(
+    _atomic_write_text(
+        run_root / "run_summary.json",
         json.dumps(summary, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
     )
 
     print(json.dumps(summary, indent=2, sort_keys=True))
