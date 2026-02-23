@@ -68,6 +68,10 @@ def test_build_remote_commands_includes_thread_and_cpu_gpu_pinning() -> None:
     assert "taskset -c 60-71" in joined  # gpu slot 5 in p4d_8gpu_12vcpu map
     assert "--systems worldflux" in joined
     assert "--seed-list 3" in joined
+    assert "--artifact-retention minimal" in joined
+    assert "required_root_kb=41943040" in joined
+    assert "required_data_kb=838860800" in joined
+    assert "set -eu" in joined
 
 
 def test_cpu_affinity_policy_rejects_non_p4d_gpu_workers() -> None:

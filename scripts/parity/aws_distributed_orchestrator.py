@@ -72,6 +72,37 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--poll-interval-sec", type=int, default=30)
     parser.add_argument("--sync-interval-sec", type=int, default=300)
     parser.add_argument(
+        "--min-free-gb-root",
+        type=float,
+        default=40.0,
+        help="Minimum required free space (GB) on root volume before/while running a shard.",
+    )
+    parser.add_argument(
+        "--min-free-gb-data",
+        type=float,
+        default=800.0,
+        help="Minimum required free space (GB) on workspace/data volume before/while running a shard.",
+    )
+    parser.add_argument(
+        "--disk-check-interval-sec",
+        type=int,
+        default=60,
+        help="Interval (seconds) for runtime disk pressure checks while a shard is executing.",
+    )
+    parser.add_argument(
+        "--fail-fast-on-disk-pressure",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Terminate the running shard immediately when disk free space drops below thresholds.",
+    )
+    parser.add_argument(
+        "--artifact-retention",
+        type=str,
+        choices=["full", "minimal"],
+        default="minimal",
+        help="Retention policy forwarded to run_parity_matrix.py.",
+    )
+    parser.add_argument(
         "--resume-from-s3",
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -199,6 +230,13 @@ def _parse_args() -> argparse.Namespace:
 
 def _run_cli(command: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(command, check=False, text=True, capture_output=True)
+
+
+def _atomic_write_text(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f"{path.name}.tmp")
+    tmp.write_text(text, encoding="utf-8")
+    tmp.replace(path)
 
 
 def _load_manifest(path: Path) -> dict[str, Any]:
@@ -825,7 +863,9 @@ def _progress_update_code() -> str:
                 "running=max(0,started-success-failed)",
                 "payload={'schema_version':'parity.v1','generated_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'expected':expected,'started':started,'success':success,'failed':failed,'running':running}",
                 "root.mkdir(parents=True,exist_ok=True)",
-                "(root/'phase_progress.json').write_text(json.dumps(payload,indent=2,sort_keys=True)+'\\n',encoding='utf-8')",
+                "tmp=root/'phase_progress.json.tmp'",
+                "tmp.write_text(json.dumps(payload,indent=2,sort_keys=True)+'\\n',encoding='utf-8')",
+                "os.replace(tmp,root/'phase_progress.json')",
             ]
         )
         + "\n"
@@ -839,8 +879,46 @@ def _write_progress_helper_command() -> str:
 
 
 def _progress_update_command() -> str:
-    """Shell command that runs the progress-update helper."""
+    """Shell command that runs the progress helper."""
     return f"python3 {_PROGRESS_HELPER_PATH}"
+
+
+def _disk_guard_check_command(
+    *,
+    root_path: str,
+    data_path: str,
+    min_free_gb_root: float,
+    min_free_gb_data: float,
+) -> str:
+    root_req_kb = int(max(0.0, float(min_free_gb_root)) * 1024.0 * 1024.0)
+    data_req_kb = int(max(0.0, float(min_free_gb_data)) * 1024.0 * 1024.0)
+    root_quoted = shlex.quote(root_path)
+    data_quoted = shlex.quote(data_path)
+    return (
+        f"ROOT_FREE=$(df -Pk {root_quoted} 2>/dev/null | awk 'NR==2{{print $4}}'); "
+        f"DATA_FREE=$(df -Pk {data_quoted} 2>/dev/null | awk 'NR==2{{print $4}}'); "
+        "ROOT_FREE=${ROOT_FREE:-0}; DATA_FREE=${DATA_FREE:-0}; "
+        f'if [ "$ROOT_FREE" -lt {root_req_kb} ] || [ "$DATA_FREE" -lt {data_req_kb} ]; then '
+        f'echo "[disk-guard] required_root_kb={root_req_kb} free_root_kb=$ROOT_FREE required_data_kb={data_req_kb} free_data_kb=$DATA_FREE" >&2; '
+        'if [ "${WF_DISK_GUARD_FAIL_FAST}" = "1" ]; then false; fi; '
+        "fi"
+    )
+
+
+def _guarded_s3_cp_command(
+    *, source_path: str, destination_path: str, require_non_empty: bool
+) -> str:
+    source = shlex.quote(source_path)
+    destination = shlex.quote(destination_path)
+    if require_non_empty:
+        return (
+            f"if [ -s {source} ]; then "
+            f"aws s3 cp {source} {destination} || true; "
+            "else "
+            f"echo '[artifact-guard] skip empty artifact {source_path}' >&2; "
+            "fi"
+        )
+    return f"aws s3 cp {source} {destination} || true"
 
 
 def _build_remote_commands(
@@ -861,6 +939,11 @@ def _build_remote_commands(
     thread_limit_profile: str,
     cpu_affinity_policy: str,
     skip_bootstrap: bool,
+    min_free_gb_root: float = 40.0,
+    min_free_gb_data: float = 800.0,
+    disk_check_interval_sec: int = 60,
+    fail_fast_on_disk_pressure: bool = True,
+    artifact_retention: str = "minimal",
 ) -> list[str]:
     instance_root = f"{workspace_root.rstrip('/')}/{run_id}/{shard.instance_id}"
     bootstrap_instance_root = f"{bootstrap_root.rstrip('/')}/{shard.instance_id}"
@@ -869,6 +952,12 @@ def _build_remote_commands(
     sync_cmd = _sync_command(remote_run_root, shard_prefix)
     write_progress_cmd = _write_progress_helper_command()
     progress_cmd = _progress_update_command()
+    disk_check_cmd = _disk_guard_check_command(
+        root_path="/",
+        data_path=instance_root,
+        min_free_gb_root=float(min_free_gb_root),
+        min_free_gb_data=float(min_free_gb_data),
+    )
 
     task_filter = ",".join(shard.task_ids)
     systems_csv = ",".join(shard.systems)
@@ -888,6 +977,7 @@ def _build_remote_commands(
         f"--max-retries {int(max_retries)}",
         f"--task-filter {shlex.quote(task_filter)}",
         f"--systems {shlex.quote(systems_csv)}",
+        f"--artifact-retention {shlex.quote(str(artifact_retention))}",
         "--resume",
     ]
     if seeds_csv:
@@ -951,9 +1041,13 @@ def _build_remote_commands(
         [
             "export PYTHONUNBUFFERED=1",
             f"mkdir -p {shlex.quote(remote_run_root)}",
+            f"REMOTE_RUN_ROOT={shlex.quote(remote_run_root)}",
+            f"SHARD_PREFIX={shlex.quote(shard_prefix)}",
             f"export WF_PROGRESS_EXPECTED={int(expected_pairs)}",
             f"export WF_PROGRESS_RUN_ROOT={shlex.quote(remote_run_root)}",
+            f"export WF_DISK_GUARD_FAIL_FAST={'1' if fail_fast_on_disk_pressure else '0'}",
             write_progress_cmd,
+            disk_check_cmd,
             progress_cmd,
         ]
     )
@@ -961,11 +1055,9 @@ def _build_remote_commands(
     if resume_from_s3:
         commands.extend(
             [
-                f"aws s3 cp {shlex.quote(shard_prefix + '/parity_runs.jsonl')} {shlex.quote(remote_run_root + '/parity_runs.jsonl')} || true",
-                f"aws s3 cp {shlex.quote(shard_prefix + '/seed_plan.json')} {shlex.quote(remote_run_root + '/seed_plan.json')} || true",
-                f"aws s3 cp {shlex.quote(shard_prefix + '/run_context.json')} {shlex.quote(remote_run_root + '/run_context.json')} || true",
-                f"aws s3 cp {shlex.quote(shard_prefix + '/run_summary.json')} {shlex.quote(remote_run_root + '/run_summary.json')} || true",
-                f"aws s3 cp {shlex.quote(shard_prefix + '/phase_progress.json')} {shlex.quote(remote_run_root + '/phase_progress.json')} || true",
+                "for _wf_file in parity_runs.jsonl seed_plan.json run_context.json run_summary.json phase_progress.json; do "
+                'aws s3 cp "$SHARD_PREFIX/${_wf_file}" "$REMOTE_RUN_ROOT/${_wf_file}" || true; '
+                "done",
             ]
         )
 
@@ -980,6 +1072,21 @@ def _build_remote_commands(
         [
             f"{runner_cmd} > {shlex.quote(remote_run_root + '/runner.stdout.log')} 2> {shlex.quote(remote_run_root + '/runner.stderr.log')} &",
             "RUNNER_PID=$!",
+            f"DISK_GUARD_MARKER={shlex.quote(remote_run_root + '/disk_guard_failed.marker')}",
+            'rm -f "$DISK_GUARD_MARKER"',
+            (
+                f'(while kill -0 "$RUNNER_PID" 2>/dev/null; do '
+                f"if ! ( {disk_check_cmd} ) >/dev/null 2>&1; then "
+                'echo disk_pressure > "$DISK_GUARD_MARKER"; '
+                'if [ "${WF_DISK_GUARD_FAIL_FAST}" = "1" ]; then '
+                'kill "$RUNNER_PID" >/dev/null 2>&1 || true; '
+                "break; "
+                "fi; "
+                "fi; "
+                f"sleep {max(5, int(disk_check_interval_sec))}; "
+                "done) &"
+            ),
+            "DISK_PID=$!",
             (
                 f'(while kill -0 "$RUNNER_PID" 2>/dev/null; do {progress_cmd} >/dev/null 2>&1 || true; {sync_cmd} >/dev/null 2>&1 || true; '
                 f"sleep {max(10, int(sync_interval_sec))}; done) &"
@@ -987,8 +1094,10 @@ def _build_remote_commands(
             "SYNC_PID=$!",
             'if wait "$RUNNER_PID"; then RUNNER_RC=0; else RUNNER_RC=$?; fi',
             'kill "$SYNC_PID" >/dev/null 2>&1 || true',
+            'kill "$DISK_PID" >/dev/null 2>&1 || true',
             f"{progress_cmd} >/dev/null 2>&1 || true",
             f"{sync_cmd} >/dev/null 2>&1 || true",
+            'if [ -f "$DISK_GUARD_MARKER" ] && [ "${WF_DISK_GUARD_FAIL_FAST}" = "1" ]; then RUNNER_RC=98; fi',
             (
                 "if ! python3 scripts/parity/validate_matrix_completeness.py "
                 f"--manifest {shlex.quote(manifest_rel)} "
@@ -1000,15 +1109,14 @@ def _build_remote_commands(
                 "--max-missing-pairs 0; then "
                 "COVERAGE_RC=1; else COVERAGE_RC=0; fi"
             ),
-            f"aws s3 cp {shlex.quote(remote_run_root + '/parity_runs.jsonl')} {shlex.quote(shard_prefix + '/parity_runs.jsonl')} || true",
-            f"aws s3 cp {shlex.quote(remote_run_root + '/seed_plan.json')} {shlex.quote(shard_prefix + '/seed_plan.json')} || true",
-            f"aws s3 cp {shlex.quote(remote_run_root + '/run_context.json')} {shlex.quote(shard_prefix + '/run_context.json')} || true",
-            f"aws s3 cp {shlex.quote(remote_run_root + '/run_summary.json')} {shlex.quote(shard_prefix + '/run_summary.json')} || true",
-            f"aws s3 cp {shlex.quote(remote_run_root + '/coverage_report.json')} {shlex.quote(shard_prefix + '/coverage_report.json')} || true",
-            f"aws s3 cp {shlex.quote(remote_run_root + '/phase_progress.json')} {shlex.quote(shard_prefix + '/phase_progress.json')} || true",
-            f"aws s3 cp {shlex.quote(remote_run_root + '/command_manifest.txt')} {shlex.quote(shard_prefix + '/command_manifest.txt')} || true",
-            f"aws s3 cp {shlex.quote(remote_run_root + '/runner.stdout.log')} {shlex.quote(shard_prefix + '/runner.stdout.log')} || true",
-            f"aws s3 cp {shlex.quote(remote_run_root + '/runner.stderr.log')} {shlex.quote(shard_prefix + '/runner.stderr.log')} || true",
+            "for _wf_json in parity_runs.jsonl seed_plan.json run_context.json run_summary.json coverage_report.json phase_progress.json; do "
+            'if [ -s "$REMOTE_RUN_ROOT/${_wf_json}" ]; then '
+            'aws s3 cp "$REMOTE_RUN_ROOT/${_wf_json}" "$SHARD_PREFIX/${_wf_json}" || true; '
+            "fi; "
+            "done",
+            "for _wf_log in command_manifest.txt runner.stdout.log runner.stderr.log; do "
+            'aws s3 cp "$REMOTE_RUN_ROOT/${_wf_log}" "$SHARD_PREFIX/${_wf_log}" || true; '
+            "done",
             '[ "$RUNNER_RC" -eq 0 ] || exit "$RUNNER_RC"',
             '[ "$COVERAGE_RC" -eq 0 ] || exit 1',
         ]
@@ -1130,6 +1238,11 @@ def _submit_shard(
         thread_limit_profile=args.thread_limit_profile,
         cpu_affinity_policy=args.cpu_affinity_policy,
         skip_bootstrap=bool(args.skip_bootstrap),
+        min_free_gb_root=float(args.min_free_gb_root),
+        min_free_gb_data=float(args.min_free_gb_data),
+        disk_check_interval_sec=int(args.disk_check_interval_sec),
+        fail_fast_on_disk_pressure=bool(args.fail_fast_on_disk_pressure),
+        artifact_retention=str(args.artifact_retention),
     )
     command_id = _send_command(
         region=args.region,
@@ -1416,6 +1529,14 @@ def _build_rerun_command(
         str(int(args.poll_interval_sec)),
         "--sync-interval-sec",
         str(int(args.sync_interval_sec)),
+        "--min-free-gb-root",
+        str(float(args.min_free_gb_root)),
+        "--min-free-gb-data",
+        str(float(args.min_free_gb_data)),
+        "--disk-check-interval-sec",
+        str(int(args.disk_check_interval_sec)),
+        "--artifact-retention",
+        str(args.artifact_retention),
         "--sharding-mode",
         str(args.sharding_mode),
         "--seed-shard-unit",
@@ -1442,6 +1563,10 @@ def _build_rerun_command(
         str(args.output_dir),
         "--resume-from-s3",
     ]
+    if bool(args.fail_fast_on_disk_pressure):
+        cmd.append("--fail-fast-on-disk-pressure")
+    else:
+        cmd.append("--no-fail-fast-on-disk-pressure")
     if bool(args.skip_bootstrap):
         cmd.append("--skip-bootstrap")
 
@@ -1487,6 +1612,8 @@ def _build_rerun_command(
 
 def _upload_artifact(*, region: str, artifact: Path, final_prefix: str) -> None:
     if not artifact.exists():
+        return
+    if artifact.suffix.lower() in {".json", ".jsonl"} and artifact.stat().st_size <= 0:
         return
     cli = [
         "aws",
@@ -1884,8 +2011,9 @@ def _execute_phase(
             },
         }
         summary_path = local_root / "orchestrator_summary.json"
-        summary_path.write_text(
-            json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        _atomic_write_text(
+            summary_path,
+            json.dumps(summary, indent=2, sort_keys=True) + "\n",
         )
         print(json.dumps(summary, indent=2, sort_keys=True))
         return PhaseResult(
@@ -1909,9 +2037,9 @@ def _execute_phase(
                 shard_jsonl_paths.append(path)
     phase_progress = local_root / "phase_progress.json"
     phase_progress_payload = _aggregate_phase_progress(shards_root)
-    phase_progress.write_text(
+    _atomic_write_text(
+        phase_progress,
         json.dumps(phase_progress_payload, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
     )
 
     merged_runs = local_root / "parity_runs.jsonl"
@@ -2100,7 +2228,7 @@ def _execute_phase(
     }
 
     summary_path = local_root / "orchestrator_summary.json"
-    summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    _atomic_write_text(summary_path, json.dumps(summary, indent=2, sort_keys=True) + "\n")
     print(json.dumps(summary, indent=2, sort_keys=True))
 
     rc = 0
@@ -2276,9 +2404,9 @@ def _run_two_stage_proof(args: argparse.Namespace) -> int:
         }
         if pilot_phase.return_code != 0:
             summary_path = root_dir / "two_stage_summary.json"
-            summary_path.write_text(
+            _atomic_write_text(
+                summary_path,
                 json.dumps(two_stage_summary, indent=2, sort_keys=True) + "\n",
-                encoding="utf-8",
             )
             return 1
 
@@ -2329,9 +2457,9 @@ def _run_two_stage_proof(args: argparse.Namespace) -> int:
         }
         if full_phase.return_code != 0:
             summary_path = root_dir / "two_stage_summary.json"
-            summary_path.write_text(
+            _atomic_write_text(
+                summary_path,
                 json.dumps(two_stage_summary, indent=2, sort_keys=True) + "\n",
-                encoding="utf-8",
             )
             return 1
 
@@ -2369,9 +2497,9 @@ def _run_two_stage_proof(args: argparse.Namespace) -> int:
             suite_rc = int(suite_phase.return_code)
 
         summary_path = root_dir / "two_stage_summary.json"
-        summary_path.write_text(
+        _atomic_write_text(
+            summary_path,
             json.dumps(two_stage_summary, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
         )
 
         if args.phase_gate == "strict_pass" and not gate_pass:
