@@ -1,13 +1,15 @@
-"""Typer-based CLI for WorldFlux project scaffolding."""
+"""Typer-based CLI for WorldFlux project scaffolding and training."""
 
 from __future__ import annotations
 
 import glob
+import hashlib
 import importlib.util
 import json
 import shutil
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +27,7 @@ except ModuleNotFoundError as exc:  # pragma: no cover - optional dependency gua
 import torch
 
 from worldflux.bootstrap_env import ensure_init_dependencies
+from worldflux.config_loader import load_config
 from worldflux.parity import (
     CampaignRunOptions,
     aggregate_runs,
@@ -830,12 +833,11 @@ def init(
 
     resolved_target = target_path.resolve()
     console.print(f"\n[bold green]Project created:[/bold green] {resolved_target}")
-    launcher = str(context.get("preferred_python_launcher") or _resolve_python_launcher())
     next_steps = "\n".join(
         [
             f"1. cd {resolved_target}",
-            f"2. {launcher} train.py   # start training",
-            f"3. {launcher} inference.py   # run inference",
+            "2. worldflux train             # start training",
+            "3. worldflux verify --target ./outputs  # verify your model",
             "4. Edit worldflux.toml to tune settings for your environment",
         ]
     )
@@ -846,6 +848,325 @@ def init(
             border_style="green",
         )
     )
+
+
+@app.command()
+def train(
+    config: Path = typer.Option(
+        Path("worldflux.toml"),
+        "--config",
+        "-c",
+        help="Path to worldflux.toml configuration file.",
+    ),
+    steps: int | None = typer.Option(
+        None,
+        "--steps",
+        help="Override total training steps from config.",
+    ),
+    device: str | None = typer.Option(
+        None,
+        "--device",
+        help="Override device from config (cpu, cuda, auto).",
+    ),
+    output_dir: str | None = typer.Option(
+        None,
+        "--output-dir",
+        help="Override output directory from config.",
+    ),
+    resume_from: str | None = typer.Option(
+        None,
+        "--resume-from",
+        help="Path to checkpoint to resume training from.",
+    ),
+    cloud: bool = typer.Option(
+        False,
+        "--cloud",
+        help="Submit a cloud training job instead of running local training.",
+    ),
+    gpu: str | None = typer.Option(
+        None,
+        "--gpu",
+        help="Cloud GPU override (for example: a10g, a100, h100).",
+    ),
+) -> None:
+    """Train a world model using worldflux.toml configuration."""
+    from worldflux import create_world_model
+    from worldflux.training import Trainer, TrainingConfig
+    from worldflux.training.data import create_random_buffer
+
+    try:
+        cfg = load_config(config)
+    except (FileNotFoundError, ValueError) as exc:
+        console.print(f"[bold red]Configuration error:[/bold red] {exc}")
+        raise typer.Exit(code=1) from None
+
+    # Apply CLI overrides
+    effective_steps = steps if steps is not None else cfg.training.total_steps
+    effective_device = device if device is not None else cfg.training.device
+    effective_output_dir = output_dir if output_dir is not None else cfg.training.output_dir
+
+    if cloud:
+        from worldflux.cloud import ModalBackend, WorldFluxCloudClient
+
+        client = WorldFluxCloudClient.from_env()
+        if not client.api_key:
+            console.print(
+                "[bold red]Cloud auth missing:[/bold red] run `worldflux login --api-key <key>` "
+                "or set WORLDFLUX_CLOUD_API_KEY."
+            )
+            raise typer.Exit(code=1)
+
+        cloud_gpu = gpu if gpu is not None else cfg.cloud.gpu_type
+        cloud_region = cfg.cloud.region
+        payload = {
+            "project_name": cfg.project_name,
+            "model": cfg.model,
+            "architecture": {
+                "obs_shape": list(cfg.architecture.obs_shape),
+                "action_dim": cfg.architecture.action_dim,
+                "hidden_dim": cfg.architecture.hidden_dim,
+            },
+            "training": {
+                "total_steps": effective_steps,
+                "batch_size": cfg.training.batch_size,
+                "sequence_length": cfg.training.sequence_length,
+                "learning_rate": cfg.training.learning_rate,
+                "output_dir": effective_output_dir,
+            },
+            "cloud": {
+                "gpu_type": cloud_gpu,
+                "spot": cfg.cloud.spot,
+                "region": cloud_region,
+                "timeout_hours": cfg.cloud.timeout_hours,
+            },
+            "flywheel": {
+                "opt_in": cfg.flywheel.opt_in,
+                "privacy_epsilon": cfg.flywheel.privacy_epsilon,
+                "privacy_delta": cfg.flywheel.privacy_delta,
+            },
+        }
+        backend = ModalBackend(client)
+        try:
+            handle = backend.submit(payload)
+        except RuntimeError as exc:
+            console.print(f"[bold red]Cloud submission failed:[/bold red] {exc}")
+            raise typer.Exit(code=1) from None
+
+        console.print(
+            Panel.fit(
+                "\n".join(
+                    [
+                        f"[bold]Backend:[/bold] {handle.backend}",
+                        f"[bold]Job ID:[/bold] {handle.job_id}",
+                        f"[bold]GPU:[/bold] {cloud_gpu}",
+                        f"[bold]Region:[/bold] {cloud_region}",
+                        "",
+                        "Next:",
+                        f"  worldflux logs {handle.job_id}",
+                        f"  worldflux pull {handle.job_id}",
+                    ]
+                ),
+                title="Cloud Training Submitted",
+                border_style="green",
+            )
+        )
+        return
+
+    # Resolve auto device
+    if effective_device == "auto":
+        effective_device = "cuda" if torch.cuda.is_available() else "cpu"
+    if effective_device == "cuda" and not torch.cuda.is_available():
+        console.print("[yellow]CUDA is not available. Falling back to CPU.[/yellow]")
+        effective_device = "cpu"
+
+    console.print(
+        Panel.fit(
+            "\n".join(
+                [
+                    f"[bold]Project:[/bold] {cfg.project_name}",
+                    f"[bold]Model:[/bold] {cfg.model}",
+                    f"[bold]Obs shape:[/bold] {cfg.architecture.obs_shape}",
+                    f"[bold]Action dim:[/bold] {cfg.architecture.action_dim}",
+                    f"[bold]Steps:[/bold] {effective_steps:,}",
+                    f"[bold]Batch size:[/bold] {cfg.training.batch_size}",
+                    f"[bold]Device:[/bold] {effective_device}",
+                    f"[bold]Output:[/bold] {effective_output_dir}",
+                ]
+            ),
+            title="WorldFlux Train",
+            border_style="cyan",
+        )
+    )
+
+    try:
+        model = create_world_model(
+            model=cfg.model,
+            obs_shape=cfg.architecture.obs_shape,
+            action_dim=cfg.architecture.action_dim,
+            hidden_dim=cfg.architecture.hidden_dim,
+            device=effective_device,
+        )
+    except (ValueError, RuntimeError) as exc:
+        console.print(f"[bold red]Model creation failed:[/bold red] {exc}")
+        raise typer.Exit(code=1) from None
+
+    training_config = TrainingConfig(
+        total_steps=effective_steps,
+        batch_size=cfg.training.batch_size,
+        sequence_length=cfg.training.sequence_length,
+        learning_rate=cfg.training.learning_rate,
+        device=effective_device,
+        output_dir=effective_output_dir,
+    )
+
+    # Create data source
+    console.print("[cyan]Preparing training data...[/cyan]")
+    data = create_random_buffer(
+        obs_shape=cfg.architecture.obs_shape,
+        action_dim=cfg.architecture.action_dim,
+    )
+    console.print(f"[green]Training data ready:[/green] {len(data)} transitions")
+
+    trainer = Trainer(model, training_config)
+    console.print(f"[cyan]Starting training for {effective_steps:,} steps...[/cyan]")
+
+    try:
+        trainer.train(data, resume_from=resume_from)
+    except (RuntimeError, KeyboardInterrupt) as exc:
+        if isinstance(exc, KeyboardInterrupt):
+            console.print("\n[yellow]Training interrupted by user.[/yellow]")
+        else:
+            console.print(f"[bold red]Training failed:[/bold red] {exc}")
+            raise typer.Exit(code=1) from None
+
+    profile = trainer.runtime_profile()
+    elapsed = profile.get("elapsed_sec")
+    throughput = profile.get("throughput_steps_per_sec")
+    final_step = trainer.state.global_step
+
+    summary_lines = [
+        f"[bold]Final step:[/bold] {final_step:,}",
+        f"[bold]Output:[/bold] {Path(effective_output_dir).resolve()}",
+    ]
+    if elapsed is not None:
+        summary_lines.append(f"[bold]Elapsed:[/bold] {elapsed:.1f}s")
+    if throughput is not None:
+        summary_lines.append(f"[bold]Throughput:[/bold] {throughput:.1f} steps/s")
+    summary_lines.append("")
+    summary_lines.append("Next: worldflux verify --target " + effective_output_dir)
+
+    console.print(
+        Panel.fit(
+            "\n".join(summary_lines),
+            title="Training Complete",
+            border_style="green",
+        )
+    )
+
+
+@app.command()
+def login(
+    api_key: str = typer.Option(
+        ...,
+        "--api-key",
+        help="WorldFlux Cloud API key.",
+        prompt=True,
+        hide_input=True,
+    ),
+) -> None:
+    """Store WorldFlux Cloud API credentials for CLI usage."""
+    from worldflux.cloud import WorldFluxCloudClient
+
+    client = WorldFluxCloudClient.from_env()
+    try:
+        client.login(api_key=api_key)
+    except RuntimeError as exc:
+        console.print(f"[bold red]Login failed:[/bold red] {exc}")
+        raise typer.Exit(code=1) from None
+    console.print("[green]Cloud credentials saved.[/green]")
+
+
+@app.command()
+def jobs() -> None:
+    """List cloud training jobs."""
+    from worldflux.cloud import WorldFluxCloudClient
+
+    client = WorldFluxCloudClient.from_env()
+    if not client.api_key:
+        console.print(
+            "[bold red]Cloud auth missing:[/bold red] run `worldflux login --api-key <key>`."
+        )
+        raise typer.Exit(code=1)
+
+    try:
+        job_rows = client.list_jobs()
+    except RuntimeError as exc:
+        console.print(f"[bold red]Failed to list jobs:[/bold red] {exc}")
+        raise typer.Exit(code=1) from None
+
+    if not job_rows:
+        console.print("[yellow]No cloud jobs found.[/yellow]")
+        return
+
+    lines = []
+    for row in job_rows:
+        lines.append(
+            f"{row.get('job_id', '-')}: status={row.get('status', '-')}, "
+            f"model={row.get('model', '-')}, gpu={row.get('gpu_type', '-')}"
+        )
+    console.print(Panel.fit("\n".join(lines), title="Cloud Jobs", border_style="cyan"))
+
+
+@app.command()
+def logs(
+    job_id: str = typer.Argument(..., help="Cloud job ID."),
+    limit: int = typer.Option(200, "--limit", help="Maximum log lines to fetch."),
+) -> None:
+    """Show cloud job logs."""
+    from worldflux.cloud import WorldFluxCloudClient
+
+    client = WorldFluxCloudClient.from_env()
+    if not client.api_key:
+        console.print(
+            "[bold red]Cloud auth missing:[/bold red] run `worldflux login --api-key <key>`."
+        )
+        raise typer.Exit(code=1)
+
+    try:
+        lines = client.get_job_logs(job_id, limit=limit)
+    except RuntimeError as exc:
+        console.print(f"[bold red]Failed to fetch logs:[/bold red] {exc}")
+        raise typer.Exit(code=1) from None
+
+    if not lines:
+        console.print("[yellow]No logs available for this job.[/yellow]")
+        return
+    for line in lines:
+        console.print(line)
+
+
+@app.command()
+def pull(
+    job_id: str = typer.Argument(..., help="Cloud job ID."),
+    output_dir: Path = typer.Option(Path("./outputs/cloud"), "--output-dir", "-o"),
+) -> None:
+    """Pull cloud artifact manifest for a job."""
+    from worldflux.cloud import WorldFluxCloudClient
+
+    client = WorldFluxCloudClient.from_env()
+    if not client.api_key:
+        console.print(
+            "[bold red]Cloud auth missing:[/bold red] run `worldflux login --api-key <key>`."
+        )
+        raise typer.Exit(code=1)
+    try:
+        payload = client.pull_job_artifacts(job_id, output_dir=output_dir)
+    except RuntimeError as exc:
+        console.print(f"[bold red]Failed to pull artifacts:[/bold red] {exc}")
+        raise typer.Exit(code=1) from None
+
+    manifest = payload.get("manifest", "-")
+    console.print(f"[green]Saved artifact manifest:[/green] {manifest}")
 
 
 def _resolve_parity_script_path(script_name: str) -> Path:
@@ -1519,15 +1840,71 @@ def verify(
     env: str = typer.Option("atari/pong", "--env", help="Target simulation environment."),
     demo: bool = typer.Option(False, "--demo", help="Mock mode for demonstrations and VC pitches."),
     device: str = typer.Option("cpu", "--device", help="Execution device."),
+    mode: str = typer.Option(
+        "auto",
+        "--mode",
+        help="Verification mode: auto, quick, proof, or cloud.",
+    ),
+    format: str = typer.Option(
+        "rich", "--format", help="Output format: rich (default), json, or badge."
+    ),
+    output: Path | None = typer.Option(
+        None, "--output", "-o", help="Output file path for json/badge format."
+    ),
+    episodes: int = typer.Option(
+        10, "--episodes", help="Number of evaluation episodes (quick mode)."
+    ),
+    evidence_bundle: Path | None = typer.Option(
+        None,
+        "--evidence-bundle",
+        help="Output directory for verification evidence bundle (manifest + artifacts).",
+    ),
 ) -> None:
     """Verify your model against an official baseline."""
     from rich.status import Status
 
+    # Determine verification mode
+    effective_mode = mode.strip().lower()
+    if effective_mode == "auto":
+        # Use quick mode when scripts/parity is not available (pip install users)
+        scripts_root = Path(__file__).resolve().parents[2] / "scripts" / "parity"
+        effective_mode = "proof" if scripts_root.exists() else "quick"
+
+    if effective_mode == "quick":
+        _run_quick_verify(
+            target=target,
+            env=env,
+            device=device,
+            episodes=episodes,
+            format=format,
+            output=output,
+            evidence_bundle=evidence_bundle,
+        )
+        return
+    if effective_mode == "cloud":
+        _run_cloud_verify(
+            target=target,
+            baseline=baseline,
+            env=env,
+            device=device,
+            format=format,
+            output=output,
+            evidence_bundle=evidence_bundle,
+        )
+        return
+    if effective_mode != "proof":
+        console.print(
+            f"[bold red]Unsupported verify mode:[/bold red] {effective_mode}. "
+            "Use one of: auto, quick, proof, cloud."
+        )
+        raise typer.Exit(code=1)
+
+    # Proof mode (original behavior)
     console.print(
         Panel.fit(
             "\n".join(
                 [
-                    f"Mode: {'demo (synthetic)' if demo else 'real'}",
+                    f"Mode: {'demo (synthetic)' if demo else 'proof'}",
                     f"Target: {target}",
                     f"Baseline: {baseline}",
                     f"Env: {env}",
@@ -1552,9 +1929,19 @@ def verify(
                 demo=demo,
                 device=device,
             )
-        except NotImplementedError as exc:
+        except (NotImplementedError, RuntimeError, OSError, ValueError) as exc:
             console.print(f"[bold red]Verification unavailable:[/bold red] {exc}")
             raise typer.Exit(code=1) from None
+
+    if format == "json":
+        _emit_verify_json(result, output)
+        if evidence_bundle is not None:
+            _write_proof_evidence_bundle(
+                output_dir=evidence_bundle,
+                result=result,
+                mode="proof" if not demo else "demo",
+            )
+        return
 
     stats = result.stats
     if result.passed:
@@ -1581,6 +1968,328 @@ def verify(
     )
     if result.demo:
         console.print("[dim]Results are synthetic (--demo mode)[/dim]")
+    if evidence_bundle is not None:
+        _write_proof_evidence_bundle(
+            output_dir=evidence_bundle,
+            result=result,
+            mode="proof" if not demo else "demo",
+        )
+    if not result.passed:
+        raise typer.Exit(code=1)
+
+
+def _run_quick_verify(
+    *,
+    target: str,
+    env: str,
+    device: str,
+    episodes: int,
+    format: str,
+    output: Path | None,
+    evidence_bundle: Path | None,
+) -> None:
+    """Execute quick verify mode for pip-install users."""
+    from rich.status import Status
+
+    from worldflux.verify.quick import quick_verify
+
+    console.print(
+        Panel.fit(
+            "\n".join(
+                [
+                    "Mode: quick (lightweight evaluation)",
+                    f"Target: {target}",
+                    f"Env: {env}",
+                    f"Episodes: {episodes}",
+                    f"Device: {device}",
+                ]
+            ),
+            title="Verify - Quick Mode",
+            border_style="cyan",
+        )
+    )
+
+    with Status(
+        "[bold cyan]Running quick verification...[/bold cyan]",
+        console=console,
+        spinner="dots",
+    ):
+        try:
+            qr = quick_verify(
+                target=target,
+                env=env,
+                episodes=episodes,
+                device=device,
+            )
+        except (FileNotFoundError, ValueError, RuntimeError, OSError) as exc:
+            console.print(f"[bold red]Quick verification failed:[/bold red] {exc}")
+            raise typer.Exit(code=1) from None
+
+    if format == "json":
+        payload = qr.to_dict()
+        json_str = json.dumps(payload, indent=2)
+        if output is not None:
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text(json_str + "\n", encoding="utf-8")
+            console.print(f"[green]Results written to:[/green] {output.resolve()}")
+        else:
+            console.print(json_str)
+        if evidence_bundle is not None:
+            _write_quick_evidence_bundle(output_dir=evidence_bundle, payload=payload)
+        if not qr.passed:
+            raise typer.Exit(code=1)
+        return
+
+    if format == "badge":
+        family = env.split("/")[0] if "/" in env else env
+        save_badge(
+            path=output or Path("verify-badge.svg"),
+            family=family,
+            passed=qr.passed,
+            confidence=0.95,
+            margin=qr.stats.get("margin_ratio", 0.15),
+        )
+        badge_path = (output or Path("verify-badge.svg")).resolve()
+        console.print(f"[green]Badge written to:[/green] {badge_path}")
+        if evidence_bundle is not None:
+            _write_quick_evidence_bundle(output_dir=evidence_bundle, payload=qr.to_dict())
+        if not qr.passed:
+            raise typer.Exit(code=1)
+        return
+
+    # Rich panel output (default)
+    if qr.passed:
+        title = "\u2705 PASS: Model Meets Baseline"
+        border = "green"
+    else:
+        title = "\u274c FAIL: Below Baseline Threshold"
+        border = "red"
+
+    stats = qr.stats
+    lines = [
+        f"Mean score: [bold]{qr.mean_score:.4f}[/bold]",
+        f"Baseline mean: [bold]{qr.baseline_mean:.4f}[/bold]",
+        f"Episodes: {qr.episodes}",
+        f"Mean drop ratio: {stats.get('mean_drop_ratio', '-')}",
+        f"CI upper: {stats.get('ci_upper_ratio', '-')}",
+        f"Margin: {stats.get('margin_ratio', '-')}",
+        f"Protocol: v{qr.protocol_version}",
+        f"Elapsed: {qr.elapsed_seconds:.3f}s",
+    ]
+    console.print(
+        Panel.fit(
+            "\n".join(lines),
+            title=title,
+            border_style=border,
+        )
+    )
+    if evidence_bundle is not None:
+        _write_quick_evidence_bundle(output_dir=evidence_bundle, payload=qr.to_dict())
+    if not qr.passed:
+        raise typer.Exit(code=1)
+
+
+def _hash_file(path: Path) -> str:
+    hasher = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+
+def _write_evidence_manifest(
+    *,
+    output_dir: Path,
+    mode: str,
+    request_payload: dict[str, Any],
+    result_payload: dict[str, Any],
+    local_artifacts: list[Path],
+) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    artifacts_dir = output_dir / "artifacts"
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+
+    copied: list[dict[str, Any]] = []
+    for src in local_artifacts:
+        if not src.exists():
+            continue
+        dest = artifacts_dir / src.name
+        shutil.copy2(src, dest)
+        copied.append(
+            {
+                "source": str(src.resolve()),
+                "path": str(dest.resolve()),
+                "sha256": _hash_file(dest),
+                "bytes": dest.stat().st_size,
+            }
+        )
+
+    manifest = {
+        "schema_version": "worldflux.verify.evidence.v1",
+        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "mode": mode,
+        "request": request_payload,
+        "result": result_payload,
+        "artifacts": copied,
+    }
+    manifest_path = output_dir / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    console.print(f"[green]Evidence bundle written:[/green] {manifest_path.resolve()}")
+
+
+def _write_quick_evidence_bundle(*, output_dir: Path, payload: dict[str, Any]) -> None:
+    local_payload = output_dir / "quick_result.json"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    local_payload.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    _write_evidence_manifest(
+        output_dir=output_dir,
+        mode="quick",
+        request_payload={
+            "target": payload.get("target"),
+            "env": payload.get("env"),
+            "episodes": payload.get("episodes"),
+        },
+        result_payload=payload,
+        local_artifacts=[local_payload],
+    )
+
+
+def _write_proof_evidence_bundle(*, output_dir: Path, result: VerifyResult, mode: str) -> None:
+    stats = result.stats
+    report_paths: list[Path] = []
+    for key in ("runs_jsonl", "equivalence_report_json", "equivalence_report_md"):
+        raw_value = str(stats.get(key, "")).strip()
+        if not raw_value:
+            continue
+        report_paths.append(Path(raw_value).expanduser())
+    result_payload = {
+        "passed": result.passed,
+        "target": result.target,
+        "baseline": result.baseline,
+        "env": result.env,
+        "demo": result.demo,
+        "elapsed_seconds": result.elapsed_seconds,
+        "stats": dict(result.stats),
+        "verdict_reason": result.verdict_reason,
+    }
+    _write_evidence_manifest(
+        output_dir=output_dir,
+        mode=mode,
+        request_payload={
+            "target": result.target,
+            "baseline": result.baseline,
+            "env": result.env,
+            "device": result.stats.get("device"),
+        },
+        result_payload=result_payload,
+        local_artifacts=report_paths,
+    )
+
+
+def _run_cloud_verify(
+    *,
+    target: str,
+    baseline: str,
+    env: str,
+    device: str,
+    format: str,
+    output: Path | None,
+    evidence_bundle: Path | None,
+) -> None:
+    """Execute cloud verification mode through WorldFlux Cloud API."""
+    from worldflux.cloud import WorldFluxCloudClient
+
+    client = WorldFluxCloudClient.from_env()
+    if not client.api_key:
+        console.print(
+            "[bold red]Cloud auth missing:[/bold red] run `worldflux login --api-key <key>`."
+        )
+        raise typer.Exit(code=1)
+
+    request_payload = {
+        "target": target,
+        "baseline": baseline,
+        "env": env,
+        "device": device,
+    }
+    try:
+        response = client.verify_cloud(request_payload)
+    except RuntimeError as exc:
+        console.print(f"[bold red]Cloud verification failed:[/bold red] {exc}")
+        raise typer.Exit(code=1) from None
+
+    passed = bool(response.get("passed", False))
+    response.setdefault("mode", "cloud")
+    response.setdefault("target", target)
+    response.setdefault("baseline", baseline)
+    response.setdefault("env", env)
+    response.setdefault("stats", {})
+
+    if format == "json":
+        json_payload = json.dumps(response, indent=2)
+        if output is not None:
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text(json_payload + "\n", encoding="utf-8")
+            console.print(f"[green]Results written to:[/green] {output.resolve()}")
+        else:
+            console.print(json_payload)
+    else:
+        title = (
+            "\u2705 PASS: Cloud verification passed"
+            if passed
+            else "\u274c FAIL: Cloud verification failed"
+        )
+        border = "green" if passed else "red"
+        console.print(
+            Panel.fit(
+                "\n".join(
+                    [
+                        f"Target: {response.get('target')}",
+                        f"Baseline: {response.get('baseline')}",
+                        f"Env: {response.get('env')}",
+                        f"Status: {response.get('status', '-')}",
+                        f"Verdict: {response.get('verdict_reason', '-')}",
+                    ]
+                ),
+                title=title,
+                border_style=border,
+            )
+        )
+
+    if evidence_bundle is not None:
+        _write_evidence_manifest(
+            output_dir=evidence_bundle,
+            mode="cloud",
+            request_payload=request_payload,
+            result_payload=response,
+            local_artifacts=[],
+        )
+
+    if not passed:
+        raise typer.Exit(code=1)
+
+
+def _emit_verify_json(result: VerifyResult, output: Path | None) -> None:
+    """Emit VerifyResult as JSON."""
+    payload = {
+        "passed": result.passed,
+        "target": result.target,
+        "baseline": result.baseline,
+        "env": result.env,
+        "demo": result.demo,
+        "elapsed_seconds": result.elapsed_seconds,
+        "stats": result.stats,
+        "verdict_reason": result.verdict_reason,
+    }
+    json_str = json.dumps(payload, indent=2)
+    if output is not None:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json_str + "\n", encoding="utf-8")
+        console.print(f"[green]Results written to:[/green] {output.resolve()}")
+    else:
+        console.print(json_str)
     if not result.passed:
         raise typer.Exit(code=1)
 
