@@ -1,5 +1,6 @@
 """Training infrastructure for WorldFlux."""
 
+from .backend import JobHandle, JobStatus, LocalBackend, TrainingBackend
 from .callbacks import (
     Callback,
     CheckpointCallback,
@@ -20,6 +21,10 @@ __all__ = [
     "TrajectoryDataset",
     "TokenSequenceProvider",
     "TransitionArrayProvider",
+    "TrainingBackend",
+    "LocalBackend",
+    "JobHandle",
+    "JobStatus",
     # Callbacks
     "Callback",
     "LoggingCallback",
