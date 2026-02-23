@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import math
 from pathlib import Path
 
 import numpy as np
@@ -363,6 +365,48 @@ class ReplayBuffer:
             capacity=np.array(self.capacity),
         )
 
+    def to_parquet(self, path: str | Path, *, compression: str = "zstd") -> None:
+        """Save buffer rows to Parquet for cloud-native analytics pipelines."""
+        try:
+            import pyarrow as pa
+            import pyarrow.parquet as pq
+        except ModuleNotFoundError as exc:  # pragma: no cover - optional dependency guard
+            raise BufferError(
+                "Parquet support requires optional dependency `pyarrow`. "
+                "Install with: uv pip install pyarrow"
+            ) from exc
+
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        size = int(self._size)
+        obs_flat = self._obs[:size].reshape(size, -1).astype(np.float32, copy=False)
+        actions = self._actions[:size].astype(np.float32, copy=False)
+        rewards = self._rewards[:size].astype(np.float32, copy=False)
+        dones = self._dones[:size].astype(np.float32, copy=False)
+
+        columns: dict[str, np.ndarray] = {}
+        for idx in range(obs_flat.shape[1]):
+            columns[f"obs_{idx}"] = obs_flat[:, idx]
+        for idx in range(actions.shape[1]):
+            columns[f"action_{idx}"] = actions[:, idx]
+        columns["reward"] = rewards
+        columns["done"] = dones
+
+        table = pa.table(columns)
+        metadata = dict(table.schema.metadata or {})
+        metadata[b"worldflux_replay_meta"] = json.dumps(
+            {
+                "format_version": 1,
+                "obs_shape": list(self.obs_shape),
+                "action_dim": int(self.action_dim),
+                "capacity": int(self.capacity),
+            },
+            sort_keys=True,
+        ).encode("utf-8")
+        table = table.replace_schema_metadata(metadata)
+        pq.write_table(table, str(path), compression=compression)
+
     @classmethod
     def load(cls, path: str | Path) -> ReplayBuffer:
         """Load buffer from disk with schema validation."""
@@ -448,6 +492,86 @@ class ReplayBuffer:
             buffer._position = size % capacity
 
         # Reconstruct episode boundaries from done flags
+        buffer._reconstruct_episodes()
+        return buffer
+
+    @classmethod
+    def from_parquet(cls, path: str | Path) -> ReplayBuffer:
+        """Load buffer rows from Parquet produced by ``to_parquet``."""
+        try:
+            import pyarrow.parquet as pq
+        except ModuleNotFoundError as exc:  # pragma: no cover - optional dependency guard
+            raise BufferError(
+                "Parquet support requires optional dependency `pyarrow`. "
+                "Install with: uv pip install pyarrow"
+            ) from exc
+
+        table = pq.read_table(str(path))
+        metadata = table.schema.metadata or {}
+        meta_raw = metadata.get(b"worldflux_replay_meta")
+        if meta_raw is None:
+            raise BufferError(
+                "Invalid replay parquet file: missing worldflux_replay_meta metadata block."
+            )
+
+        try:
+            parsed = json.loads(meta_raw.decode("utf-8"))
+        except json.JSONDecodeError as exc:
+            raise BufferError(f"Invalid worldflux_replay_meta JSON: {exc}") from exc
+
+        if not isinstance(parsed, dict):
+            raise BufferError("Invalid replay parquet metadata payload type.")
+
+        try:
+            obs_shape = tuple(int(v) for v in parsed["obs_shape"])
+            action_dim = int(parsed["action_dim"])
+            capacity = int(parsed.get("capacity", table.num_rows))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise BufferError(f"Invalid replay parquet metadata fields: {exc}") from exc
+
+        if not obs_shape or any(dim <= 0 for dim in obs_shape):
+            raise BufferError(f"Invalid obs_shape metadata: {obs_shape}")
+        if action_dim <= 0:
+            raise BufferError(f"Invalid action_dim metadata: {action_dim}")
+        if capacity <= 0:
+            raise BufferError(f"Invalid capacity metadata: {capacity}")
+
+        obs_dim = int(math.prod(obs_shape))
+        obs_cols = [f"obs_{idx}" for idx in range(obs_dim)]
+        action_cols = [f"action_{idx}" for idx in range(action_dim)]
+        required = {*obs_cols, *action_cols, "reward", "done"}
+        missing = sorted(required.difference(set(table.column_names)))
+        if missing:
+            raise BufferError(f"Invalid replay parquet file: missing columns {missing}")
+
+        def _column_to_float32(name: str) -> np.ndarray:
+            return (
+                table[name]
+                .combine_chunks()
+                .to_numpy(zero_copy_only=False)
+                .astype(np.float32, copy=False)
+            )
+
+        obs_flat = np.stack([_column_to_float32(name) for name in obs_cols], axis=1)
+        actions = np.stack([_column_to_float32(name) for name in action_cols], axis=1)
+        rewards = _column_to_float32("reward")
+        dones = _column_to_float32("done")
+
+        size = int(table.num_rows)
+        if size > capacity:
+            raise BufferError(
+                "Invalid replay parquet file: number of stored rows exceeds capacity "
+                f"({size} > {capacity})"
+            )
+
+        obs = obs_flat.reshape((size, *obs_shape))
+        buffer = cls(capacity=capacity, obs_shape=obs_shape, action_dim=action_dim)
+        buffer._obs[:size] = obs
+        buffer._actions[:size] = actions
+        buffer._rewards[:size] = rewards
+        buffer._dones[:size] = dones
+        buffer._size = size
+        buffer._position = size % capacity
         buffer._reconstruct_episodes()
         return buffer
 
