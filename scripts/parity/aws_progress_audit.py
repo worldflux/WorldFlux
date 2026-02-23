@@ -70,6 +70,13 @@ class LatestTimestamps:
 
 
 @dataclass(frozen=True)
+class CorruptArtifact:
+    shard_id: str
+    key: str
+    error: str
+
+
+@dataclass(frozen=True)
 class AuditReport:
     run_id: str
     region: str
@@ -82,6 +89,7 @@ class AuditReport:
     progress_official: SystemProgress
     progress_worldflux: SystemProgress
     latest: LatestTimestamps
+    corrupt_artifacts: tuple[CorruptArtifact, ...]
     warnings: tuple[str, ...]
     stall_log_output: str
     generated_at: datetime
@@ -126,9 +134,17 @@ def _run_cli_json(command: list[str]) -> dict[str, Any]:
 def _paginate_aws_list(command_base: list[str], list_key: str) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     token: str | None = None
+    seen_tokens: set[str] = set()
+    page_count = 0
     while True:
+        page_count += 1
+        if page_count > 1000:
+            raise RuntimeError("pagination exceeded safety page limit (1000)")
         command = list(command_base)
         if token:
+            if token in seen_tokens:
+                break
+            seen_tokens.add(token)
             command.extend(["--next-token", token])
         payload = _run_cli_json(command)
         entries = payload.get(list_key, [])
@@ -257,7 +273,12 @@ def _discover_inprogress_records(
 def _list_s3_objects(region: str, bucket: str, prefix: str) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     token: str | None = None
+    seen_tokens: set[str] = set()
+    page_count = 0
     while True:
+        page_count += 1
+        if page_count > 1000:
+            raise RuntimeError("s3 pagination exceeded safety page limit (1000)")
         command = [
             "aws",
             "s3api",
@@ -274,6 +295,9 @@ def _list_s3_objects(region: str, bucket: str, prefix: str) -> list[dict[str, An
             "json",
         ]
         if token:
+            if token in seen_tokens:
+                break
+            seen_tokens.add(token)
             command.extend(["--continuation-token", token])
         payload = _run_cli_json(command)
         rows = payload.get("Contents", [])
@@ -317,13 +341,14 @@ def _collect_shard_states(
     bucket: str,
     run_id: str,
     phase: str,
-) -> tuple[dict[str, ShardState], LatestTimestamps]:
+) -> tuple[dict[str, ShardState], LatestTimestamps, list[CorruptArtifact]]:
     prefix = f"{run_id}/{phase}/shards/"
     rows = _list_s3_objects(region=region, bucket=bucket, prefix=prefix)
     shard_states: dict[str, ShardState] = {}
     latest_any: datetime | None = None
     latest_phase: datetime | None = None
     latest_runs: datetime | None = None
+    corrupt_artifacts: list[CorruptArtifact] = []
 
     key_re = re.compile(rf"^{re.escape(prefix)}(?P<shard>[^/]+)/(?P<name>[^/]+)$")
 
@@ -354,19 +379,37 @@ def _collect_shard_states(
     for shard_id, state in list(shard_states.items()):
         run_context_key = f"{prefix}{shard_id}/run_context.json"
         if state.run_context_last_modified is not None:
-            payload = _s3_read_json(region=region, bucket=bucket, key=run_context_key)
-            systems = payload.get("systems", [])
-            if isinstance(systems, list) and systems:
-                state.system = str(systems[0]).strip() or state.system
+            try:
+                payload = _s3_read_json(region=region, bucket=bucket, key=run_context_key)
+                systems = payload.get("systems", [])
+                if isinstance(systems, list) and systems:
+                    state.system = str(systems[0]).strip() or state.system
+            except RuntimeError as exc:
+                corrupt_artifacts.append(
+                    CorruptArtifact(
+                        shard_id=shard_id,
+                        key=run_context_key,
+                        error=str(exc),
+                    )
+                )
 
         phase_key = f"{prefix}{shard_id}/phase_progress.json"
         if state.phase_progress_last_modified is not None:
-            payload = _s3_read_json(region=region, bucket=bucket, key=phase_key)
-            state.expected = int(payload.get("expected", 0) or 0)
-            state.started = int(payload.get("started", 0) or 0)
-            state.success = int(payload.get("success", 0) or 0)
-            state.failed = int(payload.get("failed", 0) or 0)
-            state.running = int(payload.get("running", 0) or 0)
+            try:
+                payload = _s3_read_json(region=region, bucket=bucket, key=phase_key)
+                state.expected = int(payload.get("expected", 0) or 0)
+                state.started = int(payload.get("started", 0) or 0)
+                state.success = int(payload.get("success", 0) or 0)
+                state.failed = int(payload.get("failed", 0) or 0)
+                state.running = int(payload.get("running", 0) or 0)
+            except RuntimeError as exc:
+                corrupt_artifacts.append(
+                    CorruptArtifact(
+                        shard_id=shard_id,
+                        key=phase_key,
+                        error=str(exc),
+                    )
+                )
 
     return (
         shard_states,
@@ -375,6 +418,7 @@ def _collect_shard_states(
             latest_phase_progress=latest_phase,
             latest_parity_runs=latest_runs,
         ),
+        corrupt_artifacts,
     )
 
 
@@ -696,7 +740,7 @@ def run_audit(args: argparse.Namespace) -> AuditReport:
     inprogress_records = _discover_inprogress_records(
         region=args.region, target_run_id=args.run_id, phase=args.phase
     )
-    shard_states, latest = _collect_shard_states(
+    shard_states, latest, corrupt_artifacts = _collect_shard_states(
         region=args.region,
         bucket=args.bucket,
         run_id=args.run_id,
@@ -731,6 +775,10 @@ def run_audit(args: argparse.Namespace) -> AuditReport:
         stale_inprogress_hours=float(args.stale_inprogress_hours),
         stale_progress_minutes=float(args.stale_progress_minutes),
     )
+    for row in corrupt_artifacts:
+        warnings.append(
+            "corrupt_artifact: " f"shard={row.shard_id} key={row.key} error={row.error}"
+        )
 
     worker_instances = set(worker_ids_from_tags)
     worker_instances.update(row.instance_id for row in inprogress_records if row.instance_id)
@@ -756,6 +804,7 @@ def run_audit(args: argparse.Namespace) -> AuditReport:
         progress_official=progress_official,
         progress_worldflux=progress_worldflux,
         latest=latest,
+        corrupt_artifacts=tuple(corrupt_artifacts),
         warnings=tuple(warnings),
         stall_log_output=stall_log_output,
         generated_at=now,
@@ -811,6 +860,14 @@ def _json_report(report: AuditReport) -> dict[str, Any]:
             "generated_at": _fmt_dt(report.generated_at),
         },
         "warnings": list(report.warnings),
+        "corrupt_artifacts": [
+            {
+                "shard_id": row.shard_id,
+                "key": row.key,
+                "error": row.error,
+            }
+            for row in report.corrupt_artifacts
+        ],
         "stall_log_output": report.stall_log_output,
     }
 
