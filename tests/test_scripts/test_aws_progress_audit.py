@@ -300,3 +300,75 @@ def test_run_audit_happy_path_with_mocked_aws(monkeypatch) -> None:
     assert "[3] worldflux 進捗" in rendered
     assert "[4] 直近更新時刻（S3 LastModified, UTC）" in rendered
     assert "[5] 停滞警告" in rendered
+
+
+def test_run_audit_continues_on_corrupt_json_artifact(monkeypatch) -> None:
+    mod = _load_module()
+
+    now = datetime(2026, 2, 22, 1, 38, 6, tzinfo=timezone.utc)
+    monkeypatch.setattr(mod, "_utc_now", lambda: now)
+
+    s3_bucket = "worldflux-parity"
+    run_id = "cloud_proof_20260221T220330Z"
+    phase = "pilot"
+    prefix = f"{run_id}/{phase}/shards/"
+
+    s3_objects = [
+        {
+            "Key": f"{prefix}10/run_context.json",
+            "LastModified": "2026-02-22T01:35:31+00:00",
+        },
+        {
+            "Key": f"{prefix}10/phase_progress.json",
+            "LastModified": "2026-02-22T01:35:35+00:00",
+        },
+    ]
+
+    control_plane_instances = {"Reservations": []}
+
+    def fake_run_cli(command: list[str]) -> subprocess.CompletedProcess[str]:
+        cmd = " ".join(command)
+        if "ec2 describe-instances" in cmd and "ParityRunTag" in cmd:
+            return subprocess.CompletedProcess(
+                command, 0, stdout=json.dumps(control_plane_instances), stderr=""
+            )
+        if "ssm list-commands" in cmd and "InProgress" in cmd:
+            return subprocess.CompletedProcess(
+                command, 0, stdout=json.dumps({"Commands": []}), stderr=""
+            )
+        if "s3api list-objects-v2" in cmd:
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=json.dumps({"Contents": s3_objects}),
+                stderr="",
+            )
+        if command[:3] == ["aws", "s3", "cp"] and command[-1] == "us-west-2":
+            key = command[3].replace(f"s3://{s3_bucket}/", "")
+            if key.endswith("run_context.json"):
+                return subprocess.CompletedProcess(
+                    command,
+                    0,
+                    stdout=json.dumps({"systems": ["worldflux"]}),
+                    stderr="",
+                )
+            if key.endswith("phase_progress.json"):
+                return subprocess.CompletedProcess(command, 0, stdout="{", stderr="")
+        raise AssertionError(f"unexpected command: {command}")
+
+    monkeypatch.setattr(mod, "_run_cli", fake_run_cli)
+
+    args = Namespace(
+        run_id=run_id,
+        region="us-west-2",
+        bucket=s3_bucket,
+        phase=phase,
+        stale_inprogress_hours=4.0,
+        stale_progress_minutes=30.0,
+        fetch_stall_logs=False,
+        stall_log_lines=80,
+        output_json=False,
+    )
+    report = mod.run_audit(args)
+    assert report.corrupt_artifacts
+    assert any("corrupt_artifact" in warning for warning in report.warnings)
