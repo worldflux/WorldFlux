@@ -1,5 +1,6 @@
 """Tests for training infrastructure."""
 
+import importlib.util
 import os
 import tempfile
 
@@ -252,6 +253,25 @@ class TestReplayBuffer:
         assert loaded.obs_shape == buffer.obs_shape
         assert loaded.action_dim == buffer.action_dim
         os.unlink(f.name)
+
+    def test_to_from_parquet_roundtrip(self, tmp_path):
+        if importlib.util.find_spec("pyarrow") is None:
+            pytest.skip("pyarrow is not installed")
+
+        buffer = create_random_buffer(
+            capacity=64,
+            obs_shape=(4,),
+            action_dim=2,
+            num_episodes=4,
+            seed=123,
+        )
+        path = tmp_path / "replay.parquet"
+        buffer.to_parquet(path)
+        loaded = ReplayBuffer.from_parquet(path)
+
+        assert len(loaded) == len(buffer)
+        assert loaded.obs_shape == buffer.obs_shape
+        assert loaded.action_dim == buffer.action_dim
 
     def test_from_trajectories(self):
         trajectories = [
