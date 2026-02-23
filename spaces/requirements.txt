@@ -2,3 +2,5 @@ gradio>=5.9.0
 huggingface_hub>=0.25.0
 matplotlib>=3.5.0
 numpy>=1.24.0
+torch>=2.0.0
+git+https://github.com/worldflux/WorldFlux.git
