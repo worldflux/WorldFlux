@@ -833,12 +833,14 @@ def init(
 
     resolved_target = target_path.resolve()
     console.print(f"\n[bold green]Project created:[/bold green] {resolved_target}")
+    launcher = str(context.get("preferred_python_launcher") or _resolve_python_launcher())
     next_steps = "\n".join(
         [
             f"1. cd {resolved_target}",
             "2. worldflux train             # start training",
-            "3. worldflux verify --target ./outputs  # verify your model",
-            "4. Edit worldflux.toml to tune settings for your environment",
+            f"3. {launcher} train.py   # start training (legacy path)",
+            "4. worldflux verify --target ./outputs  # verify your model",
+            "5. Edit worldflux.toml to tune settings for your environment",
         ]
     )
     console.print(
