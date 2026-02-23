@@ -271,15 +271,35 @@ def verify_modules(python_executable: Path, modules: tuple[str, ...]) -> tuple[s
     return modules
 
 
-def ensure_init_dependencies(
+def _resolve_training_profile(environment: str) -> DependencyProfile:
+    """Resolve dependencies needed for training (includes tqdm)."""
+    base = _resolve_dependency_profile(environment)
+    training_specs = ("tqdm",)
+    training_modules = ("tqdm",)
+    return DependencyProfile(
+        environment=base.environment,
+        pip_specs=base.pip_specs + training_specs,
+        import_modules=base.import_modules + training_modules,
+    )
+
+
+def ensure_train_dependencies(
     context: Mapping[str, Any],
     *,
     progress_callback: ProgressCallback | None = None,
 ) -> EnsureDepsResult:
-    """Ensure worldflux + selected environment dependencies before project generation."""
+    """Ensure worldflux + training dependencies are available."""
     environment = _normalize_environment(context.get("environment", "custom"))
-    profile = _resolve_dependency_profile(environment)
+    profile = _resolve_training_profile(environment)
+    return _ensure_dependencies_for_profile(profile, progress_callback=progress_callback)
 
+
+def _ensure_dependencies_for_profile(
+    profile: DependencyProfile,
+    *,
+    progress_callback: ProgressCallback | None = None,
+) -> EnsureDepsResult:
+    """Internal helper: ensure dependencies for a given profile."""
     if _is_bootstrap_disabled():
         return EnsureDepsResult(
             success=True,
@@ -352,7 +372,7 @@ def ensure_init_dependencies(
             skipped=False,
             message=(
                 "Dependency installation failed while preparing the bootstrap environment "
-                f"for {environment!r}."
+                f"for {profile.environment!r}."
             ),
             retry_commands=retry_commands,
             diagnostics=diagnostics,
@@ -389,11 +409,23 @@ def ensure_init_dependencies(
     )
 
 
+def ensure_init_dependencies(
+    context: Mapping[str, Any],
+    *,
+    progress_callback: ProgressCallback | None = None,
+) -> EnsureDepsResult:
+    """Ensure worldflux + selected environment dependencies before project generation."""
+    environment = _normalize_environment(context.get("environment", "custom"))
+    profile = _resolve_dependency_profile(environment)
+    return _ensure_dependencies_for_profile(profile, progress_callback=progress_callback)
+
+
 __all__ = [
     "DependencyProfile",
     "BootstrapRuntime",
     "EnsureDepsResult",
     "ensure_init_dependencies",
+    "ensure_train_dependencies",
     "resolve_bootstrap_runtime",
     "verify_modules",
 ]
