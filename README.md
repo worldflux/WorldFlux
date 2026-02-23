@@ -31,7 +31,7 @@ WorldFlux provides a unified Python interface for world models used in reinforce
 
 World model rolls out future frames from a single observation:
 
-![Imagination Rollout](https://raw.githubusercontent.com/worldflux/WorldFlux/main/docs/assets/imagination_rollout.gif)
+![Imagination Rollout](docs/assets/imagination_rollout.gif)
 
 *Left: Real game frames | Right: Model's imagination*
 
@@ -45,36 +45,6 @@ World model rolls out future frames from a single observation:
 - **Pluggable 5-layer core**: optional `component_overrides` for encoder/dynamics/conditioner/decoder/rollout
 - **Training Infrastructure**: Complete training loop with callbacks, checkpointing, and logging
 - **Type Safe**: Full type annotations and mypy compatibility
-
-## Architecture
-
-```mermaid
-graph LR
-    subgraph Input
-        A[Observation]
-    end
-
-    subgraph WorldModel["World Model"]
-        B[Encoder]
-        C[State]
-        D[Dynamics]
-        E[Decoder]
-    end
-
-    subgraph Output
-        F[Predictions]
-    end
-
-    A --> B
-    B --> C
-    C --> D
-    D --> C
-    C --> E
-    E --> F
-
-    style C fill:#e1f5fe
-    style D fill:#fff3e0
-```
 
 ## Installation
 
