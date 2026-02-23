@@ -839,8 +839,9 @@ def init(
             f"1. cd {resolved_target}",
             "2. worldflux train             # start training",
             f"3. {launcher} train.py   # start training (legacy path)",
-            "4. worldflux verify --target ./outputs  # verify your model",
-            "5. Edit worldflux.toml to tune settings for your environment",
+            f"4. {launcher} inference.py   # run inference (legacy path)",
+            "5. worldflux verify --target ./outputs  # verify your model",
+            "6. Edit worldflux.toml to tune settings for your environment",
         ]
     )
     console.print(
