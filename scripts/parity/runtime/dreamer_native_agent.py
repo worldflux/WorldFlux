@@ -39,40 +39,66 @@ class DreamerNativeRunConfig:
     shooting_num_candidates: int = 128
 
 
-def _evaluate_random_policy(
+def _evaluate_policy(
     *,
     task_id: str,
     backend: str,
     seed: int,
     num_episodes: int,
     max_episode_steps: int,
+    policy_mode: str,
+    model: Any,
+    action_dim: int,
+    device: str,
+    shooting_horizon: int,
+    shooting_num_candidates: int,
 ) -> float:
-    """Evaluate a deterministic random policy on real environment episodes."""
+    """Evaluate policy on real environment episodes with deterministic seeds."""
     rng = np.random.default_rng(seed)
     returns: list[float] = []
+    normalized_policy_mode = str(policy_mode).strip().lower()
+    was_training = bool(getattr(model, "training", False))
+    if was_training:
+        model.eval()
 
-    for episode in range(max(1, num_episodes)):
-        env = build_atari_env(
-            task_id=task_id,
-            seed=seed + episode,
-            backend=backend,
-            max_episode_steps=max_episode_steps,
-        )
-        try:
-            obs = env.reset(seed=seed + episode)
-            _ = obs
-            done = False
-            ep_return = 0.0
-            steps = 0
-            while not done and steps < max_episode_steps:
-                action = env.sample_action(rng)
-                _next_obs, reward, terminated, truncated, _info = env.step(action)
-                ep_return += float(reward)
-                done = bool(terminated or truncated)
-                steps += 1
-            returns.append(ep_return)
-        finally:
-            env.close()
+    try:
+        for episode in range(max(1, num_episodes)):
+            env = build_atari_env(
+                task_id=task_id,
+                seed=seed + episode,
+                backend=backend,
+                max_episode_steps=max_episode_steps,
+            )
+            try:
+                obs = env.reset(seed=seed + episode)
+                _ = obs
+                done = False
+                ep_return = 0.0
+                steps = 0
+                while not done and steps < max_episode_steps:
+                    if normalized_policy_mode == "parity_candidate":
+                        action = _select_dreamer_shooting_action(
+                            model=model,
+                            obs=obs,
+                            action_dim=action_dim,
+                            rng=rng,
+                            device=device,
+                            horizon=max(1, int(shooting_horizon)),
+                            num_candidates=max(1, int(shooting_num_candidates)),
+                        )
+                    else:
+                        action = env.sample_action(rng)
+                    _next_obs, reward, terminated, truncated, _info = env.step(action)
+                    obs = _next_obs
+                    ep_return += float(reward)
+                    done = bool(terminated or truncated)
+                    steps += 1
+                returns.append(ep_return)
+            finally:
+                env.close()
+    finally:
+        if was_training:
+            model.train()
 
     return float(np.mean(returns)) if returns else 0.0
 
@@ -219,12 +245,18 @@ def run_dreamer_native(
                         trainer.train(buffer, num_steps=train_target_steps)
                         train_updates += max(1, int(config.train_steps_per_eval))
 
-                    eval_return = _evaluate_random_policy(
+                    eval_return = _evaluate_policy(
                         task_id=config.task_id,
                         backend=config.env_backend,
                         seed=config.seed + 10_000 + int(next_eval),
                         num_episodes=config.eval_episodes,
                         max_episode_steps=config.max_episode_steps,
+                        policy_mode=policy_mode,
+                        model=model,
+                        action_dim=env.action_dim,
+                        device=config.device,
+                        shooting_horizon=config.shooting_horizon,
+                        shooting_num_candidates=config.shooting_num_candidates,
                     )
                     curve.append((float(env_steps), float(eval_return)))
                     next_eval += max(1, int(config.eval_interval))
@@ -246,12 +278,18 @@ def run_dreamer_native(
         env.close()
 
     if not curve:
-        eval_return = _evaluate_random_policy(
+        eval_return = _evaluate_policy(
             task_id=config.task_id,
             backend=config.env_backend,
             seed=config.seed + 20_000,
             num_episodes=config.eval_episodes,
             max_episode_steps=config.max_episode_steps,
+            policy_mode=policy_mode,
+            model=model,
+            action_dim=env.action_dim,
+            device=config.device,
+            shooting_horizon=config.shooting_horizon,
+            shooting_num_candidates=config.shooting_num_candidates,
         )
         curve.append((float(config.steps), float(eval_return)))
 
@@ -265,6 +303,10 @@ def run_dreamer_native(
         "policy_impl": "model_based_shooting"
         if policy_mode == "parity_candidate"
         else "random_env_sampler",
+        "eval_policy": "model_based" if policy_mode == "parity_candidate" else "random",
+        "eval_policy_impl": "model_based_shooting_eval"
+        if policy_mode == "parity_candidate"
+        else "random_env_sampler_eval",
         "env_backend": config.env_backend,
         "obs_shape": list(env.obs_shape),
         "action_dim": int(env.action_dim),
