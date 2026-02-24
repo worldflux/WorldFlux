@@ -260,6 +260,79 @@ def test_stats_equivalence_strict_validity_passes_on_parity_candidate_policy(
     assert report["validity"]["pass"] is True
 
 
+def test_stats_equivalence_strict_validity_infers_legacy_official_backend_with_manifest(
+    tmp_path: Path,
+) -> None:
+    runs_path = tmp_path / "runs.jsonl"
+    rows: list[dict] = []
+    validity_requirements = {
+        "policy_mode": "parity_candidate",
+        "environment_backend": "gymnasium",
+        "forbidden_shortcuts": [],
+    }
+    for seed in range(2):
+        metadata_official = {
+            "mode": "official",
+            "eval_protocol_hash": "abc123",
+            "policy_mode": "official_reference",
+            "policy_impl": "official_ref",
+        }
+        metadata_worldflux = {
+            "mode": "native_real_env",
+            "eval_protocol_hash": "abc123",
+            "policy_mode": "parity_candidate",
+            "policy_impl": "candidate_actor",
+            "policy": "learned",
+            "env_backend": "gymnasium",
+        }
+        official_row = _record(
+            "atari100k_pong",
+            seed,
+            "official",
+            100.0 + seed,
+            90.0 + seed,
+            metadata=metadata_official,
+        )
+        official_row["validity_requirements"] = dict(validity_requirements)
+        rows.append(official_row)
+
+        worldflux_row = _record(
+            "atari100k_pong",
+            seed,
+            "worldflux",
+            100.0 + seed,
+            90.0 + seed,
+            metadata=metadata_worldflux,
+        )
+        worldflux_row["validity_requirements"] = dict(validity_requirements)
+        rows.append(worldflux_row)
+    runs_path.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+
+    report = _run_stats(
+        runs_path,
+        tmp_path / "report.json",
+        extra_args=[
+            "--strict-validity",
+            "--proof-mode",
+            "--manifest",
+            "scripts/parity/manifests/preseed_demo_v1.yaml",
+        ],
+        expected_returncode=0,
+    )
+
+    assert report["global"]["strict_mode_failed"] is False
+    assert report["global"]["validity_pass"] is True
+    assert report["validity"]["pass"] is True
+    assert report["validity"]["issue_count"] == 0
+    assert report["validity"]["info_count"] >= 1
+    info_codes = {
+        issue["code"]
+        for issue in report["validity"]["issues"]
+        if str(issue.get("severity", "error")) == "info"
+    }
+    assert "official_env_backend_inferred" in info_codes
+
+
 def test_stats_equivalence_dual_pass_fails_when_bayesian_not_enabled(tmp_path: Path) -> None:
     runs_path = tmp_path / "runs.jsonl"
     rows: list[dict] = []

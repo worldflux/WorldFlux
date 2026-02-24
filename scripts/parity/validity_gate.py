@@ -67,6 +67,22 @@ def _match_forbidden(flat: dict[str, Any], rule: str) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "on", "enabled", "mock", "random"}
 
 
+def _infer_legacy_official_backend(*, task_id: str, family: str) -> str:
+    """Infer env backend for legacy official records missing metadata.env_backend."""
+    normalized_task = str(task_id).strip().lower()
+    normalized_family = str(family).strip().lower()
+
+    if normalized_family in {"dreamerv3", "dreamer"}:
+        return "gymnasium"
+    if normalized_family in {"tdmpc2", "tdmpc"}:
+        return "dmcontrol"
+    if normalized_task.startswith("atari100k_") or normalized_task.startswith("atari_"):
+        return "gymnasium"
+    if normalized_task in {"cheetah-run", "hopper-hop", "walker-run", "dog-run"}:
+        return "dmcontrol"
+    return ""
+
+
 def evaluate_validity(
     entries: list[dict[str, Any]],
     *,
@@ -179,7 +195,30 @@ def evaluate_validity(
                 )
 
         env_backend = str(metadata.get("env_backend", "")).strip().lower()
-        if proof_mode and required_backend not in {"", "auto"} and env_backend != required_backend:
+        effective_env_backend = env_backend
+        if proof_mode and not effective_env_backend and system == "official":
+            inferred_backend = _infer_legacy_official_backend(task_id=task_id, family=family)
+            if inferred_backend:
+                effective_env_backend = inferred_backend
+                issues.append(
+                    {
+                        "code": "official_env_backend_inferred",
+                        "severity": "info",
+                        "task_id": task_id,
+                        "seed": seed,
+                        "system": system,
+                        "message": (
+                            "metadata.env_backend is missing on legacy official record; "
+                            f"inferred '{inferred_backend}' from task/family."
+                        ),
+                    }
+                )
+
+        if (
+            proof_mode
+            and required_backend not in {"", "auto"}
+            and effective_env_backend != required_backend
+        ):
             issues.append(
                 {
                     "code": "environment_backend_mismatch",
@@ -187,7 +226,8 @@ def evaluate_validity(
                     "seed": seed,
                     "system": system,
                     "message": (
-                        f"env_backend='{env_backend}' does not match required '{required_backend}'"
+                        "env_backend="
+                        f"'{effective_env_backend}' does not match required '{required_backend}'"
                     ),
                 }
             )
@@ -235,6 +275,7 @@ def evaluate_validity(
                 }
             )
 
+    error_issues = [issue for issue in issues if str(issue.get("severity", "error")) != "info"]
     payload = {
         "schema_version": "parity.v1",
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -244,9 +285,10 @@ def evaluate_validity(
             "environment_backend": default_backend,
             "forbidden_shortcuts": [str(item) for item in default_forbidden],
         },
-        "issue_count": len(issues),
+        "issue_count": len(error_issues),
+        "info_count": len(issues) - len(error_issues),
         "issues": issues,
-        "pass": len(issues) == 0,
+        "pass": len(error_issues) == 0,
     }
     return payload
 

@@ -111,6 +111,7 @@ def main() -> int:
             auc_return=curve_auc(points),
             metadata={
                 "mode": "mock",
+                "env_backend": "gymnasium",
                 "policy_mode": "official_reference",
                 "policy_impl": "official_dreamerv3_reference",
                 "eval_protocol_hash": _eval_protocol_hash(
@@ -187,6 +188,7 @@ def main() -> int:
         auc_return=curve_auc(points),
         metadata={
             "mode": "official",
+            "env_backend": "gymnasium",
             "repo_root": str(repo_root),
             "scores_file": str(scores_file),
             "command": command,

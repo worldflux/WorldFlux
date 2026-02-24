@@ -68,6 +68,11 @@ def test_adapter_wrappers_emit_normalized_metrics(tmp_path: Path) -> None:
         assert payload["schema_version"] == "parity.v1"
         assert isinstance(payload["final_return_mean"], float)
         assert isinstance(payload["auc_return"], float)
+        metadata = payload.get("metadata", {})
+        if wrapper_name == "official_dreamerv3.py":
+            assert metadata.get("env_backend") == "gymnasium"
+        if wrapper_name == "official_tdmpc2.py":
+            assert metadata.get("env_backend") == "dmcontrol"
 
 
 def test_run_parity_matrix_retries_failed_attempt_once(tmp_path: Path) -> None:

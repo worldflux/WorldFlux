@@ -18,12 +18,13 @@ def _load_module():
     return mod
 
 
-def _entry(system: str, *, random_policy: bool) -> dict:
+def _entry(system: str, *, random_policy: bool, env_backend: str | None = "gymnasium") -> dict:
     metadata = {
         "mode": "native_real_env",
-        "env_backend": "gymnasium",
         "eval_protocol_hash": "abc123",
     }
+    if env_backend is not None:
+        metadata["env_backend"] = env_backend
     if system == "worldflux":
         metadata.update(
             {
@@ -125,3 +126,54 @@ def test_validity_gate_uses_per_entry_validity_requirements_override() -> None:
     )
 
     assert report["pass"] is True
+
+
+def test_validity_gate_infers_legacy_official_backend_when_missing() -> None:
+    mod = _load_module()
+    entries = [
+        _entry("official", random_policy=False, env_backend=None),
+        _entry("worldflux", random_policy=False, env_backend="gymnasium"),
+    ]
+
+    report = mod.evaluate_validity(
+        entries,
+        proof_mode=True,
+        required_policy_mode="parity_candidate",
+        requirements={
+            "policy_mode": "parity_candidate",
+            "environment_backend": "gymnasium",
+            "forbidden_shortcuts": [],
+        },
+    )
+
+    assert report["pass"] is True
+    assert report["issue_count"] == 0
+    assert report["info_count"] >= 1
+    info_codes = {
+        issue["code"] for issue in report["issues"] if str(issue.get("severity", "error")) == "info"
+    }
+    assert "official_env_backend_inferred" in info_codes
+
+
+def test_validity_gate_rejects_explicit_backend_mismatch_for_official() -> None:
+    mod = _load_module()
+    entries = [
+        _entry("official", random_policy=False, env_backend="stub"),
+        _entry("worldflux", random_policy=False, env_backend="gymnasium"),
+    ]
+
+    report = mod.evaluate_validity(
+        entries,
+        proof_mode=True,
+        required_policy_mode="parity_candidate",
+        requirements={
+            "policy_mode": "parity_candidate",
+            "environment_backend": "gymnasium",
+            "forbidden_shortcuts": [],
+        },
+    )
+
+    assert report["pass"] is False
+    assert report["issue_count"] >= 1
+    codes = {issue["code"] for issue in report["issues"]}
+    assert "environment_backend_mismatch" in codes
