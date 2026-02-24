@@ -108,6 +108,7 @@ def main() -> int:
             auc_return=curve_auc(points),
             metadata={
                 "mode": "mock",
+                "env_backend": "dmcontrol",
                 "policy_mode": "official_reference",
                 "policy_impl": "official_tdmpc2_reference",
                 "eval_protocol_hash": _eval_protocol_hash(
@@ -187,6 +188,7 @@ def main() -> int:
         auc_return=curve_auc(points),
         metadata={
             "mode": "official",
+            "env_backend": "dmcontrol",
             "repo_root": str(repo_root),
             "eval_csv": str(eval_csv),
             "command": command,
