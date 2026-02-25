@@ -48,6 +48,12 @@ def test_worldflux_native_online_runner_uses_real_env_backend_when_not_mock(tmp_
         "2",
         "--max-episode-steps",
         "4",
+        "--dreamer-model-profile",
+        "ci",
+        "--dreamer-replay-ratio",
+        "1",
+        "--dreamer-train-chunk-size",
+        "1",
         "--run-dir",
         str(tmp_path / "run"),
         "--metrics-out",
@@ -63,9 +69,9 @@ def test_worldflux_native_online_runner_uses_real_env_backend_when_not_mock(tmp_
     assert payload["metadata"]["env_backend"] == "stub"
     assert payload["metadata"]["policy_mode"] == "parity_candidate"
     assert payload["metadata"]["policy"] == "model_based"
-    assert payload["metadata"]["policy_impl"] == "model_based_shooting"
+    assert payload["metadata"]["policy_impl"] == "candidate_actor_stateful"
     assert payload["metadata"]["eval_policy"] == "model_based"
-    assert payload["metadata"]["eval_policy_impl"] == "model_based_shooting_eval"
+    assert payload["metadata"]["eval_policy_impl"] == "candidate_actor_stateful_eval"
     assert isinstance(payload["metadata"]["eval_protocol_hash"], str)
     assert payload["metadata"]["eval_protocol_hash"]
     assert payload["num_curve_points"] >= 1
