@@ -49,6 +49,21 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--sequence-length", type=int, default=0)
     parser.add_argument("--batch-size", type=int, default=0)
     parser.add_argument("--max-episode-steps", type=int, default=0)
+    parser.add_argument(
+        "--dreamer-policy-impl",
+        type=str,
+        default="auto",
+        choices=["auto", "actor", "shooting"],
+    )
+    parser.add_argument("--dreamer-replay-ratio", type=float, default=128.0)
+    parser.add_argument("--dreamer-train-chunk-size", type=int, default=64)
+    parser.add_argument(
+        "--dreamer-model-profile",
+        type=str,
+        default="wf25m",
+        choices=["ci", "wf12m", "wf25m", "wf50m", "wf200m", "official_like"],
+    )
+    parser.add_argument("--dreamer-lr", type=float, default=4e-5)
     return parser.parse_args()
 
 
@@ -135,6 +150,12 @@ def main() -> int:
 
     try:
         if args.family == "dreamerv3":
+            if int(args.train_steps_per_eval) > 0:
+                print(
+                    "WARNING: --train-steps-per-eval is deprecated for Dreamer parity runs and is ignored. "
+                    "Use --dreamer-replay-ratio + --dreamer-train-chunk-size.",
+                    file=sys.stderr,
+                )
             curve_raw, metadata = run_dreamer_native(
                 DreamerNativeRunConfig(
                     task_id=args.task_id,
@@ -149,10 +170,15 @@ def main() -> int:
                     buffer_capacity=_override_int(args.buffer_capacity, 200_000),
                     warmup_steps=_override_int(args.warmup_steps, 1_024),
                     train_steps_per_eval=_override_int(args.train_steps_per_eval, 64),
-                    sequence_length=_override_int(args.sequence_length, 32),
+                    sequence_length=_override_int(args.sequence_length, 64),
                     batch_size=_override_int(args.batch_size, 16),
                     max_episode_steps=_override_int(args.max_episode_steps, 27_000),
                     policy_mode=args.policy_mode,
+                    policy_impl=args.dreamer_policy_impl,
+                    replay_ratio=float(args.dreamer_replay_ratio),
+                    train_chunk_size=_override_int(args.dreamer_train_chunk_size, 64),
+                    model_profile=args.dreamer_model_profile,
+                    learning_rate_override=float(args.dreamer_lr),
                 )
             )
         else:

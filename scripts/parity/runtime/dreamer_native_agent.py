@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -11,10 +12,15 @@ import torch
 import torch.nn.functional as F
 
 from worldflux import create_world_model
+from worldflux.core.config import DreamerV3Config
 from worldflux.core.state import State
+from worldflux.models.dreamer.world_model import DreamerV3WorldModel
 from worldflux.training import ReplayBuffer, Trainer, TrainingConfig
 
 from .atari_env import AtariEnvError, build_atari_env
+
+_VALID_POLICY_IMPLS = {"auto", "actor", "shooting"}
+_VALID_MODEL_PROFILES = {"ci", "wf12m", "wf25m", "wf50m", "wf200m", "official_like"}
 
 
 @dataclass(frozen=True)
@@ -31,76 +37,35 @@ class DreamerNativeRunConfig:
     buffer_capacity: int = 200_000
     warmup_steps: int = 1024
     train_steps_per_eval: int = 64
-    sequence_length: int = 32
+    sequence_length: int = 64
     batch_size: int = 16
     max_episode_steps: int = 27_000
     policy_mode: str = "diagnostic_random"
     shooting_horizon: int = 5
     shooting_num_candidates: int = 128
+    policy_impl: str = "auto"
+    replay_ratio: float = 128.0
+    train_chunk_size: int = 64
+    model_profile: str = "wf25m"
+    learning_rate_override: float = 4e-5
 
 
-def _evaluate_policy(
-    *,
-    task_id: str,
-    backend: str,
-    seed: int,
-    num_episodes: int,
-    max_episode_steps: int,
-    policy_mode: str,
-    model: Any,
-    action_dim: int,
-    device: str,
-    shooting_horizon: int,
-    shooting_num_candidates: int,
-) -> float:
-    """Evaluate policy on real environment episodes with deterministic seeds."""
-    rng = np.random.default_rng(seed)
-    returns: list[float] = []
-    normalized_policy_mode = str(policy_mode).strip().lower()
-    was_training = bool(getattr(model, "training", False))
-    if was_training:
-        model.eval()
+def _normalize_policy_impl(value: str) -> str:
+    normalized = str(value).strip().lower()
+    if normalized not in _VALID_POLICY_IMPLS:
+        raise AtariEnvError(
+            f"policy_impl must be one of {sorted(_VALID_POLICY_IMPLS)}, got {value!r}"
+        )
+    return normalized
 
-    try:
-        for episode in range(max(1, num_episodes)):
-            env = build_atari_env(
-                task_id=task_id,
-                seed=seed + episode,
-                backend=backend,
-                max_episode_steps=max_episode_steps,
-            )
-            try:
-                obs = env.reset(seed=seed + episode)
-                _ = obs
-                done = False
-                ep_return = 0.0
-                steps = 0
-                while not done and steps < max_episode_steps:
-                    if normalized_policy_mode == "parity_candidate":
-                        action = _select_dreamer_shooting_action(
-                            model=model,
-                            obs=obs,
-                            action_dim=action_dim,
-                            rng=rng,
-                            device=device,
-                            horizon=max(1, int(shooting_horizon)),
-                            num_candidates=max(1, int(shooting_num_candidates)),
-                        )
-                    else:
-                        action = env.sample_action(rng)
-                    _next_obs, reward, terminated, truncated, _info = env.step(action)
-                    obs = _next_obs
-                    ep_return += float(reward)
-                    done = bool(terminated or truncated)
-                    steps += 1
-                returns.append(ep_return)
-            finally:
-                env.close()
-    finally:
-        if was_training:
-            model.train()
 
-    return float(np.mean(returns)) if returns else 0.0
+def _normalize_model_profile(value: str) -> str:
+    normalized = str(value).strip().lower()
+    if normalized not in _VALID_MODEL_PROFILES:
+        raise AtariEnvError(
+            f"model_profile must be one of {sorted(_VALID_MODEL_PROFILES)}, got {value!r}"
+        )
+    return normalized
 
 
 def _obs_to_tensor(obs: np.ndarray, *, device: str) -> torch.Tensor:
@@ -115,41 +80,324 @@ def _expand_state(state: State, *, batch_size: int) -> State:
     return State(tensors=expanded, meta=dict(state.meta))
 
 
-def _select_dreamer_shooting_action(
+def _state_to_features(state: State) -> torch.Tensor:
+    deter = state.tensors.get("deter")
+    stoch = state.tensors.get("stoch")
+    if deter is None or stoch is None:
+        raise AtariEnvError("Dreamer state must contain both 'deter' and 'stoch' tensors.")
+    if stoch.dim() == 3:
+        stoch = stoch.flatten(start_dim=1)
+    return torch.cat([deter, stoch], dim=-1)
+
+
+def _action_index_to_onehot(
+    *, action_index: int, action_dim: int, device: torch.device
+) -> torch.Tensor:
+    index = torch.tensor([int(action_index)], device=device, dtype=torch.long)
+    return F.one_hot(index, num_classes=max(1, int(action_dim))).to(torch.float32)
+
+
+def _extract_reward_prediction(decoded: Any) -> torch.Tensor:
+    preds = getattr(decoded, "predictions", None)
+    if not isinstance(preds, dict):
+        preds = getattr(decoded, "preds", None)
+    if not isinstance(preds, dict):
+        raise AtariEnvError("Dreamer decode output is missing predictions dictionary.")
+    reward = preds.get("reward")
+    if reward is None:
+        raise AtariEnvError("Dreamer shooting policy requires 'reward' prediction output.")
+    return reward
+
+
+def _build_dreamer_model(
+    *,
+    profile: str,
+    obs_shape: tuple[int, ...],
+    action_dim: int,
+    device: str,
+    learning_rate: float,
+) -> tuple[Any, str]:
+    common_overrides: dict[str, Any] = {
+        "actor_critic": True,
+        "action_type": "discrete",
+        "learning_rate": float(learning_rate),
+        "actor_lr": float(learning_rate),
+        "critic_lr": float(learning_rate),
+    }
+
+    if profile == "official_like":
+        config = DreamerV3Config(
+            model_name="official_like",
+            obs_shape=tuple(obs_shape),
+            action_dim=int(action_dim),
+            action_type="discrete",
+            deter_dim=8192,
+            stoch_discrete=32,
+            stoch_classes=64,
+            hidden_dim=1024,
+            cnn_depth=64,
+            actor_critic=True,
+            learning_rate=float(learning_rate),
+            actor_lr=float(learning_rate),
+            critic_lr=float(learning_rate),
+        )
+        model = DreamerV3WorldModel(config).to(torch.device(device))
+        return model, "dreamerv3:official_like"
+
+    profile_to_model_id = {
+        "ci": "dreamerv3:ci",
+        "wf12m": "dreamerv3:size12m",
+        "wf25m": "dreamerv3:size25m",
+        "wf50m": "dreamerv3:size50m",
+        "wf200m": "dreamerv3:size200m",
+    }
+    model_id = profile_to_model_id[profile]
+    model = create_world_model(
+        model_id,
+        obs_shape=tuple(obs_shape),
+        action_dim=int(action_dim),
+        device=device,
+        **common_overrides,
+    )
+    return model, model_id
+
+
+def _select_dreamer_shooting_action_from_state(
+    *,
+    model: Any,
+    base_state: State,
+    action_dim: int,
+    rng: np.random.Generator,
+    horizon: int,
+    num_candidates: int,
+) -> tuple[int, torch.Tensor]:
+    with torch.no_grad():
+        candidates = max(1, int(num_candidates))
+        rollout_horizon = max(1, int(horizon))
+        simulated_state = _expand_state(base_state, batch_size=candidates)
+        device = simulated_state.tensors["deter"].device
+
+        sampled = rng.integers(
+            low=0,
+            high=max(1, int(action_dim)),
+            size=(candidates, rollout_horizon),
+            endpoint=False,
+        )
+        reward_sum = torch.zeros((candidates,), device=device)
+
+        for step in range(rollout_horizon):
+            indices = torch.from_numpy(sampled[:, step]).to(device=device, dtype=torch.long)
+            actions = F.one_hot(indices, num_classes=max(1, int(action_dim))).to(torch.float32)
+            simulated_state = model.transition(simulated_state, actions, deterministic=True)
+            rewards = _extract_reward_prediction(model.decode(simulated_state))
+            reward_sum += rewards.reshape(candidates, -1)[:, 0]
+
+        best = int(torch.argmax(reward_sum).item())
+        action_index = int(sampled[best, 0])
+        action_onehot = _action_index_to_onehot(
+            action_index=action_index,
+            action_dim=action_dim,
+            device=device,
+        )
+    return action_index, action_onehot
+
+
+def _select_dreamer_policy_action(
     *,
     model: Any,
     obs: np.ndarray,
+    state: State,
+    prev_action: torch.Tensor,
     action_dim: int,
     rng: np.random.Generator,
     device: str,
-    horizon: int,
-    num_candidates: int,
-) -> int:
+    policy_impl: str,
+    shooting_horizon: int,
+    shooting_num_candidates: int,
+) -> tuple[int, torch.Tensor, State, str, bool]:
     with torch.no_grad():
         obs_tensor = _obs_to_tensor(obs, device=device)
-        base_state = model.encode(obs_tensor)
-        simulated_state = _expand_state(base_state, batch_size=max(1, int(num_candidates)))
+        posterior = model.update(state, prev_action, obs_tensor)
 
-        candidates = rng.integers(
-            low=0,
-            high=max(1, int(action_dim)),
-            size=(max(1, int(num_candidates)), max(1, int(horizon))),
-            endpoint=False,
+    def _actor_action() -> tuple[int, torch.Tensor]:
+        actor_head = getattr(model, "actor_head", None)
+        if actor_head is None:
+            raise AtariEnvError("Actor policy requested but model has no actor_head.")
+        with torch.no_grad():
+            features = _state_to_features(posterior)
+            logits = actor_head(features)
+            if not torch.isfinite(logits).all():
+                raise AtariEnvError("Actor logits contain non-finite values.")
+            probs = torch.softmax(logits, dim=-1)
+            if not torch.isfinite(probs).all():
+                raise AtariEnvError("Actor probabilities contain non-finite values.")
+            action_onehot, _ = actor_head.sample(features)
+            if not torch.isfinite(action_onehot).all():
+                raise AtariEnvError("Sampled actor action contains non-finite values.")
+            action = int(torch.argmax(action_onehot, dim=-1).item())
+        return action, action_onehot
+
+    def _shooting_action() -> tuple[int, torch.Tensor]:
+        return _select_dreamer_shooting_action_from_state(
+            model=model,
+            base_state=posterior,
+            action_dim=action_dim,
+            rng=rng,
+            horizon=max(1, int(shooting_horizon)),
+            num_candidates=max(1, int(shooting_num_candidates)),
         )
-        reward_sum = torch.zeros((max(1, int(num_candidates)),), device=obs_tensor.device)
 
-        for step in range(max(1, int(horizon))):
-            indices = torch.from_numpy(candidates[:, step]).to(device=obs_tensor.device)
-            actions = F.one_hot(indices, num_classes=max(1, int(action_dim))).to(torch.float32)
-            simulated_state = model.transition(simulated_state, actions, deterministic=True)
-            decoded = model.decode(simulated_state)
-            rewards = decoded.predictions.get("reward")
-            if rewards is None:
-                raise AtariEnvError("Dreamer shooting policy requires 'reward' prediction output.")
-            reward_sum += rewards.reshape(max(1, int(num_candidates)), -1)[:, 0]
+    normalized_impl = _normalize_policy_impl(policy_impl)
+    if normalized_impl == "shooting":
+        action, action_onehot = _shooting_action()
+        return action, action_onehot.detach(), posterior, "shooting", False
 
-        best = int(torch.argmax(reward_sum).item())
-    return int(candidates[best, 0])
+    if normalized_impl == "actor":
+        action, action_onehot = _actor_action()
+        return action, action_onehot.detach(), posterior, "actor", False
+
+    try:
+        action, action_onehot = _actor_action()
+        return action, action_onehot.detach(), posterior, "actor", False
+    except Exception:
+        action, action_onehot = _shooting_action()
+        return action, action_onehot.detach(), posterior, "shooting", True
+
+
+def _resolve_policy_impl_label(
+    *,
+    policy_mode: str,
+    actor_steps: int,
+    shooting_steps: int,
+    is_eval: bool,
+) -> str:
+    if policy_mode != "parity_candidate":
+        return "random_env_sampler_eval" if is_eval else "random_env_sampler"
+    if actor_steps > 0 and shooting_steps > 0:
+        base = "candidate_actor_stateful_with_shooting_fallback"
+    elif shooting_steps > 0:
+        base = "candidate_shooting_stateful"
+    else:
+        base = "candidate_actor_stateful"
+    return f"{base}_eval" if is_eval else base
+
+
+def _evaluate_policy(
+    *,
+    task_id: str,
+    backend: str,
+    seed: int,
+    num_episodes: int,
+    max_episode_steps: int,
+    policy_mode: str,
+    policy_impl: str,
+    model: Any,
+    action_dim: int,
+    device: str,
+    shooting_horizon: int,
+    shooting_num_candidates: int,
+) -> tuple[float, dict[str, int]]:
+    """Evaluate policy on real environment episodes with deterministic seeds."""
+    rng = np.random.default_rng(seed)
+    returns: list[float] = []
+    normalized_policy_mode = str(policy_mode).strip().lower()
+    actor_steps = 0
+    shooting_steps = 0
+    fallback_steps = 0
+
+    was_training = bool(getattr(model, "training", False))
+    if was_training:
+        model.eval()
+
+    try:
+        for episode in range(max(1, int(num_episodes))):
+            env = build_atari_env(
+                task_id=task_id,
+                seed=seed + episode,
+                backend=backend,
+                max_episode_steps=max_episode_steps,
+            )
+            try:
+                obs = env.reset(seed=seed + episode)
+                done = False
+                ep_return = 0.0
+                steps = 0
+
+                policy_state: State | None = None
+                prev_action: torch.Tensor | None = None
+                if normalized_policy_mode == "parity_candidate":
+                    policy_state = model.initial_state(1, torch.device(device))
+                    prev_action = torch.zeros((1, int(action_dim)), device=torch.device(device))
+
+                while not done and steps < max_episode_steps:
+                    if normalized_policy_mode == "parity_candidate":
+                        assert policy_state is not None
+                        assert prev_action is not None
+                        action, action_onehot, policy_state, used_impl, did_fallback = (
+                            _select_dreamer_policy_action(
+                                model=model,
+                                obs=obs,
+                                state=policy_state,
+                                prev_action=prev_action,
+                                action_dim=action_dim,
+                                rng=rng,
+                                device=device,
+                                policy_impl=policy_impl,
+                                shooting_horizon=shooting_horizon,
+                                shooting_num_candidates=shooting_num_candidates,
+                            )
+                        )
+                        prev_action = action_onehot
+                        if used_impl == "actor":
+                            actor_steps += 1
+                        else:
+                            shooting_steps += 1
+                        if did_fallback:
+                            fallback_steps += 1
+                    else:
+                        action = env.sample_action(rng)
+
+                    _next_obs, reward, terminated, truncated, _info = env.step(action)
+                    obs = _next_obs
+                    ep_return += float(reward)
+                    done = bool(terminated or truncated)
+                    steps += 1
+                returns.append(ep_return)
+            finally:
+                env.close()
+    finally:
+        if was_training:
+            model.train()
+
+    mean_return = float(np.mean(returns)) if returns else 0.0
+    return mean_return, {
+        "actor_steps": int(actor_steps),
+        "shooting_steps": int(shooting_steps),
+        "fallback_steps": int(fallback_steps),
+    }
+
+
+def _train_ready(
+    *, buffer: ReplayBuffer, env_steps: int, warmup_steps: int, min_buffer_steps: int
+) -> bool:
+    return env_steps >= warmup_steps and len(buffer) >= min_buffer_steps
+
+
+def _drain_backlog(
+    *,
+    trainer: Trainer,
+    buffer: ReplayBuffer,
+    backlog: int,
+    chunk_size: int,
+    train_target_steps: int,
+    train_updates: int,
+) -> tuple[int, int, int]:
+    while backlog >= chunk_size:
+        train_target_steps += chunk_size
+        trainer.train(buffer, num_steps=train_target_steps)
+        train_updates += chunk_size
+        backlog -= chunk_size
+    return backlog, train_target_steps, train_updates
 
 
 def run_dreamer_native(
@@ -163,20 +411,44 @@ def run_dreamer_native(
         max_episode_steps=config.max_episode_steps,
     )
 
-    model_id = "dreamerv3:ci"
-    model = create_world_model(model_id, obs_shape=env.obs_shape, action_dim=env.action_dim)
+    torch.manual_seed(int(config.seed))
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(int(config.seed))
+
+    model_profile = _normalize_model_profile(config.model_profile)
+    learning_rate = float(config.learning_rate_override)
+    if learning_rate <= 0:
+        raise AtariEnvError(f"learning_rate_override must be positive, got {learning_rate}")
+
+    model, model_id = _build_dreamer_model(
+        profile=model_profile,
+        obs_shape=tuple(env.obs_shape),
+        action_dim=int(env.action_dim),
+        device=config.device,
+        learning_rate=learning_rate,
+    )
+
+    replay_ratio = max(0.0, float(config.replay_ratio))
+    sequence_length = max(2, int(config.sequence_length))
+    batch_size = max(1, int(config.batch_size))
+    train_chunk_size = max(1, int(config.train_chunk_size))
+    updates_per_env_step = replay_ratio / float(batch_size * sequence_length)
+    target_train_updates = int(
+        math.floor(float(max(0, int(config.steps))) * updates_per_env_step + 1e-12)
+    )
 
     trainer = Trainer(
         model,
         TrainingConfig(
-            total_steps=max(1, int(config.train_steps_per_eval)),
-            batch_size=max(1, int(config.batch_size)),
-            sequence_length=max(2, int(config.sequence_length)),
+            total_steps=max(1, train_chunk_size),
+            batch_size=batch_size,
+            sequence_length=sequence_length,
+            learning_rate=learning_rate,
             output_dir=str((config.run_dir / "trainer").resolve()),
             device=config.device,
             seed=int(config.seed),
-            log_interval=max(1, int(config.train_steps_per_eval) // 4),
-            save_interval=max(2, int(config.train_steps_per_eval)),
+            log_interval=max(1, train_chunk_size // 4),
+            save_interval=max(2, train_chunk_size),
         ),
     )
 
@@ -194,12 +466,23 @@ def run_dreamer_native(
             "policy_mode must be either 'diagnostic_random' or 'parity_candidate', "
             f"got {config.policy_mode!r}"
         )
+    policy_impl = _normalize_policy_impl(config.policy_impl)
 
     env_steps = 0
     train_target_steps = 0
     train_updates = 0
     episodes = 0
     next_eval = max(1, int(config.eval_interval))
+    update_credit = 0.0
+    train_backlog = 0
+    min_buffer_steps = batch_size * sequence_length
+    warmup_steps = max(0, int(config.warmup_steps))
+
+    train_actor_steps = 0
+    train_shooting_steps = 0
+    eval_actor_steps = 0
+    eval_shooting_steps = 0
+    actor_fallback_steps = 0
 
     try:
         while env_steps < int(config.steps):
@@ -211,20 +494,51 @@ def run_dreamer_native(
 
             done = False
             ep_len = 0
+
+            policy_state: State | None = None
+            prev_action: torch.Tensor | None = None
+            if policy_mode == "parity_candidate":
+                policy_state = model.initial_state(1, torch.device(config.device))
+                prev_action = torch.zeros(
+                    (1, int(env.action_dim)), device=torch.device(config.device)
+                )
+
             while not done and env_steps < int(config.steps):
                 if policy_mode == "parity_candidate":
-                    action = _select_dreamer_shooting_action(
-                        model=model,
-                        obs=obs,
-                        action_dim=env.action_dim,
-                        rng=rng,
-                        device=config.device,
-                        horizon=max(1, int(config.shooting_horizon)),
-                        num_candidates=max(1, int(config.shooting_num_candidates)),
+                    assert policy_state is not None
+                    assert prev_action is not None
+                    action, action_onehot, policy_state, used_impl, did_fallback = (
+                        _select_dreamer_policy_action(
+                            model=model,
+                            obs=obs,
+                            state=policy_state,
+                            prev_action=prev_action,
+                            action_dim=env.action_dim,
+                            rng=rng,
+                            device=config.device,
+                            policy_impl=policy_impl,
+                            shooting_horizon=max(1, int(config.shooting_horizon)),
+                            shooting_num_candidates=max(1, int(config.shooting_num_candidates)),
+                        )
                     )
+                    prev_action = action_onehot
+                    model_action = (
+                        action_onehot.squeeze(0)
+                        .detach()
+                        .cpu()
+                        .numpy()
+                        .astype(np.float32, copy=False)
+                    )
+                    if used_impl == "actor":
+                        train_actor_steps += 1
+                    else:
+                        train_shooting_steps += 1
+                    if did_fallback:
+                        actor_fallback_steps += 1
                 else:
                     action = env.sample_action(rng)
-                model_action = env.to_model_action(action)
+                    model_action = env.to_model_action(action)
+
                 next_obs, reward, terminated, truncated, _ = env.step(action)
 
                 ep_obs.append(np.asarray(obs, dtype=np.float32))
@@ -237,27 +551,45 @@ def run_dreamer_native(
                 ep_len += 1
                 done = bool(terminated or truncated)
 
-                while env_steps >= next_eval:
-                    if len(buffer) >= max(2, int(config.sequence_length) + 1) and env_steps >= int(
-                        config.warmup_steps
-                    ):
-                        train_target_steps += max(1, int(config.train_steps_per_eval))
-                        trainer.train(buffer, num_steps=train_target_steps)
-                        train_updates += max(1, int(config.train_steps_per_eval))
+                update_credit += updates_per_env_step
+                newly_due = int(update_credit)
+                if newly_due > 0:
+                    train_backlog += newly_due
+                    update_credit -= float(newly_due)
 
-                    eval_return = _evaluate_policy(
+                if _train_ready(
+                    buffer=buffer,
+                    env_steps=env_steps,
+                    warmup_steps=warmup_steps,
+                    min_buffer_steps=min_buffer_steps,
+                ):
+                    train_backlog, train_target_steps, train_updates = _drain_backlog(
+                        trainer=trainer,
+                        buffer=buffer,
+                        backlog=train_backlog,
+                        chunk_size=train_chunk_size,
+                        train_target_steps=train_target_steps,
+                        train_updates=train_updates,
+                    )
+
+                while env_steps >= next_eval:
+                    eval_return, eval_stats = _evaluate_policy(
                         task_id=config.task_id,
                         backend=config.env_backend,
                         seed=config.seed + 10_000 + int(next_eval),
                         num_episodes=config.eval_episodes,
                         max_episode_steps=config.max_episode_steps,
                         policy_mode=policy_mode,
+                        policy_impl=policy_impl,
                         model=model,
                         action_dim=env.action_dim,
                         device=config.device,
                         shooting_horizon=config.shooting_horizon,
                         shooting_num_candidates=config.shooting_num_candidates,
                     )
+                    eval_actor_steps += int(eval_stats.get("actor_steps", 0))
+                    eval_shooting_steps += int(eval_stats.get("shooting_steps", 0))
+                    actor_fallback_steps += int(eval_stats.get("fallback_steps", 0))
                     curve.append((float(env_steps), float(eval_return)))
                     next_eval += max(1, int(config.eval_interval))
 
@@ -274,39 +606,83 @@ def run_dreamer_native(
                     dones=dones,
                 )
                 episodes += 1
+
+                if _train_ready(
+                    buffer=buffer,
+                    env_steps=env_steps,
+                    warmup_steps=warmup_steps,
+                    min_buffer_steps=min_buffer_steps,
+                ):
+                    train_backlog, train_target_steps, train_updates = _drain_backlog(
+                        trainer=trainer,
+                        buffer=buffer,
+                        backlog=train_backlog,
+                        chunk_size=train_chunk_size,
+                        train_target_steps=train_target_steps,
+                        train_updates=train_updates,
+                    )
     finally:
         env.close()
 
+    if _train_ready(
+        buffer=buffer,
+        env_steps=env_steps,
+        warmup_steps=warmup_steps,
+        min_buffer_steps=min_buffer_steps,
+    ):
+        while train_backlog > 0:
+            chunk = min(train_chunk_size, train_backlog)
+            train_target_steps += chunk
+            trainer.train(buffer, num_steps=train_target_steps)
+            train_updates += chunk
+            train_backlog -= chunk
+
     if not curve:
-        eval_return = _evaluate_policy(
+        eval_return, eval_stats = _evaluate_policy(
             task_id=config.task_id,
             backend=config.env_backend,
             seed=config.seed + 20_000,
             num_episodes=config.eval_episodes,
             max_episode_steps=config.max_episode_steps,
             policy_mode=policy_mode,
+            policy_impl=policy_impl,
             model=model,
             action_dim=env.action_dim,
             device=config.device,
             shooting_horizon=config.shooting_horizon,
             shooting_num_candidates=config.shooting_num_candidates,
         )
+        eval_actor_steps += int(eval_stats.get("actor_steps", 0))
+        eval_shooting_steps += int(eval_stats.get("shooting_steps", 0))
+        actor_fallback_steps += int(eval_stats.get("fallback_steps", 0))
         curve.append((float(config.steps), float(eval_return)))
+
+    policy_impl_effective = _resolve_policy_impl_label(
+        policy_mode=policy_mode,
+        actor_steps=train_actor_steps,
+        shooting_steps=train_shooting_steps,
+        is_eval=False,
+    )
+    eval_policy_impl_effective = _resolve_policy_impl_label(
+        policy_mode=policy_mode,
+        actor_steps=eval_actor_steps,
+        shooting_steps=eval_shooting_steps,
+        is_eval=True,
+    )
 
     metadata: dict[str, Any] = {
         "mode": "native_real_env",
         "family": "dreamerv3",
         "task_id": config.task_id,
         "model_id": model_id,
+        "model_profile": model_profile,
         "policy": "model_based" if policy_mode == "parity_candidate" else "random",
         "policy_mode": config.policy_mode,
-        "policy_impl": "model_based_shooting"
-        if policy_mode == "parity_candidate"
-        else "random_env_sampler",
+        "policy_impl": policy_impl_effective,
+        "policy_impl_requested": policy_impl,
+        "policy_impl_effective": policy_impl_effective,
         "eval_policy": "model_based" if policy_mode == "parity_candidate" else "random",
-        "eval_policy_impl": "model_based_shooting_eval"
-        if policy_mode == "parity_candidate"
-        else "random_env_sampler_eval",
+        "eval_policy_impl": eval_policy_impl_effective,
         "env_backend": config.env_backend,
         "obs_shape": list(env.obs_shape),
         "action_dim": int(env.action_dim),
@@ -315,12 +691,22 @@ def run_dreamer_native(
         "buffer_capacity": int(config.buffer_capacity),
         "warmup_steps": int(config.warmup_steps),
         "train_steps_per_eval": int(config.train_steps_per_eval),
+        "train_steps_per_eval_status": "deprecated_ignored_for_dreamer",
+        "replay_ratio": float(replay_ratio),
+        "train_chunk_size": int(train_chunk_size),
+        "target_train_updates": int(target_train_updates),
         "train_updates_executed": int(train_updates),
         "env_steps_collected": int(env_steps),
         "episodes_collected": int(episodes),
         "eval_interval": int(config.eval_interval),
         "eval_episodes": int(config.eval_episodes),
         "eval_window": int(config.eval_window),
+        "sequence_length": int(sequence_length),
+        "batch_size": int(batch_size),
+        "learning_rate": float(learning_rate),
+        "recurrent_policy_state": bool(policy_mode == "parity_candidate"),
+        "state_reset_on_episode": bool(policy_mode == "parity_candidate"),
+        "actor_fallback_steps": int(actor_fallback_steps),
     }
 
     return curve, metadata

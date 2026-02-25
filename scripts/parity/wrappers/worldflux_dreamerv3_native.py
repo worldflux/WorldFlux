@@ -30,6 +30,21 @@ def _parse_args() -> argparse.Namespace:
         default="parity_candidate",
         choices=["diagnostic_random", "parity_candidate"],
     )
+    parser.add_argument(
+        "--dreamer-policy-impl",
+        type=str,
+        default="auto",
+        choices=["auto", "actor", "shooting"],
+    )
+    parser.add_argument("--dreamer-replay-ratio", type=float, default=128.0)
+    parser.add_argument("--dreamer-train-chunk-size", type=int, default=64)
+    parser.add_argument(
+        "--dreamer-model-profile",
+        type=str,
+        default="wf25m",
+        choices=["ci", "wf12m", "wf25m", "wf50m", "wf200m", "official_like"],
+    )
+    parser.add_argument("--dreamer-lr", type=float, default=4e-5)
     parser.add_argument("--timeout-sec", type=int, default=0)
     parser.add_argument("--python-executable", type=str, default="python3")
     parser.add_argument("--train-command", type=str, default="")
@@ -60,6 +75,11 @@ def main() -> int:
         "eval_episodes": args.eval_episodes,
         "eval_window": args.eval_window,
         "policy_mode": args.policy_mode,
+        "dreamer_policy_impl": args.dreamer_policy_impl,
+        "dreamer_replay_ratio": args.dreamer_replay_ratio,
+        "dreamer_train_chunk_size": args.dreamer_train_chunk_size,
+        "dreamer_model_profile": args.dreamer_model_profile,
+        "dreamer_lr": args.dreamer_lr,
     }
 
     command: str | list[str]
@@ -91,6 +111,16 @@ def main() -> int:
             str(args.eval_window),
             "--policy-mode",
             str(args.policy_mode),
+            "--dreamer-policy-impl",
+            str(args.dreamer_policy_impl),
+            "--dreamer-replay-ratio",
+            str(args.dreamer_replay_ratio),
+            "--dreamer-train-chunk-size",
+            str(args.dreamer_train_chunk_size),
+            "--dreamer-model-profile",
+            str(args.dreamer_model_profile),
+            "--dreamer-lr",
+            str(args.dreamer_lr),
         ]
         if args.mock:
             command.append("--mock")
