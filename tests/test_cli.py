@@ -329,17 +329,17 @@ def test_select_model_with_rich_uses_recommended_default(
 
     def _ask(*_args, **kwargs):
         captured.update(kwargs)
-        return "tdmpc2:ci"
+        return 1  # first option (default)
 
-    monkeypatch.setattr(cli.Prompt, "ask", staticmethod(_ask))
+    monkeypatch.setattr(cli.IntPrompt, "ask", staticmethod(_ask))
     selected = cli._select_model_with_rich("tdmpc2:ci")
 
     assert selected == "tdmpc2:ci"
-    assert captured["default"] == "tdmpc2:ci"
+    assert captured["default"] == 1
     choices = captured["choices"]
     assert isinstance(choices, list)
-    assert choices[0] == "tdmpc2:ci"
-    assert choices[1] == "dreamer:ci"
+    assert choices[0] == "1"
+    assert choices[1] == "2"
 
 
 def test_init_keyboard_interrupt_returns_130(monkeypatch: pytest.MonkeyPatch) -> None:
