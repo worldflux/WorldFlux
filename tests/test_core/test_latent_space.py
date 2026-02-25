@@ -96,10 +96,23 @@ class TestCategoricalLatentSpace:
         prior = torch.randn(4, 32, 32)
 
         kl = space.kl_divergence(posterior, prior, free_nats=0.0)
-        kl_free = space.kl_divergence(posterior, prior, free_nats=10.0)
+        # With very high free_nats threshold, result is clamped to the threshold
+        kl_high_free = space.kl_divergence(posterior, prior, free_nats=1000.0)
+        assert (kl_high_free >= kl).all(), "max(free_nats, kl) should floor KL"
+        assert torch.allclose(
+            kl_high_free, torch.tensor(1000.0)
+        ), "when kl < free_nats, result should be free_nats"
 
-        # Free nats should reduce KL
-        assert (kl_free <= kl).all()
+    def test_kl_free_nats_above_threshold(self):
+        """When KL > free_nats, result equals raw KL (no clipping)."""
+        space = CategoricalLatentSpace(num_categoricals=32, num_classes=32)
+        posterior = torch.randn(4, 32, 32)
+        prior = torch.randn(4, 32, 32)
+
+        kl = space.kl_divergence(posterior, prior, free_nats=0.0)
+        # free_nats=0.01 is well below typical KL for random 32x32 categoricals
+        kl_low_free = space.kl_divergence(posterior, prior, free_nats=0.01)
+        assert torch.allclose(kl, kl_low_free), "when kl >> free_nats, result should be raw kl"
 
 
 class TestSimNormLatentSpace:
