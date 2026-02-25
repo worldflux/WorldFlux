@@ -136,15 +136,21 @@ class CategoricalLatentSpace(LatentSpace):
 
         posterior = F.softmax(posterior_logits, dim=-1)
 
-        kl = (
+        # KL per categorical, shape [batch, num_categoricals]
+        kl_per_cat = (
             posterior
             * (F.log_softmax(posterior_logits, dim=-1) - F.log_softmax(prior_logits, dim=-1))
         ).sum(dim=-1)
 
-        if free_nats > 0:
-            kl = torch.clamp(kl - free_nats, min=0.0)
+        # Sum over categoricals first, then apply free_nats to the total.
+        # DreamerV3 uses max(free_nats, total_kl): gradient flows only when
+        # total KL exceeds the threshold, preventing posterior collapse.
+        kl_total = kl_per_cat.sum(dim=-1)
 
-        return kl.sum(dim=-1)
+        if free_nats > 0:
+            kl_total = torch.maximum(kl_total, torch.tensor(free_nats, device=kl_total.device))
+
+        return kl_total
 
 
 class SimNormLatentSpace(LatentSpace):
