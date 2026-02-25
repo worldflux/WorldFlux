@@ -322,8 +322,9 @@ class DreamerV3Config(WorldModelConfig):
         cnn_depth: Base depth multiplier for CNN encoder/decoder.
         cnn_kernels: Kernel sizes for CNN layers.
         kl_free: Free nats for KL divergence (prevents posterior collapse).
-        kl_balance: Balance between prior and posterior in KL loss.
-        loss_scales: Weights for each loss component.
+        loss_scales: Weights for each loss component. Keys: reconstruction,
+            kl_dynamics (β_dyn=0.5), kl_representation (β_rep=0.1), reward,
+            continue.
         use_symlog: Whether to use symlog transformation for predictions.
 
     Example:
@@ -355,13 +356,17 @@ class DreamerV3Config(WorldModelConfig):
     cnn_depth: int = 48
     cnn_kernels: tuple[int, ...] = (4, 4, 4, 4)
 
-    # Loss weights
+    # DreamerV3 paper uses lr=1e-4 for world model, grad_clip=1000
+    learning_rate: float = 1e-4
+    grad_clip: float = 1000.0
+
+    # Loss weights (DreamerV3 paper: β_pred=1.0, β_dyn=0.5, β_rep=0.1)
     kl_free: float = 1.0
-    kl_balance: float = 0.8
     loss_scales: dict[str, float] = field(
         default_factory=lambda: {
             "reconstruction": 1.0,
-            "kl": 0.1,
+            "kl_dynamics": 0.5,
+            "kl_representation": 0.1,
             "reward": 1.0,
             "continue": 1.0,
         }
@@ -369,10 +374,33 @@ class DreamerV3Config(WorldModelConfig):
 
     use_symlog: bool = True
 
+    # Twohot categorical reward prediction (DreamerV3 paper)
+    use_twohot: bool = True
+    reward_num_bins: int = 255
+    reward_bin_min: float = -20.0
+    reward_bin_max: float = 20.0
+
+    # Actor-Critic (gated by actor_critic flag)
+    actor_critic: bool = False
+    imagination_horizon: int = 15
+    actor_lr: float = 3e-5
+    critic_lr: float = 3e-5
+    gamma: float = 0.997
+    lambda_: float = 0.95
+    slow_critic_fraction: float = 0.02
+    actor_entropy_coef: float = 3e-4
+    return_normalization: bool = True
+
     def __post_init__(self) -> None:
         """Initialize derived values and validate."""
         self._normalize_interface_specs()
         self.stoch_dim = self.stoch_discrete * self.stoch_classes
+        if self.actor_critic:
+            self.loss_scales.setdefault("actor", 1.0)
+            self.loss_scales.setdefault("critic", 1.0)
+            # Auto-adjust entropy coef for continuous actions if left at default
+            if self.action_type == "continuous" and self.actor_entropy_coef == 3e-4:
+                self.actor_entropy_coef = 1e-4
         self._validate()
 
     def _validate(self) -> None:
@@ -418,12 +446,6 @@ class DreamerV3Config(WorldModelConfig):
         if self.kl_free < 0:
             raise ConfigurationError(
                 f"kl_free must be non-negative, got {self.kl_free}",
-                config_name=self.model_name,
-            )
-
-        if not (0 <= self.kl_balance <= 1):
-            raise ConfigurationError(
-                f"kl_balance must be in [0, 1], got {self.kl_balance}",
                 config_name=self.model_name,
             )
 
