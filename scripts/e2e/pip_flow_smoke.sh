@@ -39,15 +39,15 @@ python -m pip install "${WHEEL_PATH}"
 export WORLDFLUX_INIT_ENSURE_DEPS=0
 
 cd "${WORK_DIR}"
+# Non-interactive wizard answers (Rich numbered fallback):
+# project, env(1=atari), model(1=dreamer:ci), steps(1=50k), batch(1=8), device(2=cpu), confirm
 printf '%s\n' \
   "demo-project" \
-  "atari" \
-  "3,64,64" \
-  "6" \
-  "dreamer:ci" \
-  "100" \
-  "4" \
-  "n" \
+  "1" \
+  "1" \
+  "1" \
+  "1" \
+  "2" \
   "y" \
   | worldflux init demo --force
 
