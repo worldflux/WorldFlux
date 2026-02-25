@@ -1,5 +1,9 @@
 """DreamerV3 World Model implementation."""
 
+from __future__ import annotations
+
+import copy
+
 import torch
 import torch.nn.functional as F
 from torch import Tensor
@@ -26,12 +30,21 @@ from ...core.spec import (
 from ...core.state import State
 from .decoder import CNNDecoder, MLPDecoder
 from .encoder import CNNEncoder, MLPEncoder
-from .heads import ContinueHead, RewardHead, symlog
+from .heads import (
+    ContinueHead,
+    ContinuousActorHead,
+    CriticHead,
+    DiscreteActorHead,
+    RewardHead,
+    compute_td_lambda,
+    symlog,
+    twohot_encode,
+)
 from .rssm import RSSM
 
 
 class _DreamerObservationEncoder(ObservationEncoder):
-    def __init__(self, model: "DreamerV3WorldModel"):
+    def __init__(self, model: DreamerV3WorldModel):
         self.model = model
 
     def encode(self, observations: dict[str, Tensor]) -> State:
@@ -60,7 +73,7 @@ class _DreamerActionConditioner(ActionConditioner):
 
 
 class _DreamerDynamics(DynamicsModel):
-    def __init__(self, model: "DreamerV3WorldModel"):
+    def __init__(self, model: DreamerV3WorldModel):
         self.model = model
 
     def transition(
@@ -76,15 +89,17 @@ class _DreamerDynamics(DynamicsModel):
 
 
 class _DreamerDecoder(Decoder):
-    def __init__(self, model: "DreamerV3WorldModel"):
+    def __init__(self, model: DreamerV3WorldModel):
         self.model = model
 
     def decode(self, state: State, conditions: ConditionPayload | None = None) -> dict[str, Tensor]:
         del conditions
         features = self.model._features(state)
+        # Return scalar reward for rollout/inference consumers.
+        # The loss() method calls reward_head directly for raw logits.
         return {
             "obs": self.model.decoder(features),
-            "reward": self.model.reward_head(features),
+            "reward": self.model.reward_head.predict(features).unsqueeze(-1),
             "continue": self.model.continue_head(features),
         }
 
@@ -165,6 +180,10 @@ class DreamerV3WorldModel(WorldModel):
             feature_dim=feature_dim,
             hidden_dim=config.hidden_dim,
             use_symlog=config.use_symlog,
+            use_twohot=config.use_twohot,
+            num_bins=config.reward_num_bins,
+            bin_min=config.reward_bin_min,
+            bin_max=config.reward_bin_max,
         )
         self.continue_head = ContinueHead(
             feature_dim=feature_dim,
@@ -172,6 +191,41 @@ class DreamerV3WorldModel(WorldModel):
         )
 
         self.register_buffer("_device_tracker", torch.empty(0))
+
+        # Actor-Critic (gated by config.actor_critic)
+        if config.actor_critic:
+            self.capabilities.add(Capability.POLICY)
+            self.capabilities.add(Capability.VALUE)
+
+            if config.action_type == "discrete":
+                self.actor_head: DiscreteActorHead | ContinuousActorHead = DiscreteActorHead(
+                    feature_dim=feature_dim,
+                    action_dim=config.action_dim,
+                    hidden_dim=config.hidden_dim,
+                    entropy_coef=config.actor_entropy_coef,
+                )
+            else:
+                self.actor_head = ContinuousActorHead(
+                    feature_dim=feature_dim,
+                    action_dim=config.action_dim,
+                    hidden_dim=config.hidden_dim,
+                    entropy_coef=config.actor_entropy_coef,
+                )
+
+            self.critic_head = CriticHead(
+                feature_dim=feature_dim,
+                hidden_dim=config.hidden_dim,
+                num_bins=config.reward_num_bins,
+                bin_min=config.reward_bin_min,
+                bin_max=config.reward_bin_max,
+            )
+            self.slow_critic = copy.deepcopy(self.critic_head)
+            for p in self.slow_critic.parameters():
+                p.requires_grad = False
+
+            # Running percentile for return normalisation
+            self.register_buffer("_return_low", torch.tensor(0.0))
+            self.register_buffer("_return_high", torch.tensor(1.0))
 
         # Universal component graph (v0.2).
         self.observation_encoder = _DreamerObservationEncoder(self)
@@ -185,6 +239,8 @@ class DreamerV3WorldModel(WorldModel):
             "decoder",
             "rollout_executor",
         }
+        if config.actor_critic:
+            self.composable_support.update({"actor", "critic"})
 
     @property
     def device(self) -> torch.device:
@@ -306,6 +362,20 @@ class DreamerV3WorldModel(WorldModel):
             stoch = stoch.flatten(start_dim=1)
         return torch.cat([deter, stoch], dim=-1)
 
+    def parameter_groups(self) -> list[dict]:
+        """Return parameter groups with separate LRs for actor/critic."""
+        if not self.config.actor_critic:
+            return [{"params": list(self.parameters())}]
+        actor_ids = {id(p) for p in self.actor_head.parameters()}
+        critic_ids = {id(p) for p in self.critic_head.parameters()}
+        ac_ids = actor_ids | critic_ids
+        wm_params = [p for p in self.parameters() if id(p) not in ac_ids]
+        return [
+            {"params": wm_params, "lr": self.config.learning_rate},
+            {"params": list(self.actor_head.parameters()), "lr": self.config.actor_lr},
+            {"params": list(self.critic_head.parameters()), "lr": self.config.critic_lr},
+        ]
+
     def decode(self, state: State, conditions: ConditionPayload | None = None) -> ModelOutput:
         """Decode latent state to predictions."""
         return super().decode(state, conditions=conditions)
@@ -352,11 +422,11 @@ class DreamerV3WorldModel(WorldModel):
 
         components: dict[str, Tensor] = {}
 
-        # KL loss with KL balancing (DreamerV3 paper section 3.4)
-        # kl_balance controls the trade-off between representation learning and dynamics learning
-        # kl_balance=1.0: only dynamics learns, kl_balance=0.0: only representation learns
-        kl_loss = torch.tensor(0.0, device=device)
-        alpha = self.config.kl_balance
+        # KL losses (DreamerV3 paper section 3.4)
+        # Dynamics loss (β_dyn=0.5): prior learns to predict posterior
+        # Representation loss (β_rep=0.1): encoder learns to match prior
+        dyn_loss = torch.tensor(0.0, device=device)
+        rep_loss = torch.tensor(0.0, device=device)
 
         for state in states:
             posterior_logits = state.tensors.get("posterior_logits")
@@ -374,10 +444,12 @@ class DreamerV3WorldModel(WorldModel):
                     prior_logits.detach(),  # Stop gradient on dynamics
                     free_nats=self.config.kl_free,
                 )
-                # Balanced KL loss
-                kl = alpha * kl_dynamics + (1 - alpha) * kl_representation
-                kl_loss = kl_loss + kl.mean()
-        components["kl"] = kl_loss / seq_len
+                dyn_loss = dyn_loss + kl_dynamics.mean()
+                rep_loss = rep_loss + kl_representation.mean()
+        components["kl_dynamics"] = dyn_loss / seq_len
+        components["kl_representation"] = rep_loss / seq_len
+        # Combined KL for backward-compatible logging
+        components["kl"] = components["kl_dynamics"] + components["kl_representation"]
 
         # Reconstruction loss
         recon_loss = torch.tensor(0.0, device=device)
@@ -394,11 +466,18 @@ class DreamerV3WorldModel(WorldModel):
         # Reward loss
         reward_loss = torch.tensor(0.0, device=device)
         for t in range(1, seq_len):
-            decoded = self.decode(states[t])
+            features = self._features(states[t])
+            reward_logits = self.reward_head(features)
             target = rewards[:, t]
-            if self.config.use_symlog:
-                target = symlog(target)
-            reward_loss = reward_loss + F.mse_loss(decoded.preds["reward"].squeeze(-1), target)
+            if self.reward_head.use_twohot:
+                symlog_target = symlog(target)
+                twohot_target = twohot_encode(symlog_target, self.reward_head.bins)
+                log_probs = F.log_softmax(reward_logits, dim=-1)
+                reward_loss = reward_loss + -(twohot_target * log_probs).sum(dim=-1).mean()
+            else:
+                if self.config.use_symlog:
+                    target = symlog(target)
+                reward_loss = reward_loss + F.mse_loss(reward_logits.squeeze(-1), target)
         components["reward"] = reward_loss / max(seq_len - 1, 1)
 
         # Continue loss
@@ -414,13 +493,127 @@ class DreamerV3WorldModel(WorldModel):
         # Total loss
         total = (
             self.config.loss_scales["reconstruction"] * components["reconstruction"]
-            + self.config.loss_scales["kl"] * components["kl"]
+            + self.config.loss_scales["kl_dynamics"] * components["kl_dynamics"]
+            + self.config.loss_scales["kl_representation"] * components["kl_representation"]
             + self.config.loss_scales["reward"] * components["reward"]
             + self.config.loss_scales["continue"] * components["continue"]
         )
 
+        # Actor-Critic losses (imagination)
+        if self.config.actor_critic:
+            ac = self._imagine_and_compute_ac_loss(states)
+            components.update(ac)
+            self._update_slow_critic()
+            total = total + (
+                self.config.loss_scales.get("actor", 1.0) * components["actor"]
+                + self.config.loss_scales.get("critic", 1.0) * components["critic"]
+            )
+
         metrics = {k: v.item() for k, v in components.items()}
         return LossOutput(loss=total, components=components, metrics=metrics)
+
+    # ------------------------------------------------------------------
+    # Actor-Critic helpers
+    # ------------------------------------------------------------------
+
+    def _imagine_and_compute_ac_loss(self, posterior_states: list[State]) -> dict[str, Tensor]:
+        """Run imagination from posterior states and compute AC losses."""
+        device = self.device
+        horizon = self.config.imagination_horizon
+
+        # Flatten all posterior states into a single batch for imagination
+        all_deter = torch.cat([s.tensors["deter"] for s in posterior_states], dim=0)
+        all_stoch = torch.cat([s.tensors["stoch"] for s in posterior_states], dim=0)
+        imag_state = State(
+            tensors={"deter": all_deter.detach(), "stoch": all_stoch.detach()},
+            meta={"latent_type": "categorical"},
+        )
+
+        # Collect imagination trajectory
+        imag_features_list: list[Tensor] = []
+        log_probs_list: list[Tensor] = []
+
+        for _ in range(horizon):
+            features = self._features(imag_state)
+            imag_features_list.append(features)
+            action, log_prob = self.actor_head.sample(features)
+            log_probs_list.append(log_prob)
+            imag_state = self.rssm.prior_step(imag_state, action)
+
+        # Final features for bootstrap value
+        final_features = self._features(imag_state)
+        imag_features_list.append(final_features)
+
+        # Stack: (horizon+1, N, F) for features, (horizon, N) for log_probs
+        imag_features = torch.stack(imag_features_list, dim=0)
+        log_probs = torch.stack(log_probs_list, dim=0)
+
+        # Compute targets with no_grad
+        with torch.no_grad():
+            rewards = torch.stack(
+                [self.reward_head.predict(imag_features[t + 1]) for t in range(horizon)], dim=0
+            )
+            continues = torch.stack(
+                [self.continue_head.predict(imag_features[t + 1]) for t in range(horizon)], dim=0
+            )
+            slow_values = torch.stack(
+                [self.slow_critic.predict(imag_features[t]) for t in range(horizon + 1)], dim=0
+            )
+            returns = compute_td_lambda(
+                rewards,
+                slow_values,
+                continues,
+                gamma=self.config.gamma,
+                lambda_=self.config.lambda_,
+            )
+
+            # Normalise returns
+            if self.config.return_normalization:
+                returns = self._normalize_returns(returns)
+
+        # Critic loss: twohot CE per step
+        critic_loss = torch.tensor(0.0, device=device)
+        for t in range(horizon):
+            critic_logits = self.critic_head(imag_features[t].detach())
+            target_symlog = symlog(returns[t])
+            target_twohot = twohot_encode(target_symlog, self.critic_head.bins)
+            log_probs_critic = F.log_softmax(critic_logits, dim=-1)
+            critic_loss = critic_loss - (target_twohot * log_probs_critic).sum(dim=-1).mean()
+        critic_loss = critic_loss / horizon
+
+        # Actor loss: REINFORCE + entropy
+        with torch.no_grad():
+            baseline = torch.stack(
+                [self.critic_head.predict(imag_features[t]) for t in range(horizon)], dim=0
+            )
+            advantages = returns - baseline
+
+        reinforce = -(log_probs * advantages).mean()
+        entropy = torch.stack(
+            [self.actor_head.entropy(imag_features[t]) for t in range(horizon)], dim=0
+        ).mean()
+        actor_loss = reinforce - self.actor_head.entropy_coef * entropy
+
+        return {"actor": actor_loss, "critic": critic_loss}
+
+    def _update_slow_critic(self) -> None:
+        """EMA update for slow critic target network."""
+        frac = self.config.slow_critic_fraction
+        for slow_p, fast_p in zip(self.slow_critic.parameters(), self.critic_head.parameters()):
+            slow_p.data.mul_(1 - frac).add_(fast_p.data, alpha=frac)
+
+    def _normalize_returns(self, returns: Tensor) -> Tensor:
+        """Normalise returns to [0, 1] using running percentile (5th/95th)."""
+        momentum = 0.99
+        flat = returns.detach().flatten()
+        low = torch.quantile(flat, 0.05)
+        high = torch.quantile(flat, 0.95)
+        ret_low: Tensor = self._return_low  # type: ignore[assignment]
+        ret_high: Tensor = self._return_high  # type: ignore[assignment]
+        ret_low.mul_(momentum).add_(low, alpha=1 - momentum)
+        ret_high.mul_(momentum).add_(high, alpha=1 - momentum)
+        span = (ret_high - ret_low).clamp(min=1.0)
+        return (returns - ret_low) / span
 
     def save_pretrained(self, path: str) -> None:
         super().save_pretrained(path)
