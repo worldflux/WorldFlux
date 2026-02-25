@@ -1,0 +1,9 @@
+{
+  "model_id": "tdmpc2:ci",
+  "env": "mujoco/halfcheetah",
+  "metrics": {
+    "mean_score": 0.78
+  },
+  "created": "2026-02-24",
+  "version": "1.0"
+}

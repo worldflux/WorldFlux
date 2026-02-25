@@ -1,0 +1,9 @@
+{
+  "model_id": "dreamer:ci",
+  "env": "atari/pong",
+  "metrics": {
+    "mean_score": 0.85
+  },
+  "created": "2026-02-24",
+  "version": "1.0"
+}
