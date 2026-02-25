@@ -558,6 +558,9 @@ def test_prompt_with_inquirer_retries_invalid_values_and_falls_back_to_cpu(
         [
             "custom",  # environment
             "dreamer:ci",  # model selection
+            "custom",  # training steps (triggers text prompt)
+            "custom",  # batch size (triggers text prompt)
+            "cuda",  # device (CUDA not available → falls back to CPU)
         ]
     )
     printed: list[str] = []
@@ -605,8 +608,6 @@ def test_prompt_with_inquirer_allows_alternative_model_selection(
     text_answers = iter(
         [
             "alt-project",
-            "3,64,64",
-            "6",
             "100000",
             "16",
         ]
@@ -615,6 +616,9 @@ def test_prompt_with_inquirer_allows_alternative_model_selection(
         [
             "atari",
             "tdmpc2:ci",
+            "custom",  # training steps (triggers text prompt)
+            "custom",  # batch size (triggers text prompt)
+            "cuda",  # device (CUDA available)
         ]
     )
     monkeypatch.setattr(cli.torch.cuda, "is_available", lambda: True)
@@ -643,16 +647,23 @@ def test_prompt_with_rich_retries_invalid_values_and_falls_back_to_cpu(
         [
             "",  # project name (invalid)
             "rich-project",  # project name (valid)
-            "custom",  # environment
             "oops",  # observation shape (invalid)
             "39",  # observation shape (valid)
             "nan",  # action dim (invalid)
             "6",  # action dim (valid)
-            "tdmpc2:ci",  # selected model
             "0",  # total steps (invalid)
             "80000",  # total steps (valid)
             "oops",  # batch size (invalid)
             "24",  # batch size (valid)
+        ]
+    )
+    # _numbered_select answers: environment, steps, batch, device
+    numbered_answers = iter(
+        [
+            "custom",  # environment
+            "custom",  # steps preset → triggers text prompt
+            "custom",  # batch preset → triggers text prompt
+            "cuda",  # device (CUDA unavailable → falls back to CPU)
         ]
     )
     printed: list[str] = []
@@ -661,6 +672,8 @@ def test_prompt_with_rich_retries_invalid_values_and_falls_back_to_cpu(
         cli.Prompt, "ask", staticmethod(lambda *_args, **_kwargs: next(prompt_answers))
     )
     monkeypatch.setattr(cli.Confirm, "ask", staticmethod(lambda *_args, **_kwargs: True))
+    monkeypatch.setattr(cli, "_numbered_select", lambda *_args, **_kwargs: next(numbered_answers))
+    monkeypatch.setattr(cli, "_select_model_with_rich", lambda _recommended: "tdmpc2:ci")
     monkeypatch.setattr(cli.torch.cuda, "is_available", lambda: False)
     monkeypatch.setattr(cli.console, "print", lambda message="": printed.append(str(message)))
     monkeypatch.setattr(
@@ -679,7 +692,6 @@ def test_prompt_with_rich_retries_invalid_values_and_falls_back_to_cpu(
     assert config["model"] == "tdmpc2:ci"
     assert config["device"] == "cpu"
     assert any("Project name cannot be empty" in message for message in printed)
-    assert any("Choose your environment type" in message for message in printed)
     assert any("Invalid observation shape" in message for message in printed)
     assert any("Invalid action dim" in message for message in printed)
     assert any("Invalid total steps" in message for message in printed)
