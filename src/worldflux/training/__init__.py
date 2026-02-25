@@ -7,9 +7,11 @@ from .callbacks import (
     DiagnosisCallback,
     HeartbeatCallback,
     LoggingCallback,
+    TrainingReportCallback,
 )
 from .config import TrainingConfig
 from .data import ReplayBuffer, TokenSequenceProvider, TrajectoryDataset, TransitionArrayProvider
+from .report import HealthSignal, LossCurveSummary, TrainingReport
 from .trainer import Trainer, train
 
 __all__ = [
@@ -31,4 +33,9 @@ __all__ = [
     "CheckpointCallback",
     "HeartbeatCallback",
     "DiagnosisCallback",
+    "TrainingReportCallback",
+    # Report
+    "TrainingReport",
+    "HealthSignal",
+    "LossCurveSummary",
 ]

@@ -428,3 +428,69 @@ class TestParityProofCombined:
         result = runner.invoke(app, ["parity", "proof", "--help"])
         assert result.exit_code == 0
         assert "proof-grade" in result.output.lower() or "proof" in result.output.lower()
+
+
+# ---------------------------------------------------------------------------
+# Phase 6: QualityTier and quality_check
+# ---------------------------------------------------------------------------
+
+
+class TestQualityTier:
+    def test_enum_values(self) -> None:
+        from worldflux.verify.quick import QualityTier
+
+        assert QualityTier.SMOKE.value == "smoke"
+        assert QualityTier.BASELINE.value == "baseline"
+        assert QualityTier.PRODUCTION.value == "production"
+
+    def test_is_str_enum(self) -> None:
+        from worldflux.verify.quick import QualityTier
+
+        assert isinstance(QualityTier.SMOKE, str)
+        assert QualityTier.SMOKE == "smoke"
+
+    def test_exports(self) -> None:
+        from worldflux.verify import QualityCheckResult, QualityTier, quality_check
+
+        assert QualityTier is not None
+        assert QualityCheckResult is not None
+        assert callable(quality_check)
+
+
+class TestQualityCheck:
+    def test_smoke_check_passes_with_valid_model(self) -> None:
+        from worldflux import create_world_model
+        from worldflux.verify.quick import QualityTier, quality_check
+
+        model = create_world_model("dreamer:ci", obs_shape=(3, 64, 64), action_dim=6)
+        result = quality_check(model, tier=QualityTier.SMOKE, device="cpu")
+        assert result.passed is True
+        assert result.achieved_tier == QualityTier.SMOKE
+        assert result.score > 0
+
+    def test_quality_check_result_frozen(self) -> None:
+        from worldflux.verify.quick import QualityCheckResult, QualityTier
+
+        result = QualityCheckResult(
+            tier=QualityTier.SMOKE,
+            achieved_tier=QualityTier.SMOKE,
+            score=0.33,
+            passed=True,
+        )
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            result.passed = False  # type: ignore[misc]
+
+
+class TestAutoQualityCheck:
+    def test_config_has_auto_quality_check(self) -> None:
+        from worldflux.training.config import TrainingConfig
+
+        config = TrainingConfig()
+        assert hasattr(config, "auto_quality_check")
+        assert config.auto_quality_check is True
+
+    def test_config_auto_quality_check_disabled(self) -> None:
+        from worldflux.training.config import TrainingConfig
+
+        config = TrainingConfig(auto_quality_check=False)
+        assert config.auto_quality_check is False
