@@ -13,6 +13,8 @@ import torch
 
 from worldflux.telemetry.wasr import make_run_id, write_event
 
+from .report import HealthSignal, LossCurveSummary, TrainingReport
+
 if TYPE_CHECKING:
     from .trainer import Trainer
 
@@ -548,4 +550,356 @@ class DiagnosisCallback(Callback):
             epoch=int(trainer.state.epoch),
             step=step,
             suggestions=suggestions,
+        )
+
+
+class TrainingReportCallback(Callback):
+    """Generates structured training report on completion."""
+
+    def __init__(
+        self,
+        output_dir: str | Path = "./outputs",
+        scenario: str = "trainer",
+        metrics_path: Path | str | None = None,
+        run_id: str | None = None,
+    ):
+        self.output_dir = Path(output_dir)
+        self.scenario = scenario
+        self.metrics_path = Path(metrics_path) if metrics_path else None
+        self.run_id = run_id or make_run_id()
+
+        # Data collection
+        self._loss_history: list[float] = []
+        self._gradient_nan_count: int = 0
+        self._non_finite_count: int = 0
+        self._throughput_history: list[float] = []
+        self._start_time: float = 0.0
+
+    def on_train_begin(self, trainer: Trainer) -> None:
+        self._start_time = time.time()
+
+    def on_step_end(self, trainer: Trainer) -> None:
+        # Collect loss
+        loss = trainer.state.metrics.get("loss")
+        if loss is not None:
+            if math.isfinite(loss):
+                self._loss_history.append(loss)
+            else:
+                self._non_finite_count += 1
+
+        # Collect throughput periodically
+        if trainer.state.global_step % 100 == 0:
+            profile_fn = getattr(trainer, "runtime_profile", None)
+            if callable(profile_fn):
+                profile = profile_fn()
+                throughput = profile.get("throughput_steps_per_sec")
+                if throughput is not None and throughput > 0:
+                    self._throughput_history.append(throughput)
+
+    def on_train_end(self, trainer: Trainer) -> None:
+        report = self._build_report(trainer)
+        report_path = self.output_dir / "training_report.json"
+        report.save(report_path)
+        logger.info("Training report saved to %s", report_path)
+
+        # Write WASR event
+        if self.metrics_path:
+            write_event(
+                event="run.summary",
+                scenario=self.scenario,
+                success=True,
+                duration_sec=report.wall_time_sec,
+                ttfi_sec=report.ttfi_sec,
+                path=self.metrics_path,
+                run_id=self.run_id,
+                step=report.total_steps,
+            )
+
+    def _build_report(self, trainer: Trainer) -> TrainingReport:
+        wall_time = time.time() - self._start_time
+        total_steps = trainer.state.global_step
+        ttfi = float(trainer.state.ttfi_sec or 0.0)
+
+        # Throughput
+        if self._throughput_history:
+            throughput = sum(self._throughput_history) / len(self._throughput_history)
+        elif wall_time > 0:
+            throughput = total_steps / wall_time
+        else:
+            throughput = 0.0
+
+        # Loss curve summary
+        loss_summary = self._compute_loss_summary()
+
+        # Health signals
+        signals = self._compute_health_signals(loss_summary)
+
+        # Health score (weighted average)
+        health_score = self._compute_health_score(signals)
+
+        # Recommendations
+        recommendations = self._generate_recommendations(signals, loss_summary)
+
+        model_id = type(trainer.model).__name__
+
+        return TrainingReport(
+            model_id=model_id,
+            total_steps=total_steps,
+            wall_time_sec=wall_time,
+            final_loss=loss_summary.final_loss,
+            best_loss=loss_summary.best_loss,
+            ttfi_sec=ttfi,
+            throughput_steps_per_sec=throughput,
+            health_score=health_score,
+            health_signals=signals,
+            loss_curve_summary=loss_summary,
+            recommendations=recommendations,
+        )
+
+    def _compute_loss_summary(self) -> LossCurveSummary:
+        if not self._loss_history:
+            return LossCurveSummary(
+                initial_loss=0.0,
+                final_loss=0.0,
+                best_loss=0.0,
+                best_step=0,
+                convergence_slope=0.0,
+                plateau_detected=False,
+            )
+
+        initial = self._loss_history[0]
+        final = self._loss_history[-1]
+        best = min(self._loss_history)
+        best_step = self._loss_history.index(best)
+
+        # Convergence slope: linear regression over loss values
+        n = len(self._loss_history)
+        if n > 1:
+            x_mean = (n - 1) / 2.0
+            y_mean = sum(self._loss_history) / n
+            numerator = sum((i - x_mean) * (v - y_mean) for i, v in enumerate(self._loss_history))
+            denominator = sum((i - x_mean) ** 2 for i in range(n))
+            slope = numerator / denominator if denominator > 0 else 0.0
+        else:
+            slope = 0.0
+
+        # Plateau detection: compare last window vs previous window
+        plateau = False
+        window = min(1000, n // 4) if n >= 8 else 0
+        if window > 0:
+            recent = self._loss_history[-window:]
+            previous = self._loss_history[-2 * window : -window]
+            if previous:
+                recent_avg = sum(recent) / len(recent)
+                prev_avg = sum(previous) / len(previous)
+                if prev_avg > 0:
+                    relative_change = abs(recent_avg - prev_avg) / abs(prev_avg)
+                    plateau = relative_change < 0.01
+
+        return LossCurveSummary(
+            initial_loss=initial,
+            final_loss=final,
+            best_loss=best,
+            best_step=best_step,
+            convergence_slope=slope,
+            plateau_detected=plateau,
+        )
+
+    def _compute_health_signals(self, loss_summary: LossCurveSummary) -> dict[str, HealthSignal]:
+        signals: dict[str, HealthSignal] = {}
+
+        # Loss convergence
+        if not self._loss_history:
+            signals["loss_convergence"] = HealthSignal(
+                name="loss_convergence",
+                status="critical",
+                value=0.0,
+                message="No loss values recorded.",
+            )
+        elif loss_summary.convergence_slope >= 0:
+            signals["loss_convergence"] = HealthSignal(
+                name="loss_convergence",
+                status="warning",
+                value=loss_summary.convergence_slope,
+                message="Loss is not decreasing.",
+            )
+        else:
+            signals["loss_convergence"] = HealthSignal(
+                name="loss_convergence",
+                status="healthy",
+                value=loss_summary.convergence_slope,
+                message="Loss is decreasing.",
+            )
+
+        # Numerical stability
+        total = len(self._loss_history) + self._non_finite_count
+        if total > 0:
+            non_finite_ratio = self._non_finite_count / total
+        else:
+            non_finite_ratio = 0.0
+
+        if non_finite_ratio > 0.1:
+            status = "critical"
+            msg = f"{self._non_finite_count} non-finite loss values detected."
+        elif non_finite_ratio > 0.0:
+            status = "warning"
+            msg = f"{self._non_finite_count} non-finite loss values detected."
+        else:
+            status = "healthy"
+            msg = "All loss values are finite."
+        signals["numerical_stability"] = HealthSignal(
+            name="numerical_stability",
+            status=status,
+            value=1.0 - non_finite_ratio,
+            message=msg,
+        )
+
+        # Throughput stability
+        if len(self._throughput_history) >= 2:
+            mean_tp = sum(self._throughput_history) / len(self._throughput_history)
+            if mean_tp > 0:
+                variance = sum((t - mean_tp) ** 2 for t in self._throughput_history) / len(
+                    self._throughput_history
+                )
+                cv = (variance**0.5) / mean_tp
+            else:
+                cv = 0.0
+            if cv > 0.5:
+                tp_status = "warning"
+                tp_msg = f"Throughput coefficient of variation is high ({cv:.2f})."
+            else:
+                tp_status = "healthy"
+                tp_msg = f"Throughput is stable (CV={cv:.2f})."
+            signals["throughput_stability"] = HealthSignal(
+                name="throughput_stability",
+                status=tp_status,
+                value=1.0 - min(cv, 1.0),
+                message=tp_msg,
+            )
+        else:
+            signals["throughput_stability"] = HealthSignal(
+                name="throughput_stability",
+                status="healthy",
+                value=1.0,
+                message="Insufficient data for throughput analysis.",
+            )
+
+        return signals
+
+    @staticmethod
+    def _compute_health_score(signals: dict[str, HealthSignal]) -> float:
+        if not signals:
+            return 0.0
+        weights = {
+            "loss_convergence": 0.4,
+            "numerical_stability": 0.3,
+            "throughput_stability": 0.15,
+            "gradient_health": 0.15,
+        }
+        total_weight = 0.0
+        weighted_sum = 0.0
+        for name, signal in signals.items():
+            w = weights.get(name, 0.1)
+            score = {"healthy": 1.0, "warning": 0.5, "critical": 0.0}.get(signal.status, 0.0)
+            weighted_sum += w * score
+            total_weight += w
+        return weighted_sum / total_weight if total_weight > 0 else 0.0
+
+    @staticmethod
+    def _generate_recommendations(
+        signals: dict[str, HealthSignal],
+        loss_summary: LossCurveSummary,
+    ) -> list[str]:
+        recs: list[str] = []
+        for signal in signals.values():
+            if signal.status == "critical":
+                recs.append(f"[CRITICAL] {signal.name}: {signal.message}")
+            elif signal.status == "warning":
+                recs.append(f"[WARNING] {signal.name}: {signal.message}")
+        if loss_summary.plateau_detected:
+            recs.append(
+                "Loss plateau detected. Consider adjusting learning rate or model capacity."
+            )
+        return recs
+
+
+class EvalCallback(Callback):
+    """Run model evaluation suite periodically during training.
+
+    Args:
+        eval_interval: Steps between evaluation runs.
+        suite: Evaluation suite name (``quick``, ``standard``, ``comprehensive``).
+        scenario: Telemetry scenario tag.
+        metrics_path: Optional path for WASR telemetry events.
+        run_id: Optional run identifier for telemetry.
+    """
+
+    def __init__(
+        self,
+        eval_interval: int = 5000,
+        suite: str = "quick",
+        scenario: str = "trainer",
+        metrics_path: Path | str | None = None,
+        run_id: str | None = None,
+    ) -> None:
+        if eval_interval <= 0:
+            raise ValueError(f"eval_interval must be positive, got {eval_interval}")
+        self.eval_interval = eval_interval
+        self.suite = suite
+        self.scenario = scenario
+        self.metrics_path = Path(metrics_path) if metrics_path is not None else None
+        self.run_id = run_id or make_run_id()
+        self._start_time: float | None = None
+
+    def on_train_begin(self, trainer: Trainer) -> None:
+        self._start_time = time.time()
+        if trainer.state.train_start_time is not None:
+            self._start_time = trainer.state.train_start_time
+
+    def _current_duration(self) -> float:
+        if self._start_time is None:
+            return 0.0
+        return max(0.0, time.time() - self._start_time)
+
+    def on_step_end(self, trainer: Trainer) -> None:
+        step = int(trainer.state.global_step)
+        if step <= 0 or step % self.eval_interval != 0:
+            return
+
+        from worldflux.evals.suite import run_eval_suite
+
+        model_id = type(trainer.model).__name__
+        try:
+            report = run_eval_suite(
+                trainer.model,  # type: ignore[arg-type]
+                suite=self.suite,
+                model_id=model_id,
+            )
+        except Exception:
+            logger.warning("Eval suite failed at step %s", step, exc_info=True)
+            return
+
+        passed_count = sum(1 for r in report.results if r.passed is True)
+        total_checked = sum(1 for r in report.results if r.passed is not None)
+        logger.info(
+            "Eval [%s] at step %s: %d/%d passed (%.2fs)",
+            self.suite,
+            step,
+            passed_count,
+            total_checked,
+            report.wall_time_sec,
+        )
+
+        write_event(
+            event="eval.quick",
+            scenario=self.scenario,
+            success=report.all_passed is True or report.all_passed is None,
+            duration_sec=self._current_duration(),
+            ttfi_sec=float(trainer.state.ttfi_sec or 0.0),
+            artifacts={},
+            error="",
+            run_id=self.run_id,
+            path=self.metrics_path,
+            epoch=int(trainer.state.epoch),
+            step=step,
         )

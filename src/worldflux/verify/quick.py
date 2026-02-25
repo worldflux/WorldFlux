@@ -11,6 +11,8 @@ from __future__ import annotations
 import json
 import logging
 import time
+from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +22,26 @@ import torch
 from .protocol import PROTOCOL_VERSION, QuickVerifyResult
 
 logger = logging.getLogger(__name__)
+
+
+class QualityTier(str, Enum):
+    """Quality tier for training run evaluation."""
+
+    SMOKE = "smoke"  # finite output, no NaN
+    BASELINE = "baseline"  # above CI baseline
+    PRODUCTION = "production"  # reference-level thresholds
+
+
+@dataclass(frozen=True)
+class QualityCheckResult:
+    """Result of a quality tier check."""
+
+    tier: QualityTier
+    achieved_tier: QualityTier
+    score: float  # 0.0-1.0
+    passed: bool
+    details: dict[str, Any] = field(default_factory=dict)
+
 
 # Bundled baseline statistics: pre-computed reference distributions.
 # Each entry maps env -> {mean, std, n, margin_ratio}.
@@ -302,3 +324,179 @@ def _load_from_trainer_checkpoint(checkpoint_path: Path, *, device: str) -> torc
     )
     model.load_state_dict(checkpoint["model_state_dict"])
     return model
+
+
+def quality_check(
+    model: torch.nn.Module,
+    *,
+    tier: QualityTier = QualityTier.SMOKE,
+    device: str = "cpu",
+) -> QualityCheckResult:
+    """Run a quality check on a trained model.
+
+    Parameters
+    ----------
+    model:
+        Trained world model to check.
+    tier:
+        Target quality tier to check against.
+    device:
+        Device for model execution.
+
+    Returns
+    -------
+    QualityCheckResult
+        Result with achieved tier and score.
+    """
+    model.eval()
+    torch_device = torch.device(device)
+    model = model.to(torch_device)
+
+    config = getattr(model, "config", None)
+    obs_shape = tuple(getattr(config, "obs_shape", (3, 64, 64)))
+    action_dim = int(getattr(config, "action_dim", 6))
+
+    details: dict[str, Any] = {}
+    achieved = QualityTier.SMOKE
+    score = 0.0
+
+    # SMOKE check: finite outputs, no NaN
+    smoke_ok = _check_smoke(model, obs_shape, action_dim, torch_device, details)
+    if not smoke_ok:
+        return QualityCheckResult(
+            tier=tier,
+            achieved_tier=QualityTier.SMOKE,
+            score=0.0,
+            passed=False,
+            details=details,
+        )
+    score = 0.33
+
+    if tier == QualityTier.SMOKE:
+        return QualityCheckResult(
+            tier=tier,
+            achieved_tier=QualityTier.SMOKE,
+            score=score,
+            passed=True,
+            details=details,
+        )
+
+    # BASELINE check: eval suite passes
+    baseline_ok = _check_baseline(model, device, details)
+    if baseline_ok:
+        achieved = QualityTier.BASELINE
+        score = 0.66
+
+    if tier == QualityTier.BASELINE:
+        return QualityCheckResult(
+            tier=tier,
+            achieved_tier=achieved,
+            score=score,
+            passed=baseline_ok,
+            details=details,
+        )
+
+    # PRODUCTION check: comprehensive eval suite
+    production_ok = _check_production(model, device, details)
+    if production_ok:
+        achieved = QualityTier.PRODUCTION
+        score = 1.0
+
+    return QualityCheckResult(
+        tier=tier,
+        achieved_tier=achieved,
+        score=score,
+        passed=production_ok,
+        details=details,
+    )
+
+
+def _check_smoke(
+    model: torch.nn.Module,
+    obs_shape: tuple[int, ...],
+    action_dim: int,
+    device: torch.device,
+    details: dict[str, Any],
+) -> bool:
+    """SMOKE tier: verify finite outputs and no NaN."""
+    try:
+        with torch.no_grad():
+            obs = torch.randn(1, *obs_shape, device=device)
+            actions = torch.randn(5, 1, action_dim, device=device)
+
+            state = model.encode(obs)  # type: ignore[attr-defined, operator]
+
+            # Check state tensors are finite
+            for key, tensor in state.tensors.items():
+                if not torch.isfinite(tensor).all():
+                    details["smoke_failure"] = f"Non-finite state tensor: {key}"
+                    return False
+
+            trajectory = model.rollout(state, actions)  # type: ignore[attr-defined, operator]
+
+            # Check trajectory states
+            for i, s in enumerate(trajectory.states):
+                for key, tensor in s.tensors.items():
+                    if not torch.isfinite(tensor).all():
+                        details["smoke_failure"] = f"Non-finite trajectory state at step {i}: {key}"
+                        return False
+
+            if trajectory.rewards is not None:
+                if not torch.isfinite(trajectory.rewards).all():
+                    details["smoke_failure"] = "Non-finite rewards in trajectory"
+                    return False
+
+        details["smoke_passed"] = True
+        return True
+    except Exception as exc:
+        details["smoke_failure"] = str(exc)
+        return False
+
+
+def _check_baseline(
+    model: torch.nn.Module,
+    device: str,
+    details: dict[str, Any],
+) -> bool:
+    """BASELINE tier: run quick eval suite and check consistency."""
+    try:
+        from worldflux.evals.suite import run_eval_suite
+
+        report = run_eval_suite(
+            model,  # type: ignore[arg-type]
+            suite="quick",
+            model_id=type(model).__name__,
+        )
+        details["baseline_eval_results"] = report.to_dict()
+
+        # Pass if no explicit failures
+        if report.all_passed is False:
+            return False
+        return True
+    except Exception as exc:
+        details["baseline_failure"] = str(exc)
+        return False
+
+
+def _check_production(
+    model: torch.nn.Module,
+    device: str,
+    details: dict[str, Any],
+) -> bool:
+    """PRODUCTION tier: run standard eval suite."""
+    try:
+        from worldflux.evals.suite import run_eval_suite
+
+        report = run_eval_suite(
+            model,  # type: ignore[arg-type]
+            suite="standard",
+            model_id=type(model).__name__,
+        )
+        details["production_eval_results"] = report.to_dict()
+
+        if report.all_passed is False:
+            return False
+        return True
+    except Exception as exc:
+        details["production_failure"] = str(exc)
+        return False
