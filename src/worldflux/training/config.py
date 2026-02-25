@@ -75,6 +75,9 @@ class TrainingConfig:
     # Gradient accumulation
     gradient_accumulation_steps: int = 1
 
+    # Quality check after training
+    auto_quality_check: bool = True
+
     # Reserved for future trainer-level model patching. Currently unsupported by Trainer.
     model_overrides: dict[str, Any] = field(default_factory=dict)
 
