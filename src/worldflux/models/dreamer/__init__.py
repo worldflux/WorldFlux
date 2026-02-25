@@ -2,7 +2,18 @@
 
 from .decoder import CNNDecoder, MLPDecoder
 from .encoder import CNNEncoder, MLPEncoder
-from .heads import ContinueHead, RewardHead, symexp, symlog
+from .heads import (
+    ContinueHead,
+    ContinuousActorHead,
+    CriticHead,
+    DiscreteActorHead,
+    RewardHead,
+    compute_td_lambda,
+    symexp,
+    symlog,
+    twohot_encode,
+    twohot_expected_value,
+)
 from .rssm import RSSM
 from .world_model import DreamerV3WorldModel
 
@@ -15,6 +26,12 @@ __all__ = [
     "MLPDecoder",
     "RewardHead",
     "ContinueHead",
+    "DiscreteActorHead",
+    "ContinuousActorHead",
+    "CriticHead",
+    "compute_td_lambda",
     "symlog",
     "symexp",
+    "twohot_encode",
+    "twohot_expected_value",
 ]

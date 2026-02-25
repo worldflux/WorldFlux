@@ -309,8 +309,22 @@ class Trainer:
         )
 
     def _create_optimizer(self) -> Optimizer:
-        """Create optimizer based on config."""
-        params = self.model.parameters()
+        """Create optimizer based on config.
+
+        If the model exposes ``parameter_groups()`` (e.g. DreamerV3 with
+        actor-critic), those groups are used so that each group can carry
+        its own learning rate.  Otherwise, falls back to
+        ``model.parameters()``.
+        """
+        param_groups_fn = getattr(self.model, "parameter_groups", None)
+        if callable(param_groups_fn):
+            groups = param_groups_fn()
+            for g in groups:
+                g.setdefault("lr", self.config.learning_rate)
+                g.setdefault("weight_decay", self.config.weight_decay)
+            params: Any = groups
+        else:
+            params = self.model.parameters()
 
         if self.config.optimizer == "adamw":
             return AdamW(
@@ -436,7 +450,29 @@ class Trainer:
         if self.state.ttfi_sec is not None:
             logger.info(f"Time to first iteration: {self.state.ttfi_sec:.3f}s")
 
+        # Auto quality check
+        if self.config.auto_quality_check:
+            self._run_quality_check()
+
         return self.model
+
+    def _run_quality_check(self) -> None:
+        """Run a lightweight SMOKE-level quality check after training."""
+        try:
+            from worldflux.verify.quick import QualityTier, quality_check
+
+            result = quality_check(
+                self.model,
+                tier=QualityTier.SMOKE,
+                device=str(self.device),
+            )
+            logger.info(
+                "Training quality: %s (score: %.2f)",
+                result.achieved_tier.value,
+                result.score,
+            )
+        except Exception:
+            logger.debug("Quality check skipped due to error", exc_info=True)
 
     def runtime_profile(self) -> dict[str, float | None]:
         """Return lightweight runtime profiling metrics for DX instrumentation."""
