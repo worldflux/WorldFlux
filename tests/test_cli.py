@@ -149,7 +149,7 @@ def test_init_shows_guided_intro_panel(monkeypatch: pytest.MonkeyPatch) -> None:
         assert "Create a ready-to-run WorldFlux project" in result.stdout
         assert "Configuration Summary" in result.stdout
         assert cli.OBS_ACTION_GUIDE_URL in result.stdout
-        assert "Model fit:" in result.stdout
+        assert "Model fit" in result.stdout
 
 
 def test_init_gpu_fallback_to_cpu(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -748,9 +748,9 @@ def test_print_logo_writes_banner_and_header(monkeypatch: pytest.MonkeyPatch) ->
     printed: list[str] = []
     monkeypatch.setattr(cli.console, "print", lambda message="": printed.append(str(message)))
     cli._print_logo()
-    assert len(printed) == 4
+    assert len(printed) == 5
     assert "WorldFlux CLI" in printed[1]
-    assert "Panel" in printed[2]
+    assert "Panel" in printed[3]
 
 
 def test_parity_run_enforce_exits_non_zero_on_failed_verdict(

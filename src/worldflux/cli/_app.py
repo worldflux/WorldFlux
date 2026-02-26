@@ -5,6 +5,8 @@ from __future__ import annotations
 import typer
 from rich.console import Console
 
+from ._theme import WF_THEME
+
 app = typer.Typer(
     help="Unified Python interface for world models in reinforcement learning.",
     epilog=(
@@ -28,7 +30,7 @@ models_app = typer.Typer(help="Browse and inspect model presets.")
 
 parity_app.add_typer(parity_campaign_app, name="campaign")
 
-console = Console()
+console = Console(theme=WF_THEME)
 
 # ---------------------------------------------------------------------------
 # Constants (moved from cli.py)

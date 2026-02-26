@@ -6,11 +6,11 @@ from pathlib import Path
 
 import torch
 import typer
-from rich.panel import Panel
 
 from worldflux.config_loader import load_config
 
 from ._app import app, console
+from ._rich_output import key_value_panel, result_banner
 
 
 @app.command(rich_help_panel="Training")
@@ -66,7 +66,7 @@ def train(
     try:
         cfg = load_config(config)
     except (FileNotFoundError, ValueError) as exc:
-        console.print(f"[bold red]Configuration error:[/bold red] {exc}")
+        console.print(f"[wf.fail]Configuration error:[/wf.fail] {exc}")
         raise typer.Exit(code=1) from None
 
     # Apply CLI overrides
@@ -80,7 +80,7 @@ def train(
         client = WorldFluxCloudClient.from_env()
         if not client.api_key:
             console.print(
-                "[bold red]Cloud auth missing:[/bold red] run `worldflux login --api-key <key>` "
+                "[wf.fail]Cloud auth missing:[/wf.fail] run `worldflux login --api-key <key>` "
                 "or set WORLDFLUX_CLOUD_API_KEY."
             )
             raise typer.Exit(code=1)
@@ -118,25 +118,20 @@ def train(
         try:
             handle = backend.submit(payload)
         except RuntimeError as exc:
-            console.print(f"[bold red]Cloud submission failed:[/bold red] {exc}")
+            console.print(f"[wf.fail]Cloud submission failed:[/wf.fail] {exc}")
             raise typer.Exit(code=1) from None
 
         console.print(
-            Panel.fit(
-                "\n".join(
-                    [
-                        f"[bold]Backend:[/bold] {handle.backend}",
-                        f"[bold]Job ID:[/bold] {handle.job_id}",
-                        f"[bold]GPU:[/bold] {cloud_gpu}",
-                        f"[bold]Region:[/bold] {cloud_region}",
-                        "",
-                        "Next:",
-                        f"  worldflux logs {handle.job_id}",
-                        f"  worldflux pull {handle.job_id}",
-                    ]
-                ),
+            key_value_panel(
+                {
+                    "Backend": handle.backend,
+                    "Job ID": handle.job_id,
+                    "GPU": cloud_gpu,
+                    "Region": cloud_region,
+                    "Next": f"worldflux logs {handle.job_id}",
+                },
                 title="Cloud Training Submitted",
-                border_style="green",
+                border="wf.border.success",
             )
         )
         return
@@ -145,25 +140,23 @@ def train(
     if effective_device == "auto":
         effective_device = "cuda" if torch.cuda.is_available() else "cpu"
     if effective_device == "cuda" and not torch.cuda.is_available():
-        console.print("[yellow]CUDA is not available. Falling back to CPU.[/yellow]")
+        console.print("[wf.caution]CUDA is not available. Falling back to CPU.[/wf.caution]")
         effective_device = "cpu"
 
     console.print(
-        Panel.fit(
-            "\n".join(
-                [
-                    f"[bold]Project:[/bold] {cfg.project_name}",
-                    f"[bold]Model:[/bold] {cfg.model}",
-                    f"[bold]Obs shape:[/bold] {cfg.architecture.obs_shape}",
-                    f"[bold]Action dim:[/bold] {cfg.architecture.action_dim}",
-                    f"[bold]Steps:[/bold] {effective_steps:,}",
-                    f"[bold]Batch size:[/bold] {cfg.training.batch_size}",
-                    f"[bold]Device:[/bold] {effective_device}",
-                    f"[bold]Output:[/bold] {effective_output_dir}",
-                ]
-            ),
+        key_value_panel(
+            {
+                "Project": cfg.project_name,
+                "Model": cfg.model,
+                "Obs shape": str(cfg.architecture.obs_shape),
+                "Action dim": str(cfg.architecture.action_dim),
+                "Steps": f"{effective_steps:,}",
+                "Batch size": str(cfg.training.batch_size),
+                "Device": effective_device,
+                "Output": effective_output_dir,
+            },
             title="WorldFlux Train",
-            border_style="cyan",
+            border="wf.border",
         )
     )
 
@@ -176,7 +169,7 @@ def train(
             device=effective_device,
         )
     except (ValueError, RuntimeError) as exc:
-        console.print(f"[bold red]Model creation failed:[/bold red] {exc}")
+        console.print(f"[wf.fail]Model creation failed:[/wf.fail] {exc}")
         raise typer.Exit(code=1) from None
 
     training_config = TrainingConfig(
@@ -189,23 +182,23 @@ def train(
     )
 
     # Create data source
-    console.print("[cyan]Preparing training data...[/cyan]")
+    console.print("[wf.info]Preparing training data...[/wf.info]")
     data = create_random_buffer(
         obs_shape=cfg.architecture.obs_shape,
         action_dim=cfg.architecture.action_dim,
     )
-    console.print(f"[green]Training data ready:[/green] {len(data)} transitions")
+    console.print(f"[wf.ok]Training data ready:[/wf.ok] {len(data)} transitions")
 
     trainer = Trainer(model, training_config)
-    console.print(f"[cyan]Starting training for {effective_steps:,} steps...[/cyan]")
+    console.print(f"[wf.info]Starting training for {effective_steps:,} steps...[/wf.info]")
 
     try:
         trainer.train(data, resume_from=resume_from)
     except (RuntimeError, KeyboardInterrupt) as exc:
         if isinstance(exc, KeyboardInterrupt):
-            console.print("\n[yellow]Training interrupted by user.[/yellow]")
+            console.print("\n[wf.caution]Training interrupted by user.[/wf.caution]")
         else:
-            console.print(f"[bold red]Training failed:[/bold red] {exc}")
+            console.print(f"[wf.fail]Training failed:[/wf.fail] {exc}")
             raise typer.Exit(code=1) from None
 
     profile = trainer.runtime_profile()
@@ -214,20 +207,20 @@ def train(
     final_step = trainer.state.global_step
 
     summary_lines = [
-        f"[bold]Final step:[/bold] {final_step:,}",
-        f"[bold]Output:[/bold] {Path(effective_output_dir).resolve()}",
+        f"[wf.label]Final step:[/wf.label]  {final_step:,}",
+        f"[wf.label]Output:[/wf.label]      {Path(effective_output_dir).resolve()}",
     ]
     if elapsed is not None:
-        summary_lines.append(f"[bold]Elapsed:[/bold] {elapsed:.1f}s")
+        summary_lines.append(f"[wf.label]Elapsed:[/wf.label]     {elapsed:.1f}s")
     if throughput is not None:
-        summary_lines.append(f"[bold]Throughput:[/bold] {throughput:.1f} steps/s")
+        summary_lines.append(f"[wf.label]Throughput:[/wf.label]  {throughput:.1f} steps/s")
     summary_lines.append("")
     summary_lines.append("Next: worldflux verify --target " + effective_output_dir)
 
     console.print(
-        Panel.fit(
-            "\n".join(summary_lines),
+        result_banner(
+            passed=True,
             title="Training Complete",
-            border_style="green",
+            lines=summary_lines,
         )
     )

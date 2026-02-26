@@ -6,10 +6,10 @@ import json
 from typing import Any
 
 import typer
-from rich.panel import Panel
 from rich.table import Table
 
 from ._app import console, models_app
+from ._rich_output import key_value_panel
 
 
 @models_app.command("list")
@@ -36,7 +36,7 @@ def models_list(
         catalog = {k: {} for k in catalog}  # pragma: no cover
 
     if not catalog:
-        console.print("[yellow]No models match the given filter.[/yellow]")
+        console.print("[wf.caution]No models match the given filter.[/wf.caution]")
         raise typer.Exit(code=0)
 
     if format == "json":
@@ -45,9 +45,9 @@ def models_list(
 
     # Table output
     table = Table(title="WorldFlux Model Catalog", show_lines=False)
-    table.add_column("Model ID", style="bold cyan", no_wrap=True)
+    table.add_column("Model ID", style="wf.brand", no_wrap=True)
     table.add_column("Description", max_width=42, no_wrap=True, overflow="ellipsis")
-    table.add_column("Params", justify="right", style="dim", no_wrap=True)
+    table.add_column("Params", justify="right", style="wf.muted", no_wrap=True)
     table.add_column("Maturity", no_wrap=True)
 
     for model_id, info in catalog.items():
@@ -59,7 +59,7 @@ def models_list(
 
     console.print(table)
     if not verbose:
-        console.print("\n[dim]Tip: worldflux models info <id> for details.[/dim]")
+        console.print("\n[wf.muted]Tip: worldflux models info <id> for details.[/wf.muted]")
 
 
 @models_app.command("info")
@@ -79,7 +79,7 @@ def models_info(
     try:
         info = get_model_info(model)
     except ValueError as exc:
-        console.print(f"[bold red]Error:[/bold red] {exc}")
+        console.print(f"[wf.fail]Error:[/wf.fail] {exc}")
         raise typer.Exit(code=1) from None
 
     if format == "json":
@@ -87,15 +87,15 @@ def models_info(
         return
 
     model_id = info.get("model_id", model)
-    lines = [f"[bold]Model ID:[/bold] {model_id}"]
+    data: dict[str, Any] = {"Model ID": model_id}
     if "alias" in info:
-        lines.append(f"[bold]Alias:[/bold] {info['alias']} -> {model_id}")
+        data["Alias"] = f"{info['alias']} -> {model_id}"
     for key in ("description", "params", "type", "maturity", "obs_shape", "action_dim"):
         if key in info:
             val = info[key]
             if key == "maturity":
                 val = _style_maturity(str(val))
-            lines.append(f"[bold]{_pretty_label(key)}:[/bold] {val}")
+            data[_pretty_label(key)] = val
 
     # Show any remaining keys
     shown = {
@@ -110,15 +110,9 @@ def models_info(
     }
     for key, value in info.items():
         if key not in shown:
-            lines.append(f"[bold]{_pretty_label(key)}:[/bold] {value}")
+            data[_pretty_label(key)] = value
 
-    console.print(
-        Panel.fit(
-            "\n".join(lines),
-            title=f"Model: {model_id}",
-            border_style="cyan",
-        )
-    )
+    console.print(key_value_panel(data, title=f"Model: {model_id}", border="wf.border"))
 
 
 # ---------------------------------------------------------------------------
@@ -148,9 +142,9 @@ def _pretty_label(key: str) -> str:
 
 def _style_maturity(maturity: str) -> str:
     if maturity == "reference":
-        return "[bold green]reference[/bold green]"
+        return "[wf.pass]reference[/wf.pass]"
     if maturity == "experimental":
-        return "[yellow]experimental[/yellow]"
+        return "[wf.caution]experimental[/wf.caution]"
     if maturity == "skeleton":
-        return "[dim]skeleton[/dim]"
+        return "[wf.muted]skeleton[/wf.muted]"
     return maturity

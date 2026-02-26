@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import sys
@@ -11,8 +12,8 @@ from typing import Any
 
 import torch
 import typer
-from rich.panel import Panel
 from rich.prompt import Confirm, IntPrompt, Prompt
+from rich.rule import Rule
 
 from ._app import (
     ASCII_LOGO,
@@ -27,6 +28,7 @@ from ._app import (
     app,
     console,
 )
+from ._rich_output import key_value_panel, result_banner
 from ._utils import (
     _is_preset_environment,
     _model_choice_order,
@@ -41,6 +43,8 @@ from ._utils import (
 # Display helpers
 # ---------------------------------------------------------------------------
 
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+
 
 def _format_model_choice_label(model_id: str, *, recommended: bool) -> str:
     card = MODEL_UI_CARDS[model_id]
@@ -52,27 +56,18 @@ def _format_model_choice_label(model_id: str, *, recommended: bool) -> str:
 
 
 def _print_model_choices(recommended_model: str) -> None:
-    lines: list[str] = []
+    console.print(Rule("Model Choices", style="wf.header"))
     for model_id in _model_choice_order(recommended_model):
         card = MODEL_UI_CARDS[model_id]
-        suffix = " [recommended]" if model_id == recommended_model else ""
-        lines.extend(
-            [
-                f"[bold]{model_id}{suffix}[/bold] - {card['display_name']}",
-                f"Best for: {card['best_for']}",
-                f"Observation fit: {card['observation_fit']}",
-                f"Compute profile: {card['compute_profile']}",
-                f"Tradeoff: {card['tradeoff_note']}",
-                "",
-            ]
+        badge = (
+            " [wf.accent]\u2605 recommended[/wf.accent]" if model_id == recommended_model else ""
         )
-    console.print(
-        Panel.fit(
-            "\n".join(lines).strip(),
-            title="Model Choices",
-            border_style="cyan",
-        )
-    )
+        console.print(f"  [wf.brand]{model_id}[/wf.brand]{badge}")
+        console.print(f"    [wf.label]Best for:[/wf.label]     {card['best_for']}")
+        console.print(f"    [wf.label]Obs fit:[/wf.label]      {card['observation_fit']}")
+        console.print(f"    [wf.label]Compute:[/wf.label]      {card['compute_profile']}")
+        console.print(f"    [wf.label]Tradeoff:[/wf.label]     {card['tradeoff_note']}")
+        console.print()
 
 
 def _select_model_with_inquirer(inquirer: Any, recommended_model: str) -> str:
@@ -94,10 +89,104 @@ def _select_model_with_inquirer(inquirer: Any, recommended_model: str) -> str:
         )
     except Exception as exc:  # pragma: no cover - defensive fallback
         console.print(
-            f"[yellow]Model selection prompt failed ({exc}). "
-            f"Using recommended model: {recommended_model}[/yellow]"
+            f"[wf.caution]Model selection prompt failed ({exc}). "
+            f"Using recommended model: {recommended_model}[/wf.caution]"
         )
         return recommended_model
+
+
+def _arrow_select(
+    label: str,
+    options: Sequence[dict[str, Any]],
+    *,
+    default_index: int = 0,
+) -> Any:
+    """Interactive arrow-key selector using raw terminal input.
+
+    Uses ↑/↓ to move, Enter to confirm, Ctrl-C to cancel.
+    Handles terminal resize by recalculating screen rows from stored
+    plain-text lines at the *current* terminal width before erasing.
+    """
+    import signal
+    import termios
+    import tty
+
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    selected = default_index
+    n = len(options)
+    # Plain-text content of each rendered line (ANSI stripped).
+    # Used to recalculate screen rows at the current terminal width
+    # so that erase is correct even after a terminal resize.
+    prev_plain_lines: list[str] = []
+    resized = False
+
+    def _on_resize(_sig: int, _frame: object) -> None:
+        nonlocal resized
+        resized = True
+
+    def _draw(idx: int, *, erase: bool = False) -> None:
+        nonlocal prev_plain_lines
+        if erase and prev_plain_lines:
+            # Recalculate at CURRENT width — handles resize correctly.
+            tw = shutil.get_terminal_size().columns
+            erase_count = sum(max(1, -(-len(p) // tw)) for p in prev_plain_lines)
+            for _ in range(erase_count):
+                sys.stdout.write("\033[A\033[2K")
+            sys.stdout.flush()
+        new_plain: list[str] = []
+        for i, opt in enumerate(options):
+            if i == idx:
+                markup = f"  [wf.accent]\u203a[/wf.accent] [bold]{opt['name']}[/bold]"
+            else:
+                markup = f"    [wf.muted]{opt['name']}[/wf.muted]"
+            with console.capture() as capture:
+                console.print(markup)
+            output = capture.get()
+            sys.stdout.write(output)
+            # Store plain-text of each rendered line for resize-aware erase
+            for seg in output.split("\n"):
+                plain = _ANSI_RE.sub("", seg)
+                if plain:
+                    new_plain.append(plain)
+        prev_plain_lines = new_plain
+        sys.stdout.flush()
+
+    old_handler = signal.getsignal(signal.SIGWINCH)
+    signal.signal(signal.SIGWINCH, _on_resize)
+    try:
+        console.print(f"[wf.header]{label}[/wf.header]")
+        console.print("[wf.dim]  \u2191/\u2193 select  Enter confirm[/wf.dim]")
+        _draw(selected)
+        tty.setraw(fd)
+        while True:
+            ch = sys.stdin.read(1)
+            # On resize the next keypress triggers a full redraw first.
+            if resized:
+                resized = False
+                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+                _draw(selected, erase=True)
+                tty.setraw(fd)
+            if ch in ("\r", "\n"):
+                break
+            if ch == "\x03":  # Ctrl-C
+                raise KeyboardInterrupt
+            if ch == "\x1b":
+                seq = sys.stdin.read(2)
+                if seq == "[A":  # Up
+                    selected = (selected - 1) % n
+                elif seq == "[B":  # Down
+                    selected = (selected + 1) % n
+                else:
+                    continue
+                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+                _draw(selected, erase=True)
+                tty.setraw(fd)
+    finally:
+        signal.signal(signal.SIGWINCH, old_handler)
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+    return options[selected]["value"]
 
 
 def _numbered_select(
@@ -106,11 +195,19 @@ def _numbered_select(
     *,
     default_index: int = 0,
 ) -> Any:
-    """Rich fallback for radio-button style numbered selection."""
-    console.print(f"[bold]{label}[/bold]")
+    """Arrow-key selector with numbered fallback for non-interactive terminals."""
+    from ._utils import _is_interactive_terminal
+
+    if _is_interactive_terminal():
+        try:
+            return _arrow_select(label, options, default_index=default_index)
+        except Exception:
+            pass  # Fall through to numbered input
+
+    console.print(f"[wf.header]{label}[/wf.header]")
     for i, opt in enumerate(options, 1):
         marker = "\u203a" if (i - 1) == default_index else " "
-        console.print(f"  {marker} [cyan]\\[{i}][/cyan] {opt['name']}")
+        console.print(f"  {marker} [wf.accent]\\[{i}][/wf.accent] {opt['name']}")
     choice = IntPrompt.ask(
         "Enter number",
         choices=[str(i) for i in range(1, len(options) + 1)],
@@ -133,8 +230,8 @@ def _select_model_with_rich(recommended_model: str) -> str:
         return str(_numbered_select("Choose model:", model_options, default_index=0))
     except Exception as exc:  # pragma: no cover - defensive fallback
         console.print(
-            f"[yellow]Model selection prompt failed ({exc}). "
-            f"Using recommended model: {recommended_model}[/yellow]"
+            f"[wf.caution]Model selection prompt failed ({exc}). "
+            f"Using recommended model: {recommended_model}[/wf.caution]"
         )
         return recommended_model
 
@@ -150,11 +247,11 @@ def _format_environment_choice(name: str) -> str:
 
 
 def _print_environment_options() -> None:
-    console.print("[bold]Choose your environment type:[/bold]")
+    console.print("[wf.header]Choose your environment type:[/wf.header]")
     for key in ("atari", "mujoco", "custom"):
         option = ENVIRONMENT_OPTIONS[key]
         console.print(
-            f"- [cyan]{key}[/cyan]: {option['description']} "
+            f"- [wf.brand]{key}[/wf.brand]: {option['description']} "
             f"(default obs: {option['obs_shape']}, default action dim: {option['action_dim']})"
         )
 
@@ -192,41 +289,41 @@ def _print_model_recommendation(
             f"Choose {other_model} when your task is image-heavy "
             "and latent imagination quality is the priority."
         )
-    console.print(f"[bold green]Recommended model:[/bold green] {model}")
+    console.print()
+    console.print(f"[wf.pass]Recommended model:[/wf.pass] {model}")
     console.print(
-        Panel.fit(
-            f"[bold]Recommended model:[/bold] {model}\n"
-            f"[bold]Why recommended now:[/bold] {why_now}\n"
-            f"[bold]When to choose the other model:[/bold] {when_other}",
+        key_value_panel(
+            {
+                "Recommended model": model,
+                "Why recommended now": why_now,
+                "When to choose other": when_other,
+            },
             title="Recommendation",
-            border_style="magenta",
+            border="wf.accent",
         )
     )
 
 
 def _print_configuration_summary(context: dict[str, Any], target_path: Path, force: bool) -> None:
     model_fit = MODEL_UI_CARDS.get(str(context["model"]), {}).get("best_for", "n/a")
-    summary = "\n".join(
-        [
-            f"[bold]Project name:[/bold] {context['project_name']}",
-            f"[bold]Environment:[/bold] {context['environment']}",
-            f"[bold]Observation shape:[/bold] {tuple(context['obs_shape'])}",
-            f"[bold]Action dim:[/bold] {context['action_dim']}",
-            f"[bold]Shape/Action guide:[/bold] {OBS_ACTION_GUIDE_URL}",
-            f"[bold]Total steps:[/bold] {context['training_total_steps']}",
-            f"[bold]Batch size:[/bold] {context['training_batch_size']}",
-            f"[bold]Model:[/bold] {context['model']}",
-            f"[bold]Model fit:[/bold] {model_fit}",
-            f"[bold]Device:[/bold] {context['device']}",
-            f"[bold]Target path:[/bold] {target_path.resolve()}",
-            f"[bold]Overwrite existing files:[/bold] {'yes' if force else 'no'}",
-        ]
-    )
     console.print(
-        Panel.fit(
-            summary,
+        key_value_panel(
+            {
+                "Project name": context["project_name"],
+                "Environment": context["environment"],
+                "Observation shape": str(tuple(context["obs_shape"])),
+                "Action dim": str(context["action_dim"]),
+                "Shape/Action guide": OBS_ACTION_GUIDE_URL,
+                "Total steps": str(context["training_total_steps"]),
+                "Batch size": str(context["training_batch_size"]),
+                "Model": context["model"],
+                "Model fit": model_fit,
+                "Device": context["device"],
+                "Target path": str(target_path.resolve()),
+                "Overwrite existing": "yes" if force else "no",
+            },
             title="Configuration Summary",
-            border_style="blue",
+            border="wf.border",
         )
     )
 
@@ -282,12 +379,12 @@ def _prompt_with_inquirer() -> dict[str, Any] | None:
         obs_shape = _parse_obs_shape(str(ENVIRONMENT_OPTIONS[environment]["obs_shape"]))
         action_dim = ENVIRONMENT_OPTIONS[environment]["action_dim"]
         console.print(
-            f"[dim]Using {environment} defaults: "
-            f"obs_shape={tuple(obs_shape)}, action_dim={action_dim}[/dim]"
+            f"[wf.muted]Using {environment} defaults: "
+            f"obs_shape={tuple(obs_shape)}, action_dim={action_dim}[/wf.muted]"
         )
     else:
         console.print(
-            f"[dim]Need help with Observation shape or Action dim? {OBS_ACTION_GUIDE_URL}[/dim]"
+            f"[wf.muted]Need help with Observation shape or Action dim? {OBS_ACTION_GUIDE_URL}[/wf.muted]"
         )
 
         obs_default = ENVIRONMENT_OPTIONS[environment]["obs_shape"]
@@ -305,7 +402,7 @@ def _prompt_with_inquirer() -> dict[str, Any] | None:
                 break
             except ValueError as exc:
                 console.print(
-                    f"[bold red]Invalid observation shape:[/bold red] {exc} "
+                    f"[wf.fail]Invalid observation shape:[/wf.fail] {exc} "
                     "Expected format like 3,64,64 or 39."
                 )
 
@@ -324,7 +421,7 @@ def _prompt_with_inquirer() -> dict[str, Any] | None:
                 break
             except ValueError as exc:
                 console.print(
-                    f"[bold red]Invalid action dim:[/bold red] {exc} "
+                    f"[wf.fail]Invalid action dim:[/wf.fail] {exc} "
                     "Expected a positive integer like 6."
                 )
 
@@ -359,7 +456,7 @@ def _prompt_with_inquirer() -> dict[str, Any] | None:
                 )
                 break
             except ValueError as exc:
-                console.print(f"[bold red]Invalid total steps:[/bold red] {exc}")
+                console.print(f"[wf.fail]Invalid total steps:[/wf.fail] {exc}")
     else:
         training_total_steps = int(steps_choice)
 
@@ -385,7 +482,7 @@ def _prompt_with_inquirer() -> dict[str, Any] | None:
                 )
                 break
             except ValueError as exc:
-                console.print(f"[bold red]Invalid batch size:[/bold red] {exc}")
+                console.print(f"[wf.fail]Invalid batch size:[/wf.fail] {exc}")
     else:
         training_batch_size = int(batch_choice)
 
@@ -404,7 +501,7 @@ def _prompt_with_inquirer() -> dict[str, Any] | None:
         default="cuda" if cuda_avail else "cpu",
     ).execute()
     if device == "cuda" and not cuda_avail:
-        console.print("[yellow]CUDA is not available. Falling back to CPU.[/yellow]")
+        console.print("[wf.caution]CUDA is not available. Falling back to CPU.[/wf.caution]")
         device = "cpu"
 
     return {
@@ -431,7 +528,7 @@ def _prompt_with_rich() -> dict[str, Any]:
         )
     ).strip()
     while not project_name:
-        console.print("[bold red]Project name cannot be empty.[/bold red]")
+        console.print("[wf.fail]Project name cannot be empty.[/wf.fail]")
         project_name = str(
             Prompt.ask(
                 "Project name (folder name for generated files)",
@@ -451,12 +548,12 @@ def _prompt_with_rich() -> dict[str, Any]:
         obs_shape = _parse_obs_shape(str(ENVIRONMENT_OPTIONS[environment]["obs_shape"]))
         action_dim = ENVIRONMENT_OPTIONS[environment]["action_dim"]
         console.print(
-            f"[dim]Using {environment} defaults: "
-            f"obs_shape={tuple(obs_shape)}, action_dim={action_dim}[/dim]"
+            f"[wf.muted]Using {environment} defaults: "
+            f"obs_shape={tuple(obs_shape)}, action_dim={action_dim}[/wf.muted]"
         )
     else:
         console.print(
-            f"[dim]Need help with Observation shape or Action dim? {OBS_ACTION_GUIDE_URL}[/dim]"
+            f"[wf.muted]Need help with Observation shape or Action dim? {OBS_ACTION_GUIDE_URL}[/wf.muted]"
         )
 
         obs_default = ENVIRONMENT_OPTIONS[environment]["obs_shape"]
@@ -472,7 +569,7 @@ def _prompt_with_rich() -> dict[str, Any]:
                 break
             except ValueError as exc:
                 console.print(
-                    f"[bold red]Invalid observation shape:[/bold red] {exc} "
+                    f"[wf.fail]Invalid observation shape:[/wf.fail] {exc} "
                     "Expected format like 3,64,64 or 39."
                 )
 
@@ -489,7 +586,7 @@ def _prompt_with_rich() -> dict[str, Any]:
                 break
             except ValueError as exc:
                 console.print(
-                    f"[bold red]Invalid action dim:[/bold red] {exc} "
+                    f"[wf.fail]Invalid action dim:[/wf.fail] {exc} "
                     "Expected a positive integer like 6."
                 )
 
@@ -517,7 +614,7 @@ def _prompt_with_rich() -> dict[str, Any]:
                 )
                 break
             except ValueError as exc:
-                console.print(f"[bold red]Invalid total steps:[/bold red] {exc}")
+                console.print(f"[wf.fail]Invalid total steps:[/wf.fail] {exc}")
     else:
         training_total_steps = int(steps_choice)
 
@@ -537,7 +634,7 @@ def _prompt_with_rich() -> dict[str, Any]:
                 )
                 break
             except ValueError as exc:
-                console.print(f"[bold red]Invalid batch size:[/bold red] {exc}")
+                console.print(f"[wf.fail]Invalid batch size:[/wf.fail] {exc}")
     else:
         training_batch_size = int(batch_choice)
 
@@ -556,7 +653,7 @@ def _prompt_with_rich() -> dict[str, Any]:
         default_index=0 if cuda_avail else 1,
     )
     if device == "cuda" and not cuda_avail:
-        console.print("[yellow]CUDA is not available. Falling back to CPU.[/yellow]")
+        console.print("[wf.caution]CUDA is not available. Falling back to CPU.[/wf.caution]")
         device = "cpu"
 
     return {
@@ -583,14 +680,20 @@ def _prompt_user_configuration() -> dict[str, Any]:
 
 
 def _print_logo() -> None:
-    console.print(f"[bold cyan]{ASCII_LOGO}[/bold cyan]")
-    console.print("[bold]WorldFlux CLI[/bold]  |  scaffold world-model projects")
+    term_width = shutil.get_terminal_size().columns
+    if term_width >= 50:  # ASCII logo is 48 chars wide + 2 margin
+        console.print(f"[wf.brand]{ASCII_LOGO}[/wf.brand]")
+    console.print("[wf.header]WorldFlux CLI[/wf.header]  |  scaffold world-model projects")
+    console.print()
     console.print(
-        Panel.fit(
-            "Create a ready-to-run WorldFlux project with train.py, inference.py, and "
-            "worldflux.toml.\nThis guided setup explains each question and applies safe defaults.",
+        key_value_panel(
+            {
+                "What": "Create a ready-to-run WorldFlux project with train.py, "
+                "inference.py, and worldflux.toml",
+                "How": "This guided setup explains each question and applies safe defaults",
+            },
             title="Guided Setup",
-            border_style="cyan",
+            border="wf.border",
         )
     )
     console.print()
@@ -617,7 +720,8 @@ def _install_packages_with_pip(packages: list[str]) -> bool:
 
     cmd = [sys.executable, "-m", "pip", "install", *packages]
     console.print(
-        f"[cyan]Installing optional dependencies:[/cyan] [bold]{', '.join(packages)}[/bold]"
+        f"[wf.info]Installing optional dependencies:[/wf.info] "
+        f"[wf.label]{', '.join(packages)}[/wf.label]"
     )
     completed = subprocess.run(cmd, check=False)
     if completed.returncode == 0:
@@ -626,7 +730,7 @@ def _install_packages_with_pip(packages: list[str]) -> bool:
     if shutil.which("uv") is None:
         return False
 
-    console.print("[yellow]pip is unavailable. Retrying with uv pip.[/yellow]")
+    console.print("[wf.caution]pip is unavailable. Retrying with uv pip.[/wf.caution]")
     uv_python = sys.executable
 
     uv_install = subprocess.run(
@@ -660,27 +764,32 @@ def _handle_optional_atari_dependency_install(context: dict[str, Any]) -> None:
         "--break-system-packages " + " ".join(missing_packages)
     )
     console.print(
-        f"[yellow]Optional Atari dependencies are missing:[/yellow] {', '.join(missing_packages)}"
+        f"[wf.caution]Optional Atari dependencies are missing:[/wf.caution] "
+        f"{', '.join(missing_packages)}"
     )
-    console.print("[dim]Without them, live gameplay falls back to random replay data.[/dim]")
+    console.print(
+        "[wf.muted]Without them, live gameplay falls back to random replay data.[/wf.muted]"
+    )
 
     if not _cli._is_interactive_terminal():
-        console.print(f"[dim]Install later with: {install_command}[/dim]")
+        console.print(f"[wf.muted]Install later with: {install_command}[/wf.muted]")
         if shutil.which("uv"):
-            console.print(f"[dim]Or with uv: {uv_install_command}[/dim]")
+            console.print(f"[wf.muted]Or with uv: {uv_install_command}[/wf.muted]")
         return
 
     if not _cli._confirm_optional_dependency_install(missing_packages):
-        console.print(f"[yellow]Skipped install.[/yellow] You can run: {install_command}")
+        console.print(f"[wf.caution]Skipped install.[/wf.caution] You can run: {install_command}")
         return
 
     if _cli._install_packages_with_pip(missing_packages):
-        console.print("[green]Optional Atari dependencies installed successfully.[/green]")
+        console.print("[wf.ok]Optional Atari dependencies installed successfully.[/wf.ok]")
     else:
-        console.print("[yellow]Install failed. Training can continue in fallback mode.[/yellow]")
-        console.print(f"[dim]Retry with: {install_command}[/dim]")
+        console.print(
+            "[wf.caution]Install failed. Training can continue in fallback mode.[/wf.caution]"
+        )
+        console.print(f"[wf.muted]Retry with: {install_command}[/wf.muted]")
         if shutil.which("uv"):
-            console.print(f"[dim]Or with uv: {uv_install_command}[/dim]")
+            console.print(f"[wf.muted]Or with uv: {uv_install_command}[/wf.muted]")
 
 
 # ---------------------------------------------------------------------------
@@ -713,66 +822,67 @@ def init(
 
     try:
         context = _cli._prompt_user_configuration()
-        console.print("[cyan]Preparing bootstrap dependencies before project generation...[/cyan]")
+        console.print(
+            "[wf.info]Preparing bootstrap dependencies before project generation...[/wf.info]"
+        )
 
         def _bootstrap_progress(message: str) -> None:
-            console.print(f"[dim][bootstrap][/dim] {message}")
+            console.print(f"[wf.dim][bootstrap][/wf.dim] {message}")
 
         deps_result = _cli.ensure_init_dependencies(context, progress_callback=_bootstrap_progress)
         if deps_result.skipped:
-            console.print(f"[yellow]{deps_result.message}[/yellow]")
+            console.print(f"[wf.caution]{deps_result.message}[/wf.caution]")
         elif deps_result.success:
-            console.print(f"[green]{deps_result.message}[/green]")
+            console.print(f"[wf.ok]{deps_result.message}[/wf.ok]")
             if deps_result.launcher:
                 context["preferred_python_launcher"] = deps_result.launcher
         else:
-            console.print(
-                f"[bold red]Dependency bootstrap failed:[/bold red] {deps_result.message}"
-            )
+            console.print(f"[wf.fail]Dependency bootstrap failed:[/wf.fail] {deps_result.message}")
             for line in deps_result.diagnostics:
-                console.print(f"[dim]{line}[/dim]")
+                console.print(f"[wf.dim]{line}[/wf.dim]")
             if deps_result.retry_commands:
-                console.print("[yellow]Retry with:[/yellow]")
+                console.print("[wf.caution]Retry with:[/wf.caution]")
                 for command in deps_result.retry_commands:
-                    console.print(f"[dim]{command}[/dim]")
+                    console.print(f"[wf.dim]{command}[/wf.dim]")
             raise typer.Exit(code=1)
 
         if context["device"] == "cuda" and not torch.cuda.is_available():
-            console.print("[yellow]CUDA is not available. Falling back to CPU.[/yellow]")
+            console.print("[wf.caution]CUDA is not available. Falling back to CPU.[/wf.caution]")
             context["device"] = "cpu"
 
         target_path = path if path is not None else Path.cwd() / str(context["project_name"])
         _cli._print_configuration_summary(context, target_path, force=force)
         if not _cli._confirm_generation():
-            console.print("\n[yellow]Initialization cancelled. No files were generated.[/yellow]")
+            console.print(
+                "\n[wf.caution]Initialization cancelled. No files were generated.[/wf.caution]"
+            )
             raise typer.Exit(code=130)
         # Pop launcher before scaffold validation (templates use .get with default)
         preferred_launcher = context.pop("preferred_python_launcher", None)
         _cli.generate_project(target_path, context, force=force)
     except KeyboardInterrupt:
-        console.print("\n[yellow]Initialization cancelled. No files were generated.[/yellow]")
+        console.print(
+            "\n[wf.caution]Initialization cancelled. No files were generated.[/wf.caution]"
+        )
         raise typer.Exit(code=130) from None
     except (ValueError, FileExistsError, IsADirectoryError, OSError) as exc:
-        console.print(f"[bold red]Error:[/bold red] {exc}")
+        console.print(f"[wf.fail]Error:[/wf.fail] {exc}")
         raise typer.Exit(code=1) from None
 
     resolved_target = target_path.resolve()
-    console.print(f"\n[bold green]Project created:[/bold green] {resolved_target}")
+    console.print(f"\n[wf.pass]Project created:[/wf.pass] {resolved_target}")
     launcher = str(preferred_launcher or _cli._resolve_python_launcher())
-    next_steps = "\n".join(
-        [
-            f"1. cd {resolved_target}",
-            "2. worldflux train             # start training",
-            f"3. {launcher} train.py   # start training (legacy path)",
-            f"4. {launcher} inference.py   # run inference (legacy path)",
-            "5. worldflux verify --target ./outputs  # verify your model",
-            "6. Edit worldflux.toml to tune settings for your environment",
-        ]
-    )
     console.print(
-        Panel.fit(
-            next_steps,
+        result_banner(
+            passed=True,
             title="Next Steps",
-            border_style="green",
+            lines=[
+                f"[wf.label]1.[/wf.label] cd {resolved_target}",
+                "[wf.label]2.[/wf.label] worldflux train             # start training",
+                f"[wf.label]3.[/wf.label] {launcher} train.py   # start training (legacy path)",
+                f"[wf.label]4.[/wf.label] {launcher} inference.py   # run inference (legacy path)",
+                "[wf.label]5.[/wf.label] worldflux verify --target ./outputs  # verify your model",
+                "[wf.label]6.[/wf.label] Edit worldflux.toml to tune settings for your environment",
+            ],
         )
     )
