@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from dataclasses import dataclass, field, is_dataclass, replace
 from typing import Any, Protocol
 
@@ -129,106 +129,38 @@ class Batch:
         if self.mask is not None and "obs" not in self.masks:
             self.masks["obs"] = self.mask
 
+    def _apply_tensor_fn(self, fn: Callable[[Tensor], Tensor]) -> Batch:
+        """Apply a tensor transformation to all tensor fields."""
+        return Batch(
+            obs=_map_tensors(self.obs, fn) if self.obs is not None else None,
+            actions=_map_tensors(self.actions, fn) if self.actions is not None else None,
+            next_obs=_map_tensors(self.next_obs, fn) if self.next_obs is not None else None,
+            rewards=_map_tensors(self.rewards, fn) if self.rewards is not None else None,
+            terminations=_map_tensors(self.terminations, fn)
+            if self.terminations is not None
+            else None,
+            mask=_map_tensors(self.mask, fn) if self.mask is not None else None,
+            context=_map_tensors(self.context, fn) if self.context is not None else None,
+            target=_map_tensors(self.target, fn) if self.target is not None else None,
+            inputs=_map_tensors(self.inputs, fn),
+            targets=_map_tensors(self.targets, fn),
+            conditions=_map_tensors(self.conditions, fn),
+            lengths=_map_tensors(self.lengths, fn),
+            masks=_map_tensors(self.masks, fn),
+            extras=_map_tensors(self.extras, fn),
+            layouts=dict(self.layouts),
+            strict_layout=self.strict_layout,
+        )
+
     def to(self, device: torch.device | str) -> Batch:
         device_obj = torch.device(device) if isinstance(device, str) else device
-        return Batch(
-            obs=_map_tensors(self.obs, lambda t: t.to(device_obj))
-            if self.obs is not None
-            else None,
-            actions=_map_tensors(self.actions, lambda t: t.to(device_obj))
-            if self.actions is not None
-            else None,
-            next_obs=_map_tensors(self.next_obs, lambda t: t.to(device_obj))
-            if self.next_obs is not None
-            else None,
-            rewards=_map_tensors(self.rewards, lambda t: t.to(device_obj))
-            if self.rewards is not None
-            else None,
-            terminations=_map_tensors(self.terminations, lambda t: t.to(device_obj))
-            if self.terminations is not None
-            else None,
-            mask=_map_tensors(self.mask, lambda t: t.to(device_obj))
-            if self.mask is not None
-            else None,
-            context=_map_tensors(self.context, lambda t: t.to(device_obj))
-            if self.context is not None
-            else None,
-            target=_map_tensors(self.target, lambda t: t.to(device_obj))
-            if self.target is not None
-            else None,
-            inputs=_map_tensors(self.inputs, lambda t: t.to(device_obj)),
-            targets=_map_tensors(self.targets, lambda t: t.to(device_obj)),
-            conditions=_map_tensors(self.conditions, lambda t: t.to(device_obj)),
-            lengths=_map_tensors(self.lengths, lambda t: t.to(device_obj)),
-            masks=_map_tensors(self.masks, lambda t: t.to(device_obj)),
-            extras=_map_tensors(self.extras, lambda t: t.to(device_obj)),
-            layouts=dict(self.layouts),
-            strict_layout=self.strict_layout,
-        )
+        return self._apply_tensor_fn(lambda t: t.to(device_obj))
 
     def detach(self) -> Batch:
-        return Batch(
-            obs=_map_tensors(self.obs, lambda t: t.detach()) if self.obs is not None else None,
-            actions=_map_tensors(self.actions, lambda t: t.detach())
-            if self.actions is not None
-            else None,
-            next_obs=_map_tensors(self.next_obs, lambda t: t.detach())
-            if self.next_obs is not None
-            else None,
-            rewards=_map_tensors(self.rewards, lambda t: t.detach())
-            if self.rewards is not None
-            else None,
-            terminations=_map_tensors(self.terminations, lambda t: t.detach())
-            if self.terminations is not None
-            else None,
-            mask=_map_tensors(self.mask, lambda t: t.detach()) if self.mask is not None else None,
-            context=_map_tensors(self.context, lambda t: t.detach())
-            if self.context is not None
-            else None,
-            target=_map_tensors(self.target, lambda t: t.detach())
-            if self.target is not None
-            else None,
-            inputs=_map_tensors(self.inputs, lambda t: t.detach()),
-            targets=_map_tensors(self.targets, lambda t: t.detach()),
-            conditions=_map_tensors(self.conditions, lambda t: t.detach()),
-            lengths=_map_tensors(self.lengths, lambda t: t.detach()),
-            masks=_map_tensors(self.masks, lambda t: t.detach()),
-            extras=_map_tensors(self.extras, lambda t: t.detach()),
-            layouts=dict(self.layouts),
-            strict_layout=self.strict_layout,
-        )
+        return self._apply_tensor_fn(lambda t: t.detach())
 
     def clone(self) -> Batch:
-        return Batch(
-            obs=_map_tensors(self.obs, lambda t: t.clone()) if self.obs is not None else None,
-            actions=_map_tensors(self.actions, lambda t: t.clone())
-            if self.actions is not None
-            else None,
-            next_obs=_map_tensors(self.next_obs, lambda t: t.clone())
-            if self.next_obs is not None
-            else None,
-            rewards=_map_tensors(self.rewards, lambda t: t.clone())
-            if self.rewards is not None
-            else None,
-            terminations=_map_tensors(self.terminations, lambda t: t.clone())
-            if self.terminations is not None
-            else None,
-            mask=_map_tensors(self.mask, lambda t: t.clone()) if self.mask is not None else None,
-            context=_map_tensors(self.context, lambda t: t.clone())
-            if self.context is not None
-            else None,
-            target=_map_tensors(self.target, lambda t: t.clone())
-            if self.target is not None
-            else None,
-            inputs=_map_tensors(self.inputs, lambda t: t.clone()),
-            targets=_map_tensors(self.targets, lambda t: t.clone()),
-            conditions=_map_tensors(self.conditions, lambda t: t.clone()),
-            lengths=_map_tensors(self.lengths, lambda t: t.clone()),
-            masks=_map_tensors(self.masks, lambda t: t.clone()),
-            extras=_map_tensors(self.extras, lambda t: t.clone()),
-            layouts=dict(self.layouts),
-            strict_layout=self.strict_layout,
-        )
+        return self._apply_tensor_fn(lambda t: t.clone())
 
     @staticmethod
     def _first_tensor(value: Any) -> Tensor | None:
