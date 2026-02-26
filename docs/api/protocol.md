@@ -55,7 +55,8 @@ Planner payload metadata:
 
 - canonical key: `extras["wf.planner.horizon"]` (`int >= 1`)
 - legacy key: `extras["wf.planner.sequence"]` (deprecated in v0.2, removed in v0.3)
-- helper APIs: `normalize_planned_action(...)`, `first_action(...)`
+- helper APIs: `normalize_planned_action(...)`
+- v0.2 legacy: `first_action(...)` (available from `worldflux.core.payloads`)
 
 Condition extras in strict mode:
 

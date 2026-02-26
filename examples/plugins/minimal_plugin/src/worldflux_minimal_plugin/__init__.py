@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from worldflux import PluginManifest
-from worldflux.core import ComponentSpec, WorldModelRegistry
+from worldflux.core import ComponentSpec, PluginManifest, WorldModelRegistry
 from worldflux.core.exceptions import ConfigurationError
 
 MODEL_ALIAS = "minimalplugin-dreamer"

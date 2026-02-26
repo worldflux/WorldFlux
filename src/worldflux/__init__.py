@@ -49,11 +49,9 @@ from .core import (
     ConditionSpec,
     Decoder,
     DiffusionWorldModelConfig,
-    DiTSkeletonConfig,
     DreamerV3Config,
     DynamicsModel,
     DynamicsType,
-    GANSkeletonConfig,
     GaussianLatentSpace,
     JEPABaseConfig,
     LatentSpace,
@@ -65,17 +63,12 @@ from .core import (
     ModelMaturity,
     ModelOutput,
     ObservationSpec,
-    PhysicsSkeletonConfig,
-    PluginManifest,
     PredictionSpec,
-    Renderer3DSkeletonConfig,
-    RolloutEngine,
     RolloutExecutor,
     SequenceFieldSpec,
     SequenceLayout,
     SequenceProvider,
     SimNormLatentSpace,
-    SSMSkeletonConfig,
     State,
     StateSpec,
     TDMPC2Config,
@@ -91,8 +84,6 @@ from .core import (
     WorldModelInput,
     WorldModelOutput,
     WorldModelRegistry,
-    first_action,
-    is_namespaced_extra_key,
     normalize_planned_action,
 )
 from .factory import (
@@ -105,13 +96,8 @@ from .factory import (
 )
 from .models import (
     DiffusionWorldModel,
-    DiTSkeletonWorldModel,
     DreamerV3WorldModel,
-    GANSkeletonWorldModel,
     JEPABaseWorldModel,
-    PhysicsSkeletonWorldModel,
-    Renderer3DSkeletonWorldModel,
-    SSMSkeletonWorldModel,
     TDMPC2WorldModel,
     TokenWorldModel,
     VJEPA2WorldModel,
@@ -119,14 +105,76 @@ from .models import (
 from .planners import Planner, PlannerObjective, RewardObjective
 from .utils import set_seed
 
+# Deprecated symbols: (source_module, fully_qualified_path)
+_DEPRECATED_IMPORTS: dict[str, tuple[str, str]] = {
+    # Registry / interfaces / payloads (removed from top-level __all__)
+    "PluginManifest": ("worldflux.core.registry", "worldflux.core.registry.PluginManifest"),
+    "RolloutEngine": ("worldflux.core.interfaces", "worldflux.core.interfaces.RolloutEngine"),
+    "first_action": ("worldflux.core.payloads", "worldflux.core.payloads.first_action"),
+    "is_namespaced_extra_key": (
+        "worldflux.core.payloads",
+        "worldflux.core.payloads.is_namespaced_extra_key",
+    ),
+    # Skeleton configs (non-public, use worldflux.core.config directly)
+    "DiTSkeletonConfig": ("worldflux.core.config", "worldflux.core.config.DiTSkeletonConfig"),
+    "SSMSkeletonConfig": ("worldflux.core.config", "worldflux.core.config.SSMSkeletonConfig"),
+    "Renderer3DSkeletonConfig": (
+        "worldflux.core.config",
+        "worldflux.core.config.Renderer3DSkeletonConfig",
+    ),
+    "PhysicsSkeletonConfig": (
+        "worldflux.core.config",
+        "worldflux.core.config.PhysicsSkeletonConfig",
+    ),
+    "GANSkeletonConfig": ("worldflux.core.config", "worldflux.core.config.GANSkeletonConfig"),
+    # Skeleton world models (non-public, use worldflux.models.<name> directly)
+    "DiTSkeletonWorldModel": (
+        "worldflux.models.dit",
+        "worldflux.models.dit.DiTSkeletonWorldModel",
+    ),
+    "SSMSkeletonWorldModel": (
+        "worldflux.models.ssm",
+        "worldflux.models.ssm.SSMSkeletonWorldModel",
+    ),
+    "Renderer3DSkeletonWorldModel": (
+        "worldflux.models.renderer3d",
+        "worldflux.models.renderer3d.Renderer3DSkeletonWorldModel",
+    ),
+    "PhysicsSkeletonWorldModel": (
+        "worldflux.models.physics",
+        "worldflux.models.physics.PhysicsSkeletonWorldModel",
+    ),
+    "GANSkeletonWorldModel": (
+        "worldflux.models.gan",
+        "worldflux.models.gan.GANSkeletonWorldModel",
+    ),
+}
 
-# Lazy import for training module (optional dependency)
+
+# Lazy import for training module (optional dependency) + deprecation shim
 def __getattr__(name: str) -> object:
     if name == "training":
         from . import training
 
         return training
+    if name in _DEPRECATED_IMPORTS:
+        import importlib
+        import warnings
+
+        mod_path, full_path = _DEPRECATED_IMPORTS[name]
+        warnings.warn(
+            f"Importing '{name}' from 'worldflux' is deprecated. "
+            f"Use '{full_path}' instead. Will be removed in v0.2.0.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        mod = importlib.import_module(mod_path)
+        return getattr(mod, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__() -> list[str]:
+    return list(__all__) + list(_DEPRECATED_IMPORTS)
 
 
 try:
@@ -163,11 +211,9 @@ __all__ = [
     "ConditionPayload",
     "WorldModelInput",
     "normalize_planned_action",
-    "first_action",
     "PLANNER_HORIZON_KEY",
     "PLANNER_SEQUENCE_KEY",
     "ACTION_COMPONENTS_KEY",
-    "is_namespaced_extra_key",
     "ComponentSpec",
     "ActionConditioner",
     "AsyncObservationEncoder",
@@ -177,7 +223,6 @@ __all__ = [
     "DynamicsModel",
     "Decoder",
     "RolloutExecutor",
-    "RolloutEngine",
     "Planner",
     "PlannerObjective",
     "RewardObjective",
@@ -204,14 +249,8 @@ __all__ = [
     "VJEPA2Config",
     "TokenWorldModelConfig",
     "DiffusionWorldModelConfig",
-    "DiTSkeletonConfig",
-    "SSMSkeletonConfig",
-    "Renderer3DSkeletonConfig",
-    "PhysicsSkeletonConfig",
-    "GANSkeletonConfig",
     "WorldModel",
     "WorldModelRegistry",
-    "PluginManifest",
     "AutoWorldModel",
     "AutoConfig",
     # Latent spaces
@@ -226,11 +265,6 @@ __all__ = [
     "VJEPA2WorldModel",
     "TokenWorldModel",
     "DiffusionWorldModel",
-    "DiTSkeletonWorldModel",
-    "SSMSkeletonWorldModel",
-    "Renderer3DSkeletonWorldModel",
-    "PhysicsSkeletonWorldModel",
-    "GANSkeletonWorldModel",
     # Utils
     "set_seed",
 ]

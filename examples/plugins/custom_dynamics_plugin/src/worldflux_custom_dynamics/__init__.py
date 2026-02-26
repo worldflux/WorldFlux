@@ -10,8 +10,7 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 
-from worldflux import PluginManifest
-from worldflux.core import ComponentSpec, WorldModelRegistry
+from worldflux.core import ComponentSpec, PluginManifest, WorldModelRegistry
 from worldflux.core.exceptions import ConfigurationError
 from worldflux.core.state import State
 
