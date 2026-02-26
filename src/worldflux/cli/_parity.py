@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 import typer
+from rich.box import ROUNDED
 from rich.panel import Panel
 
 from worldflux.parity import (
@@ -20,6 +21,8 @@ from worldflux.parity.errors import ParityError
 from worldflux.parity.fmt_utils import fmt_bool as _fmt_bool
 
 from ._app import console, parity_app, parity_campaign_app
+from ._rich_output import key_value_panel
+from ._theme import PANEL_PADDING
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -127,28 +130,26 @@ def parity_run(
             upstream_lock_path=upstream_lock,
         )
     except (ParityError, ValueError, OSError, json.JSONDecodeError) as exc:
-        console.print(f"[bold red]Parity run failed:[/bold red] {exc}")
+        console.print(f"[wf.fail]Parity run failed:[/wf.fail] {exc}")
         raise typer.Exit(code=1) from None
 
     suite_meta = payload["suite"]
     stats = payload["stats"]
     passed = bool(stats["pass_non_inferiority"])
-    verdict = "[bold green]PASS[/bold green]" if passed else "[bold red]FAIL[/bold red]"
+    verdict = "[wf.pass]PASS[/wf.pass]" if passed else "[wf.fail]FAIL[/wf.fail]"
     console.print(
-        Panel.fit(
-            "\n".join(
-                [
-                    "Mode: legacy non-inferiority harness",
-                    f"Suite: {suite_meta['suite_id']} ({suite_meta['family']})",
-                    f"Samples: {stats['sample_size']}",
-                    f"Mean drop ratio: {stats['mean_drop_ratio']:.6f}",
-                    f"Upper CI (one-sided): {stats['ci_upper_ratio']:.6f}",
-                    f"Margin: {stats['margin_ratio']:.6f}",
-                    f"Verdict: {verdict}",
-                ]
-            ),
+        key_value_panel(
+            {
+                "Mode": "legacy non-inferiority harness",
+                "Suite": f"{suite_meta['suite_id']} ({suite_meta['family']})",
+                "Samples": str(stats["sample_size"]),
+                "Mean drop ratio": f"{stats['mean_drop_ratio']:.6f}",
+                "Upper CI (one-sided)": f"{stats['ci_upper_ratio']:.6f}",
+                "Margin": f"{stats['margin_ratio']:.6f}",
+                "Verdict": verdict,
+            },
             title="Parity Run (Legacy)",
-            border_style="cyan",
+            border="wf.border",
         )
     )
     if enforce and not passed:
@@ -185,31 +186,29 @@ def parity_aggregate(
     if not paths:
         paths = [Path(path) for path in sorted(glob_module.glob(runs_glob))]
     if not paths:
-        console.print("[bold red]No run artifacts found to aggregate.[/bold red]")
+        console.print("[wf.fail]No run artifacts found to aggregate.[/wf.fail]")
         raise typer.Exit(code=1)
 
     try:
         payload = _cli.aggregate_runs(paths, output_path=output)
     except (ParityError, ValueError, OSError, json.JSONDecodeError) as exc:
-        console.print(f"[bold red]Parity aggregate failed:[/bold red] {exc}")
+        console.print(f"[wf.fail]Parity aggregate failed:[/wf.fail] {exc}")
         raise typer.Exit(code=1) from None
 
     passed = bool(payload["all_suites_pass"])
-    verdict = "[bold green]PASS[/bold green]" if passed else "[bold red]FAIL[/bold red]"
+    verdict = "[wf.pass]PASS[/wf.pass]" if passed else "[wf.fail]FAIL[/wf.fail]"
     console.print(
-        Panel.fit(
-            "\n".join(
-                [
-                    "Mode: legacy non-inferiority harness",
-                    f"Runs: {payload['run_count']}",
-                    f"Suite pass: {payload['suite_pass_count']}",
-                    f"Suite fail: {payload['suite_fail_count']}",
-                    f"Verdict: {verdict}",
-                    f"Written: {output.resolve()}",
-                ]
-            ),
+        key_value_panel(
+            {
+                "Mode": "legacy non-inferiority harness",
+                "Runs": str(payload["run_count"]),
+                "Suite pass": str(payload["suite_pass_count"]),
+                "Suite fail": str(payload["suite_fail_count"]),
+                "Verdict": verdict,
+                "Written": str(output.resolve()),
+            },
             title="Parity Aggregate (Legacy)",
-            border_style="blue",
+            border="wf.border",
         )
     )
     if enforce and not passed:
@@ -238,12 +237,12 @@ def parity_report(
             raise ParityError("aggregate payload must be a JSON object")
         markdown = _cli.render_markdown_report(payload)
     except (ParityError, ValueError, OSError, json.JSONDecodeError) as exc:
-        console.print(f"[bold red]Parity report failed:[/bold red] {exc}")
+        console.print(f"[wf.fail]Parity report failed:[/wf.fail] {exc}")
         raise typer.Exit(code=1) from None
 
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(markdown, encoding="utf-8")
-    console.print(f"[green]Wrote parity report:[/green] {output.resolve()}")
+    console.print(f"[wf.ok]Wrote parity report:[/wf.ok] {output.resolve()}")
 
 
 # ---------------------------------------------------------------------------
@@ -309,23 +308,21 @@ def parity_proof_run(
     try:
         stdout = _cli._run_parity_proof_script("run_parity_matrix.py", args)
     except ParityError as exc:
-        console.print(f"[bold red]Parity proof-run failed:[/bold red] {exc}")
+        console.print(f"[wf.fail]Parity proof-run failed:[/wf.fail] {exc}")
         raise typer.Exit(code=1) from None
 
     if stdout:
         console.print(stdout)
     console.print(
-        Panel.fit(
-            "\n".join(
-                [
-                    "Mode: proof-grade official equivalence path",
-                    f"Manifest: {manifest.resolve()}",
-                    f"Output dir: {output_dir.resolve()}",
-                    "Next: run `worldflux parity proof-report --manifest ... --runs .../parity_runs.jsonl`",
-                ]
-            ),
+        key_value_panel(
+            {
+                "Mode": "proof-grade official equivalence path",
+                "Manifest": str(manifest.resolve()),
+                "Output dir": str(output_dir.resolve()),
+                "Next": "run `worldflux parity proof-report --manifest ... --runs .../parity_runs.jsonl`",
+            },
             title="Parity Proof Run",
-            border_style="green",
+            border="wf.border.success",
         )
     )
 
@@ -402,25 +399,23 @@ def parity_proof_report(
             ],
         )
     except ParityError as exc:
-        console.print(f"[bold red]Parity proof-report failed:[/bold red] {exc}")
+        console.print(f"[wf.fail]Parity proof-report failed:[/wf.fail] {exc}")
         raise typer.Exit(code=1) from None
 
     report_payload = json.loads(equivalence_report.read_text(encoding="utf-8"))
     global_block = report_payload.get("global", {})
     console.print(
-        Panel.fit(
-            "\n".join(
-                [
-                    "Mode: proof-grade official equivalence path",
-                    f"Final verdict: {_fmt_bool(global_block.get('parity_pass_final'))}",
-                    f"Validity pass: {_fmt_bool(global_block.get('validity_pass'))}",
-                    f"Missing pairs: {global_block.get('missing_pairs', '-')}",
-                    f"JSON: {equivalence_report}",
-                    f"Markdown: {markdown_report}",
-                ]
-            ),
+        key_value_panel(
+            {
+                "Mode": "proof-grade official equivalence path",
+                "Final verdict": _fmt_bool(global_block.get("parity_pass_final")),
+                "Validity pass": _fmt_bool(global_block.get("validity_pass")),
+                "Missing pairs": str(global_block.get("missing_pairs", "-")),
+                "JSON": str(equivalence_report),
+                "Markdown": str(markdown_report),
+            },
             title="Parity Proof Report",
-            border_style="green",
+            border="wf.border.success",
         )
     )
 
@@ -465,23 +460,21 @@ def parity_proof_combined(
     try:
         run_stdout = _cli._run_parity_proof_script("run_parity_matrix.py", run_args)
     except ParityError as exc:
-        console.print(f"[bold red]Verify proof-run failed:[/bold red] {exc}")
+        console.print(f"[wf.fail]Verify proof-run failed:[/wf.fail] {exc}")
         raise typer.Exit(code=1) from None
 
     if run_stdout:
         console.print(run_stdout)
 
     console.print(
-        Panel.fit(
-            "\n".join(
-                [
-                    "Phase 1/2: proof-run complete",
-                    f"Manifest: {manifest.resolve()}",
-                    f"Output dir: {output_dir.resolve()}",
-                ]
-            ),
+        key_value_panel(
+            {
+                "Phase": "1/2: proof-run complete",
+                "Manifest": str(manifest.resolve()),
+                "Output dir": str(output_dir.resolve()),
+            },
             title="Verify - Proof Run",
-            border_style="cyan",
+            border="wf.border",
         )
     )
 
@@ -490,7 +483,7 @@ def parity_proof_combined(
     runs_path = resolved_output_dir / "parity_runs.jsonl"
     if not runs_path.exists():
         console.print(
-            f"[bold red]Expected run log not found:[/bold red] {runs_path}\n"
+            f"[wf.fail]Expected run log not found:[/wf.fail] {runs_path}\n"
             "proof-run may have written output to a different location."
         )
         raise typer.Exit(code=1)
@@ -549,30 +542,28 @@ def parity_proof_combined(
             ],
         )
     except ParityError as exc:
-        console.print(f"[bold red]Verify proof-report failed:[/bold red] {exc}")
+        console.print(f"[wf.fail]Verify proof-report failed:[/wf.fail] {exc}")
         raise typer.Exit(code=1) from None
 
     # --- Combined summary -----------------------------------------------------
     report_payload = json.loads(equivalence_report.read_text(encoding="utf-8"))
     global_block = report_payload.get("global", {})
     final_pass = bool(global_block.get("parity_pass_final"))
-    verdict = "[bold green]PASS[/bold green]" if final_pass else "[bold red]FAIL[/bold red]"
+    verdict = "[wf.pass]PASS[/wf.pass]" if final_pass else "[wf.fail]FAIL[/wf.fail]"
     console.print(
-        Panel.fit(
-            "\n".join(
-                [
-                    "Mode: proof-grade official equivalence path",
-                    f"Manifest: {manifest.resolve()}",
-                    f"Device: {device}",
-                    f"Final verdict: {verdict}",
-                    f"Validity pass: {_fmt_bool(global_block.get('validity_pass'))}",
-                    f"Missing pairs: {global_block.get('missing_pairs', '-')}",
-                    f"Equivalence JSON: {equivalence_report}",
-                    f"Markdown report: {markdown_report}",
-                ]
-            ),
+        key_value_panel(
+            {
+                "Mode": "proof-grade official equivalence path",
+                "Manifest": str(manifest.resolve()),
+                "Device": device,
+                "Final verdict": verdict,
+                "Validity pass": _fmt_bool(global_block.get("validity_pass")),
+                "Missing pairs": str(global_block.get("missing_pairs", "-")),
+                "Equivalence JSON": str(equivalence_report),
+                "Markdown report": str(markdown_report),
+            },
             title="Verify - Combined Summary",
-            border_style="green",
+            border="wf.border.success",
         )
     )
     if enforce and not final_pass:
@@ -606,23 +597,21 @@ def parity_badge(
             margin=margin,
         )
     except OSError as exc:
-        console.print(f"[bold red]Badge generation failed:[/bold red] {exc}")
+        console.print(f"[wf.fail]Badge generation failed:[/wf.fail] {exc}")
         raise typer.Exit(code=1) from None
 
     status = "PASS" if passed else "FAIL"
     console.print(
-        Panel.fit(
-            "\n".join(
-                [
-                    f"Family: {family}",
-                    f"Status: {status}",
-                    f"Confidence: {confidence:.0%}",
-                    f"Margin: {margin:.0%}",
-                    f"Written: {output.resolve()}",
-                ]
-            ),
+        key_value_panel(
+            {
+                "Family": family,
+                "Status": status,
+                "Confidence": f"{confidence:.0%}",
+                "Margin": f"{margin:.0%}",
+                "Written": str(output.resolve()),
+            },
             title="Parity Badge",
-            border_style="green" if passed else "red",
+            border="wf.border.success" if passed else "wf.border.error",
         )
     )
 
@@ -699,14 +688,16 @@ def parity_campaign_run(
         )
         summary = _cli.run_campaign(spec, run_options)
     except (ParityError, ValueError, OSError, subprocess.CalledProcessError) as exc:
-        console.print(f"[bold red]Parity campaign failed:[/bold red] {exc}")
+        console.print(f"[wf.fail]Parity campaign failed:[/wf.fail] {exc}")
         raise typer.Exit(code=1) from None
 
     console.print(
-        Panel.fit(
+        Panel(
             _cli.render_campaign_summary(summary),
             title="Parity Campaign",
-            border_style="cyan",
+            border_style="wf.border",
+            box=ROUNDED,
+            padding=PANEL_PADDING,
         )
     )
 
@@ -796,7 +787,7 @@ def parity_campaign_export(
 
     source_normalized = source.strip().lower()
     if source_normalized not in {"worldflux", "oracle"}:
-        console.print("[bold red]--source must be one of: worldflux, oracle[/bold red]")
+        console.print("[wf.fail]--source must be one of: worldflux, oracle[/wf.fail]")
         raise typer.Exit(code=1)
 
     try:
@@ -810,13 +801,15 @@ def parity_campaign_export(
             resume=resume,
         )
     except (ParityError, ValueError, OSError) as exc:
-        console.print(f"[bold red]Parity campaign export failed:[/bold red] {exc}")
+        console.print(f"[wf.fail]Parity campaign export failed:[/wf.fail] {exc}")
         raise typer.Exit(code=1) from None
 
     console.print(
-        Panel.fit(
+        Panel(
             _cli.render_campaign_summary(summary),
             title="Parity Campaign Export",
-            border_style="blue",
+            border_style="wf.border",
+            box=ROUNDED,
+            padding=PANEL_PADDING,
         )
     )
