@@ -5,9 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 
 import typer
-from rich.panel import Panel
 
 from ._app import app, console
+from ._rich_output import key_value_panel
 
 
 @app.command(rich_help_panel="Cloud")
@@ -31,9 +31,9 @@ def login(
     try:
         client.login(api_key=api_key)
     except RuntimeError as exc:
-        console.print(f"[bold red]Login failed:[/bold red] {exc}")
+        console.print(f"[wf.fail]Login failed:[/wf.fail] {exc}")
         raise typer.Exit(code=1) from None
-    console.print("[green]Cloud credentials saved.[/green]")
+    console.print("[wf.ok]Cloud credentials saved.[/wf.ok]")
 
 
 @app.command(rich_help_panel="Cloud")
@@ -48,27 +48,28 @@ def jobs() -> None:
     client = WorldFluxCloudClient.from_env()
     if not client.api_key:
         console.print(
-            "[bold red]Cloud auth missing:[/bold red] run `worldflux login --api-key <key>`."
+            "[wf.fail]Cloud auth missing:[/wf.fail] run `worldflux login --api-key <key>`."
         )
         raise typer.Exit(code=1)
 
     try:
         job_rows = client.list_jobs()
     except RuntimeError as exc:
-        console.print(f"[bold red]Failed to list jobs:[/bold red] {exc}")
+        console.print(f"[wf.fail]Failed to list jobs:[/wf.fail] {exc}")
         raise typer.Exit(code=1) from None
 
     if not job_rows:
-        console.print("[yellow]No cloud jobs found.[/yellow]")
+        console.print("[wf.caution]No cloud jobs found.[/wf.caution]")
         return
 
-    lines = []
+    data = {}
     for row in job_rows:
-        lines.append(
-            f"{row.get('job_id', '-')}: status={row.get('status', '-')}, "
+        job_id = row.get("job_id", "-")
+        data[job_id] = (
+            f"status={row.get('status', '-')}, "
             f"model={row.get('model', '-')}, gpu={row.get('gpu_type', '-')}"
         )
-    console.print(Panel.fit("\n".join(lines), title="Cloud Jobs", border_style="cyan"))
+    console.print(key_value_panel(data, title="Cloud Jobs", border="wf.border"))
 
 
 @app.command(rich_help_panel="Cloud")
@@ -87,18 +88,18 @@ def logs(
     client = WorldFluxCloudClient.from_env()
     if not client.api_key:
         console.print(
-            "[bold red]Cloud auth missing:[/bold red] run `worldflux login --api-key <key>`."
+            "[wf.fail]Cloud auth missing:[/wf.fail] run `worldflux login --api-key <key>`."
         )
         raise typer.Exit(code=1)
 
     try:
         lines = client.get_job_logs(job_id, limit=limit)
     except RuntimeError as exc:
-        console.print(f"[bold red]Failed to fetch logs:[/bold red] {exc}")
+        console.print(f"[wf.fail]Failed to fetch logs:[/wf.fail] {exc}")
         raise typer.Exit(code=1) from None
 
     if not lines:
-        console.print("[yellow]No logs available for this job.[/yellow]")
+        console.print("[wf.caution]No logs available for this job.[/wf.caution]")
         return
     for line in lines:
         console.print(line)
@@ -120,14 +121,14 @@ def pull(
     client = WorldFluxCloudClient.from_env()
     if not client.api_key:
         console.print(
-            "[bold red]Cloud auth missing:[/bold red] run `worldflux login --api-key <key>`."
+            "[wf.fail]Cloud auth missing:[/wf.fail] run `worldflux login --api-key <key>`."
         )
         raise typer.Exit(code=1)
     try:
         payload = client.pull_job_artifacts(job_id, output_dir=output_dir)
     except RuntimeError as exc:
-        console.print(f"[bold red]Failed to pull artifacts:[/bold red] {exc}")
+        console.print(f"[wf.fail]Failed to pull artifacts:[/wf.fail] {exc}")
         raise typer.Exit(code=1) from None
 
     manifest = payload.get("manifest", "-")
-    console.print(f"[green]Saved artifact manifest:[/green] {manifest}")
+    console.print(f"[wf.ok]Saved artifact manifest:[/wf.ok] {manifest}")
