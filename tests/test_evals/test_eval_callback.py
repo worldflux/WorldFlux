@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -12,6 +13,7 @@ from worldflux.core.model import WorldModel
 from worldflux.core.output import LossOutput, ModelOutput
 from worldflux.core.spec import ActionSpec, Capability, ModelIOContract
 from worldflux.core.state import State
+from worldflux.evals.result import EvalReport, EvalResult
 from worldflux.training.callbacks import EvalCallback
 
 
@@ -107,4 +109,251 @@ class TestEvalCallback:
 
         with patch("worldflux.training.callbacks.write_event") as mock_write:
             cb.on_step_end(trainer)
+            mock_write.assert_not_called()
+
+    def test_success_true_when_all_passed_true(self):
+        """write_event receives success=True when report.all_passed is True."""
+        cb = EvalCallback(eval_interval=100)
+        model = _MockWorldModel()
+        trainer = _make_trainer_mock(model, step=100)
+        cb.on_train_begin(trainer)
+
+        report = EvalReport(
+            suite="quick",
+            model_id="mock",
+            results=(
+                EvalResult(
+                    suite="quick",
+                    metric="m1",
+                    value=0.9,
+                    threshold=0.5,
+                    passed=True,
+                    timestamp=0.0,
+                    model_id="mock",
+                ),
+            ),
+            timestamp=0.0,
+            wall_time_sec=0.1,
+            all_passed=True,
+        )
+        with (
+            patch("worldflux.evals.suite.run_eval_suite", return_value=report),
+            patch("worldflux.training.callbacks.write_event") as mock_write,
+        ):
+            cb.on_step_end(trainer)
+            mock_write.assert_called_once()
+            assert mock_write.call_args[1]["success"] is True
+
+    def test_success_false_when_all_passed_none(self):
+        """write_event receives success=False when report.all_passed is None."""
+        cb = EvalCallback(eval_interval=100)
+        model = _MockWorldModel()
+        trainer = _make_trainer_mock(model, step=100)
+        cb.on_train_begin(trainer)
+
+        report = EvalReport(
+            suite="quick",
+            model_id="mock",
+            results=(),
+            timestamp=0.0,
+            wall_time_sec=0.1,
+            all_passed=None,
+        )
+        with (
+            patch("worldflux.evals.suite.run_eval_suite", return_value=report),
+            patch("worldflux.training.callbacks.write_event") as mock_write,
+        ):
+            cb.on_step_end(trainer)
+            mock_write.assert_called_once()
+            assert mock_write.call_args[1]["success"] is False
+
+    def test_consecutive_failures_increment_and_reset(self):
+        """Failure counter increments on exception and resets on success."""
+        cb = EvalCallback(eval_interval=100)
+        model = _MockWorldModel()
+        cb.on_train_begin(_make_trainer_mock(model))
+
+        report = EvalReport(
+            suite="quick",
+            model_id="mock",
+            results=(),
+            timestamp=0.0,
+            wall_time_sec=0.0,
+            all_passed=True,
+        )
+
+        with patch("worldflux.training.callbacks.write_event"):
+            # Two failures
+            with patch(
+                "worldflux.evals.suite.run_eval_suite",
+                side_effect=RuntimeError("boom"),
+            ):
+                cb.on_step_end(_make_trainer_mock(model, step=100))
+                assert cb._consecutive_failures == 1
+                cb.on_step_end(_make_trainer_mock(model, step=200))
+                assert cb._consecutive_failures == 2
+
+            # Success resets counter
+            with patch(
+                "worldflux.evals.suite.run_eval_suite",
+                return_value=report,
+            ):
+                cb.on_step_end(_make_trainer_mock(model, step=300))
+                assert cb._consecutive_failures == 0
+
+    def test_escalation_warning_to_error_at_threshold(self, caplog):
+        """First 2 failures log WARNING, 3rd+ logs ERROR."""
+        cb = EvalCallback(eval_interval=100)
+        model = _MockWorldModel()
+        cb.on_train_begin(_make_trainer_mock(model))
+
+        with (
+            patch("worldflux.training.callbacks.write_event"),
+            patch(
+                "worldflux.evals.suite.run_eval_suite",
+                side_effect=RuntimeError("boom"),
+            ),
+        ):
+            # Failures 1-2 → WARNING
+            for step in (100, 200):
+                with caplog.at_level(logging.WARNING):
+                    cb.on_step_end(_make_trainer_mock(model, step=step))
+            assert cb._consecutive_failures == 2
+
+            # Failure 3 → ERROR
+            with caplog.at_level(logging.ERROR):
+                cb.on_step_end(_make_trainer_mock(model, step=300))
+            assert cb._consecutive_failures == 3
+            assert any("3 consecutive times" in r.message for r in caplog.records)
+
+    def test_circuit_breaker_disables_eval(self, caplog):
+        """After MAX_CONSECUTIVE_EVAL_FAILURES, eval is permanently disabled."""
+        cb = EvalCallback(eval_interval=100)
+        model = _MockWorldModel()
+        cb.on_train_begin(_make_trainer_mock(model))
+
+        with (
+            patch("worldflux.training.callbacks.write_event"),
+            patch(
+                "worldflux.evals.suite.run_eval_suite",
+                side_effect=RuntimeError("boom"),
+            ) as mock_eval,
+        ):
+            # Trigger MAX failures
+            for i in range(EvalCallback.MAX_CONSECUTIVE_EVAL_FAILURES):
+                cb.on_step_end(_make_trainer_mock(model, step=(i + 1) * 100))
+
+            assert cb._eval_disabled is True
+            assert cb._consecutive_failures == EvalCallback.MAX_CONSECUTIVE_EVAL_FAILURES
+
+            # Next call should skip eval entirely
+            call_count_before = mock_eval.call_count
+            cb.on_step_end(_make_trainer_mock(model, step=99900))
+            assert mock_eval.call_count == call_count_before  # not called again
+
+    def test_success_false_when_all_passed_false(self):
+        """write_event receives success=False when report.all_passed is explicitly False."""
+        cb = EvalCallback(eval_interval=100)
+        model = _MockWorldModel()
+        trainer = _make_trainer_mock(model, step=100)
+        cb.on_train_begin(trainer)
+
+        report = EvalReport(
+            suite="quick",
+            model_id="mock",
+            results=(
+                EvalResult(
+                    suite="quick",
+                    metric="m1",
+                    value=0.1,
+                    threshold=0.5,
+                    passed=False,
+                    timestamp=0.0,
+                    model_id="mock",
+                ),
+            ),
+            timestamp=0.0,
+            wall_time_sec=0.1,
+            all_passed=False,
+        )
+        with (
+            patch("worldflux.evals.suite.run_eval_suite", return_value=report),
+            patch("worldflux.training.callbacks.write_event") as mock_write,
+        ):
+            cb.on_step_end(trainer)
+            mock_write.assert_called_once()
+            assert mock_write.call_args[1]["success"] is False
+
+    def test_circuit_breaker_not_re_enabled_by_success(self):
+        """Once the circuit breaker trips, a subsequent success does not re-enable eval."""
+        cb = EvalCallback(eval_interval=100)
+        model = _MockWorldModel()
+        cb.on_train_begin(_make_trainer_mock(model))
+
+        report = EvalReport(
+            suite="quick",
+            model_id="mock",
+            results=(),
+            timestamp=0.0,
+            wall_time_sec=0.0,
+            all_passed=True,
+        )
+
+        with patch("worldflux.training.callbacks.write_event"):
+            # Trip the circuit breaker
+            with patch(
+                "worldflux.evals.suite.run_eval_suite",
+                side_effect=RuntimeError("boom"),
+            ):
+                for i in range(EvalCallback.MAX_CONSECUTIVE_EVAL_FAILURES):
+                    cb.on_step_end(_make_trainer_mock(model, step=(i + 1) * 100))
+            assert cb._eval_disabled is True
+
+            # Even if we could succeed, eval stays disabled (run_eval_suite is not called)
+            with patch(
+                "worldflux.evals.suite.run_eval_suite",
+                return_value=report,
+            ) as mock_eval:
+                cb.on_step_end(_make_trainer_mock(model, step=99900))
+                mock_eval.assert_not_called()
+            assert cb._eval_disabled is True
+
+    def test_circuit_breaker_emits_telemetry_event(self):
+        """Circuit breaker trip emits an eval.circuit_break write_event."""
+        cb = EvalCallback(eval_interval=100)
+        model = _MockWorldModel()
+        cb.on_train_begin(_make_trainer_mock(model))
+
+        with (
+            patch("worldflux.training.callbacks.write_event") as mock_write,
+            patch(
+                "worldflux.evals.suite.run_eval_suite",
+                side_effect=RuntimeError("boom"),
+            ),
+        ):
+            for i in range(EvalCallback.MAX_CONSECUTIVE_EVAL_FAILURES):
+                cb.on_step_end(_make_trainer_mock(model, step=(i + 1) * 100))
+
+        assert cb._eval_disabled is True
+        # Find the circuit_break event among all write_event calls
+        circuit_break_calls = [
+            c for c in mock_write.call_args_list if c[1].get("event") == "eval.circuit_break"
+        ]
+        assert len(circuit_break_calls) == 1
+        assert circuit_break_calls[0][1]["success"] is False
+
+    def test_failure_does_not_emit_write_event(self):
+        """A single eval failure should not emit any write_event."""
+        cb = EvalCallback(eval_interval=100)
+        model = _MockWorldModel()
+        cb.on_train_begin(_make_trainer_mock(model))
+
+        with (
+            patch("worldflux.training.callbacks.write_event") as mock_write,
+            patch(
+                "worldflux.evals.suite.run_eval_suite",
+                side_effect=RuntimeError("boom"),
+            ),
+        ):
+            cb.on_step_end(_make_trainer_mock(model, step=100))
             mock_write.assert_not_called()

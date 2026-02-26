@@ -150,6 +150,7 @@ def run_eval_suite(
         all_passed: bool | None = all(pass_statuses)
     else:
         all_passed = None
+        logger.warning("All eval metrics returned inconclusive results")
 
     report = EvalReport(
         suite=suite,

@@ -834,6 +834,8 @@ class EvalCallback(Callback):
         run_id: Optional run identifier for telemetry.
     """
 
+    MAX_CONSECUTIVE_EVAL_FAILURES: int = 10
+
     def __init__(
         self,
         eval_interval: int = 5000,
@@ -850,6 +852,8 @@ class EvalCallback(Callback):
         self.metrics_path = Path(metrics_path) if metrics_path is not None else None
         self.run_id = run_id or make_run_id()
         self._start_time: float | None = None
+        self._consecutive_failures: int = 0
+        self._eval_disabled: bool = False
 
     def on_train_begin(self, trainer: Trainer) -> None:
         self._start_time = time.time()
@@ -866,6 +870,9 @@ class EvalCallback(Callback):
         if step <= 0 or step % self.eval_interval != 0:
             return
 
+        if self._eval_disabled:
+            return
+
         from worldflux.evals.suite import run_eval_suite
 
         model_id = type(trainer.model).__name__
@@ -876,9 +883,41 @@ class EvalCallback(Callback):
                 model_id=model_id,
             )
         except Exception:
-            logger.warning("Eval suite failed at step %s", step, exc_info=True)
+            self._consecutive_failures += 1
+            if self._consecutive_failures >= self.MAX_CONSECUTIVE_EVAL_FAILURES:
+                logger.error(
+                    "Eval suite has failed %d consecutive times at step %s; "
+                    "disabling eval for the rest of this run",
+                    self._consecutive_failures,
+                    step,
+                    exc_info=True,
+                )
+                self._eval_disabled = True
+                write_event(
+                    event="eval.circuit_break",
+                    scenario=self.scenario,
+                    success=False,
+                    duration_sec=self._current_duration(),
+                    ttfi_sec=float(trainer.state.ttfi_sec or 0.0),
+                    artifacts={},
+                    error=f"Eval disabled after {self._consecutive_failures} consecutive failures",
+                    run_id=self.run_id,
+                    path=self.metrics_path,
+                    epoch=int(trainer.state.epoch),
+                    step=step,
+                )
+            elif self._consecutive_failures >= 3:
+                logger.error(
+                    "Eval suite has failed %d consecutive times at step %s",
+                    self._consecutive_failures,
+                    step,
+                    exc_info=True,
+                )
+            else:
+                logger.warning("Eval suite failed at step %s", step, exc_info=True)
             return
 
+        self._consecutive_failures = 0
         passed_count = sum(1 for r in report.results if r.passed is True)
         total_checked = sum(1 for r in report.results if r.passed is not None)
         logger.info(
@@ -893,7 +932,7 @@ class EvalCallback(Callback):
         write_event(
             event="eval.quick",
             scenario=self.scenario,
-            success=report.all_passed is True or report.all_passed is None,
+            success=report.all_passed is True,
             duration_sec=self._current_duration(),
             ttfi_sec=float(trainer.state.ttfi_sec or 0.0),
             artifacts={},
