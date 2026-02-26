@@ -49,8 +49,8 @@ CONTROL_PLANE_AMI="ami-0e5e1413a3bf2d262"  # Ubuntu 24.04 LTS us-west-2
 # GPU worker configuration — g5.xlarge (4 vCPU, 16GB RAM, 1× A10G 24GB)
 GPU_INSTANCE_TYPE="g5.xlarge"
 GPU_AMI="ami-068674ce56829a0ea"  # Deep Learning AMI with CUDA
-FLEET_SIZE=12
-FLEET_SPLIT="12,0"  # all 12 official-side, each runs both systems
+FLEET_SIZE=11
+FLEET_SPLIT="11,0"  # all official-side, each runs both systems (44/48 vCPU headroom)
 
 # Networking / IAM (reuse existing parity infrastructure)
 SUBNET_ID="subnet-017e9b9db46658c71"
