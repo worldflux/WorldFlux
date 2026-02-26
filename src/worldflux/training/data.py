@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -12,6 +14,8 @@ from torch.utils.data import Dataset
 
 from worldflux.core.batch import Batch
 from worldflux.core.exceptions import BufferError, ConfigurationError, ShapeMismatchError
+
+logger = logging.getLogger(__name__)
 
 
 class ReplayBuffer:
@@ -279,6 +283,7 @@ class ReplayBuffer:
         rewards: np.ndarray = np.zeros((batch_size, seq_len), dtype=np.float32)
         dones: np.ndarray = np.zeros((batch_size, seq_len), dtype=np.float32)
 
+        cross_episode_count = 0
         for i, start_idx in enumerate(indices):
             for t in range(seq_len):
                 idx = (start_idx + t) % self.capacity
@@ -291,9 +296,14 @@ class ReplayBuffer:
                 # mask subsequent rewards (they belong to different episodes)
                 # This prevents training on invalid cross-episode transitions
                 if t > 0 and dones[i, t - 1] > 0.5:
-                    # Previous step was terminal - current data is from new episode
-                    # Mark with special metadata if needed for masking
-                    pass  # The continues mask handles this at loss computation
+                    cross_episode_count += 1
+
+        if cross_episode_count > 0:
+            logger.debug(
+                "Batch contained %d cross-episode transitions across %d samples",
+                cross_episode_count,
+                batch_size,
+            )
 
         return Batch(
             obs=torch.from_numpy(obs).to(device),
@@ -317,6 +327,10 @@ class ReplayBuffer:
         """Sample valid starting indices that don't cross episode boundaries."""
         if not self._episode_starts:
             # Fallback: sample uniformly (may cross episode boundaries)
+            warnings.warn(
+                "No episode boundaries recorded; sampling may cross episodes",
+                stacklevel=2,
+            )
             max_start = self._size - seq_len
             return list(np.random.randint(0, max_start + 1, size=batch_size))
 
@@ -330,6 +344,10 @@ class ReplayBuffer:
 
         if not valid_segments:
             # No valid segments, sample uniformly
+            warnings.warn(
+                f"No episodes long enough for seq_len={seq_len}; sampling may cross episodes",
+                stacklevel=2,
+            )
             max_start = self._size - seq_len
             return list(np.random.randint(0, max_start + 1, size=batch_size))
 
