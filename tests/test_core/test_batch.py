@@ -158,3 +158,50 @@ class TestBatch:
         )
         with pytest.raises(Exception, match="masks\\['obs'\\] batch size mismatch"):
             batch.validate(strict_time=True)
+
+    def test_apply_tensor_fn_covers_all_generic_fields(self):
+        """Verify to/detach/clone propagate through conditions, lengths, masks, extras."""
+        batch = Batch(
+            obs=torch.randn(2, 3, 4),
+            actions=torch.randn(2, 3, 2),
+            rewards=torch.randn(2, 3),
+            conditions={"goal": torch.randn(2, 8)},
+            lengths={"obs": torch.tensor([3, 3])},
+            masks={"obs": torch.ones(2, 3)},
+            extras={"embedding": torch.randn(2, 16)},
+            layouts={"obs": "BT...", "actions": "BT..."},
+            strict_layout=True,
+        )
+
+        # to()
+        moved = batch.to("cpu")
+        assert moved.conditions["goal"].device.type == "cpu"
+        assert moved.lengths["obs"].device.type == "cpu"
+        assert moved.masks["obs"].device.type == "cpu"
+        assert moved.extras["embedding"].device.type == "cpu"
+        assert moved.layouts == {"obs": "BT...", "actions": "BT..."}
+        assert moved.strict_layout is True
+
+        # detach()
+        batch_grad = Batch(
+            obs=torch.randn(2, 3, 4, requires_grad=True),
+            conditions={"goal": torch.randn(2, 8, requires_grad=True)},
+            extras={"embedding": torch.randn(2, 16, requires_grad=True)},
+            layouts={"obs": "BT..."},
+            strict_layout=False,
+        )
+        detached = batch_grad.detach()
+        assert not detached.obs.requires_grad
+        assert not detached.conditions["goal"].requires_grad
+        assert not detached.extras["embedding"].requires_grad
+        assert detached.layouts == {"obs": "BT..."}
+        assert detached.strict_layout is False
+
+        # clone()
+        cloned = batch.clone()
+        batch.conditions["goal"].fill_(0)
+        assert not torch.allclose(cloned.conditions["goal"], batch.conditions["goal"])
+        batch.extras["embedding"].fill_(0)
+        assert not torch.allclose(cloned.extras["embedding"], batch.extras["embedding"])
+        assert cloned.layouts == {"obs": "BT...", "actions": "BT..."}
+        assert cloned.strict_layout is True
