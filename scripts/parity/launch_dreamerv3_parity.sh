@@ -50,7 +50,7 @@ CONTROL_PLANE_AMI="ami-0e5e1413a3bf2d262"  # Ubuntu 24.04 LTS us-west-2
 GPU_INSTANCE_TYPE="g5.xlarge"
 GPU_AMI="ami-068674ce56829a0ea"  # Deep Learning AMI with CUDA
 FLEET_SIZE=12
-FLEET_SPLIT="1,0"  # 1 official, 0 worldflux (same instance runs both)
+FLEET_SPLIT="12,0"  # all 12 official-side, each runs both systems
 
 # Networking / IAM (reuse existing parity infrastructure)
 SUBNET_ID="subnet-017e9b9db46658c71"
