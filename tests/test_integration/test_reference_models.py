@@ -1,5 +1,7 @@
 """Integration tests for reference model families."""
 
+import math
+
 import torch
 
 from worldflux.core.batch import Batch
@@ -50,6 +52,10 @@ def test_token_training_short():
     trainer = Trainer(model, TrainingConfig(total_steps=3, batch_size=4, sequence_length=8))
     provider = RandomTokenProvider(64, 8)
     trainer.train(provider)
+    assert trainer.state.global_step == 3
+    last_loss = trainer.state.metrics.get("loss")
+    assert last_loss is not None
+    assert math.isfinite(last_loss), f"Loss is not finite: {last_loss}"
 
 
 def test_diffusion_training_short():
@@ -60,6 +66,10 @@ def test_diffusion_training_short():
     trainer = Trainer(model, TrainingConfig(total_steps=3, batch_size=4, sequence_length=1))
     provider = RandomDiffusionProvider(4, 2)
     trainer.train(provider)
+    assert trainer.state.global_step == 3
+    last_loss = trainer.state.metrics.get("loss")
+    assert last_loss is not None
+    assert math.isfinite(last_loss), f"Loss is not finite: {last_loss}"
 
 
 def test_token_training_with_token_sequence_provider():
@@ -76,3 +86,7 @@ def test_token_training_with_token_sequence_provider():
     tokens = torch.randint(0, 64, (10, 16)).cpu().numpy()
     provider = TokenSequenceProvider(tokens)
     trainer.train(provider)
+    assert trainer.state.global_step == 3
+    last_loss = trainer.state.metrics.get("loss")
+    assert last_loss is not None
+    assert math.isfinite(last_loss), f"Loss is not finite: {last_loss}"
