@@ -607,14 +607,11 @@ def render_inference_py(context: dict[str, Any]) -> str:
             if not checkpoint_path.exists():
                 print(f"No checkpoint found at {checkpoint_path}. Running with fresh weights.")
                 return
-            try:
-                checkpoint_payload = torch.load(
-                    checkpoint_path,
-                    map_location=model.device,
-                    weights_only=True,
-                )
-            except TypeError:  # pragma: no cover - old torch fallback
-                checkpoint_payload = torch.load(checkpoint_path, map_location=model.device)
+            checkpoint_payload = torch.load(
+                checkpoint_path,
+                map_location=model.device,
+                weights_only=True,
+            )
             state_dict = _unwrap_model_state_dict(checkpoint_payload)
             model.load_state_dict(state_dict)
             print(f"Loaded checkpoint: {checkpoint_path}")

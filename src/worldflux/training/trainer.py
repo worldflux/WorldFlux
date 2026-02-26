@@ -471,8 +471,8 @@ class Trainer:
                 result.achieved_tier.value,
                 result.score,
             )
-        except Exception:
-            logger.debug("Quality check skipped due to error", exc_info=True)
+        except Exception as exc:
+            logger.warning("Post-training quality check failed: %s", exc, exc_info=True)
 
     def runtime_profile(self) -> dict[str, float | None]:
         """Return lightweight runtime profiling metrics for DX instrumentation."""
