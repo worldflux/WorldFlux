@@ -12,15 +12,10 @@ from .batch import (
 )
 from .config import (
     DiffusionWorldModelConfig,
-    DiTSkeletonConfig,
     DreamerV3Config,
     DynamicsType,
-    GANSkeletonConfig,
     JEPABaseConfig,
     LatentType,
-    PhysicsSkeletonConfig,
-    Renderer3DSkeletonConfig,
-    SSMSkeletonConfig,
     TDMPC2Config,
     TokenWorldModelConfig,
     VJEPA2Config,
@@ -52,7 +47,7 @@ from .interfaces import (
     Decoder,
     DynamicsModel,
     ObservationEncoder,
-    RolloutEngine,
+    RolloutEngine,  # noqa: F401 — kept for backward compat, deprecated
     RolloutExecutor,
     ensure_async_decoder,
     ensure_async_dynamics_model,
@@ -75,8 +70,8 @@ from .payloads import (
     ActionSequence,
     ConditionPayload,
     WorldModelInput,
-    first_action,
-    is_namespaced_extra_key,
+    first_action,  # noqa: F401 — kept for backward compat, deprecated
+    is_namespaced_extra_key,  # noqa: F401 — kept for backward compat, deprecated
     normalize_planned_action,
 )
 from .registry import AutoConfig, AutoWorldModel, PluginManifest, WorldModelRegistry
@@ -118,11 +113,9 @@ __all__ = [
     "ConditionPayload",
     "WorldModelInput",
     "normalize_planned_action",
-    "first_action",
     "PLANNER_HORIZON_KEY",
     "PLANNER_SEQUENCE_KEY",
     "ACTION_COMPONENTS_KEY",
-    "is_namespaced_extra_key",
     "ComponentSpec",
     "ObservationEncoder",
     "AsyncObservationEncoder",
@@ -141,7 +134,6 @@ __all__ = [
     "AsyncRolloutExecutor",
     "AsyncRolloutExecutorAdapter",
     "ensure_async_rollout_executor",
-    "RolloutEngine",
     # Specs
     "ModalityKind",
     "ModalitySpec",
@@ -166,11 +158,6 @@ __all__ = [
     "VJEPA2Config",
     "TokenWorldModelConfig",
     "DiffusionWorldModelConfig",
-    "DiTSkeletonConfig",
-    "SSMSkeletonConfig",
-    "Renderer3DSkeletonConfig",
-    "PhysicsSkeletonConfig",
-    "GANSkeletonConfig",
     # Protocol and Registry
     "WorldModel",
     "WorldModelRegistry",
