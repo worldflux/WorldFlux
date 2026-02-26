@@ -48,7 +48,16 @@ def classify_public_contract_diff(
     previous: dict[str, Any],
     current: dict[str, Any],
 ) -> PublicContractDiff:
-    """Classify contract delta as none, additive, or breaking."""
+    """Classify contract delta as none, additive, or breaking.
+
+    Note: Symbol removals are always classified as ``breaking`` even when a
+    deprecation shim preserves backwards compatibility at runtime.  When
+    removing symbols that have a deprecation shim (i.e. the symbol is still
+    importable via ``__getattr__``), the snapshot fixture must be updated
+    manually to reflect the new ``__all__``.  This is an intentional design
+    choice — the snapshot tracks the *documented* public surface, not the
+    runtime-importable surface.
+    """
     additive_changes: list[str] = []
     breaking_reasons: list[str] = []
 
