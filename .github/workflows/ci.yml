@@ -309,6 +309,7 @@ jobs:
             tests/test_samplers/test_diffusion_sampler.py \
             tests/test_training.py \
             tests/test_training/test_callbacks_validation.py \
+            tests/test_training/test_callbacks_report.py \
             tests/test_training/test_data_provider_guards.py \
             tests/test_training/test_trainer_safety_guards.py \
             tests/test_training/test_replay_buffer_schema_validation.py \
