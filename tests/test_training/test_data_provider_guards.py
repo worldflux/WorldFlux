@@ -58,7 +58,8 @@ def test_replay_buffer_sampling_fallback_paths_and_overwrite_guards() -> None:
     # Fallback path when no episode boundaries are available.
     buffer._episode_starts = []
     buffer._episode_ends = []
-    indices = buffer._sample_valid_indices(batch_size=4, seq_len=2)
+    with pytest.warns(UserWarning, match="No episode boundaries"):
+        indices = buffer._sample_valid_indices(batch_size=4, seq_len=2)
     assert len(indices) == 4
     assert all(0 <= idx <= 3 for idx in indices)
     assert buffer._is_overwritten(ep_start=0, ep_end=1, new_end=3) is False
@@ -66,7 +67,8 @@ def test_replay_buffer_sampling_fallback_paths_and_overwrite_guards() -> None:
     # Fallback path when episodes exist but none are long enough for seq_len.
     buffer._episode_starts = [0]
     buffer._episode_ends = [1]
-    indices = buffer._sample_valid_indices(batch_size=3, seq_len=2)
+    with pytest.warns(UserWarning, match="No episodes long enough"):
+        indices = buffer._sample_valid_indices(batch_size=3, seq_len=2)
     assert len(indices) == 3
     assert all(0 <= idx <= 3 for idx in indices)
 
