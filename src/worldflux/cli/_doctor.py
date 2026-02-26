@@ -6,9 +6,9 @@ import importlib.util
 import platform
 
 import typer
-from rich.table import Table
 
 from ._app import app, console
+from ._rich_output import status_table
 
 
 @app.command(rich_help_panel="Utilities")
@@ -22,28 +22,21 @@ def doctor() -> None:
 
     from worldflux import __version__
 
-    ok = "[green]✓[/green]"
-    warn = "[yellow]![/yellow]"
-
-    table = Table(title="WorldFlux Environment", show_lines=False, padding=(0, 2))
-    table.add_column("", width=3, no_wrap=True)  # status indicator
-    table.add_column("Component", style="bold", no_wrap=True)
-    table.add_column("Value")
-
-    # Core info
-    table.add_row(ok, "WorldFlux", __version__)
-    table.add_row(ok, "Python", platform.python_version())
-    table.add_row(ok, "PyTorch", torch.__version__)
+    rows: list[tuple[str, str, str]] = [
+        ("pass", "WorldFlux", __version__),
+        ("pass", "Python", platform.python_version()),
+        ("pass", "PyTorch", torch.__version__),
+    ]
 
     # CUDA
     if torch.cuda.is_available():
         gpu_name = torch.cuda.get_device_name(0)
         cuda_version = torch.version.cuda or "n/a"
-        table.add_row(ok, "CUDA", f"{cuda_version} ({gpu_name})")
+        rows.append(("pass", "CUDA", f"{cuda_version} ({gpu_name})"))
     else:
-        table.add_row(warn, "CUDA", "[yellow]not available[/yellow]")
+        rows.append(("warn", "CUDA", "[wf.caution]not available[/wf.caution]"))
 
-    table.add_row(ok, "Platform", platform.platform())
+    rows.append(("pass", "Platform", platform.platform()))
 
     # Optional extras
     _optional = [
@@ -62,10 +55,10 @@ def doctor() -> None:
         else:
             missing.append(display_name)
 
-    extras_text = ", ".join(installed) if installed else "[dim]none[/dim]"
-    table.add_row(ok, "Installed extras", extras_text)
+    extras_text = ", ".join(installed) if installed else "[wf.muted]none[/wf.muted]"
+    rows.append(("pass", "Installed extras", extras_text))
     if missing:
-        table.add_row(warn, "Missing extras", "[dim]" + ", ".join(missing) + "[/dim]")
+        rows.append(("warn", "Missing extras", "[wf.muted]" + ", ".join(missing) + "[/wf.muted]"))
 
     # Model registry
     try:
@@ -81,16 +74,16 @@ def doctor() -> None:
             parts = [f"{total} total"]
             for mat, count in sorted(by_maturity.items()):
                 parts.append(f"{mat}: {count}")
-            table.add_row(ok, "Model registry", ", ".join(parts))
+            rows.append(("pass", "Model registry", ", ".join(parts)))
         else:
-            table.add_row(ok, "Model registry", f"{len(all_models)} models")
+            rows.append(("pass", "Model registry", f"{len(all_models)} models"))
     except Exception:  # pragma: no cover
-        table.add_row(warn, "Model registry", "[dim]unavailable[/dim]")
+        rows.append(("warn", "Model registry", "[wf.muted]unavailable[/wf.muted]"))
 
-    console.print(table)
+    console.print(status_table(rows, title="WorldFlux Environment"))
     if missing:
         console.print(
-            f"\n[dim]Tip: Install missing extras with[/dim]  "
+            f"\n[wf.muted]Tip: Install missing extras with[/wf.muted]  "
             f"uv pip install 'worldflux[{','.join(missing)}]'"
         )
     raise typer.Exit(code=0)

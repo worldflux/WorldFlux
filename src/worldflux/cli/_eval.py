@@ -6,9 +6,9 @@ import json
 from pathlib import Path
 
 import typer
-from rich.table import Table
 
 from ._app import app, console
+from ._rich_output import metric_table
 
 
 @app.command("eval", rich_help_panel="Quality & Evaluation")
@@ -34,7 +34,7 @@ def eval_cmd(
 
     if suite not in SUITE_CONFIGS:
         console.print(
-            f"[bold red]Unknown suite:[/bold red] {suite}. "
+            f"[wf.fail]Unknown suite:[/wf.fail] {suite}. "
             f"Available: {', '.join(sorted(SUITE_CONFIGS))}."
         )
         raise typer.Exit(code=1)
@@ -43,14 +43,14 @@ def eval_cmd(
     target = Path(model_or_path)
     model_id = model_or_path
 
-    with Status("[bold cyan]Loading model...[/bold cyan]", console=console, spinner="dots"):
+    with Status("[wf.brand]Loading model...[/wf.brand]", console=console, spinner="dots"):
         if target.exists():
             from worldflux.verify.quick import _load_model_from_target
 
             try:
                 model = _load_model_from_target(target, device=device)
             except (FileNotFoundError, ValueError, RuntimeError) as exc:
-                console.print(f"[bold red]Failed to load model:[/bold red] {exc}")
+                console.print(f"[wf.fail]Failed to load model:[/wf.fail] {exc}")
                 raise typer.Exit(code=1) from None
             model_id = str(target)
         else:
@@ -59,11 +59,11 @@ def eval_cmd(
             try:
                 model = create_world_model(model_or_path, device=device)
             except (ValueError, RuntimeError) as exc:
-                console.print(f"[bold red]Failed to create model:[/bold red] {exc}")
+                console.print(f"[wf.fail]Failed to create model:[/wf.fail] {exc}")
                 raise typer.Exit(code=1) from None
 
     with Status(
-        f"[bold cyan]Running {suite} evaluation...[/bold cyan]",
+        f"[wf.brand]Running {suite} evaluation...[/wf.brand]",
         console=console,
         spinner="dots",
     ):
@@ -80,7 +80,7 @@ def eval_cmd(
         if output is not None:
             output.parent.mkdir(parents=True, exist_ok=True)
             output.write_text(json_str + "\n", encoding="utf-8")
-            console.print(f"[green]Results written to:[/green] {output.resolve()}")
+            console.print(f"[wf.ok]Results written to:[/wf.ok] {output.resolve()}")
         else:
             console.print(json_str)
         if report.all_passed is False:
@@ -88,27 +88,16 @@ def eval_cmd(
         return
 
     # Rich table output
-    table = Table(title=f"Eval: {suite} | {model_id}")
-    table.add_column("Metric", style="bold")
-    table.add_column("Value", justify="right")
-    table.add_column("Threshold", justify="right")
-    table.add_column("Status")
-
+    rows: list[tuple[str, str, str, bool | None]] = []
     for result in report.results:
         threshold_str = f"{result.threshold:.4f}" if result.threshold is not None else "-"
-        if result.passed is True:
-            status = "[green]✓[/green] [bold green]PASS[/bold green]"
-        elif result.passed is False:
-            status = "[red]✗[/red] [bold red]FAIL[/bold red]"
-        else:
-            status = "[dim]·[/dim] [dim]info[/dim]"
-        table.add_row(result.metric, f"{result.value:.4f}", threshold_str, status)
+        rows.append((result.metric, f"{result.value:.4f}", threshold_str, result.passed))
 
-    console.print(table)
-    console.print(f"[dim]Wall time: {report.wall_time_sec:.2f}s[/dim]")
+    console.print(metric_table(rows, title=f"Eval: {suite} | {model_id}"))
+    console.print(f"[wf.muted]Wall time: {report.wall_time_sec:.2f}s[/wf.muted]")
 
     if report.all_passed is True:
-        console.print("[bold green]All metrics passed.[/bold green]")
+        console.print("[wf.pass]All metrics passed.[/wf.pass]")
     elif report.all_passed is False:
-        console.print("[bold red]Some metrics failed.[/bold red]")
+        console.print("[wf.fail]Some metrics failed.[/wf.fail]")
         raise typer.Exit(code=1)
