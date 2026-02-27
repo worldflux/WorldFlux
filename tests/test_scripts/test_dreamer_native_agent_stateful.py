@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -141,11 +142,19 @@ class _FakeTrainer:
         _ = config
         self.model = model
         self.calls: list[int] = []
+        self.state = type("TrainerState", (), {"metrics": {}})()
         _FakeTrainer.instances.append(self)
 
     def train(self, data: object, num_steps: int | None = None):
         _ = data
-        self.calls.append(int(num_steps) if num_steps is not None else 0)
+        step = int(num_steps) if num_steps is not None else 0
+        self.calls.append(step)
+        self.state.metrics = {
+            "loss": float(step),
+            "reward": 1.5,
+            "actor": 0.5,
+            "critic": 0.25,
+        }
         return self.model
 
 
@@ -308,3 +317,160 @@ def test_replay_ratio_scheduler_matches_expected_update_count(
     assert metadata["train_updates_executed"] == 8
     assert _FakeTrainer.instances
     assert _FakeTrainer.instances[0].calls == [4, 8]
+
+
+def test_build_dreamer_model_supports_official_xl_via_factory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    sentinel = object()
+
+    def _fake_create_world_model(model_id: str, **kwargs: object) -> object:
+        captured["model_id"] = model_id
+        captured["kwargs"] = kwargs
+        return sentinel
+
+    monkeypatch.setattr(dna, "create_world_model", _fake_create_world_model)
+
+    model, model_id = dna._build_dreamer_model(
+        profile="official_xl",
+        obs_shape=(3, 64, 64),
+        action_dim=18,
+        device="cpu",
+        learning_rate=4e-5,
+    )
+
+    assert model is sentinel
+    assert model_id == "dreamerv3:official_xl"
+    assert captured["model_id"] == "dreamerv3:official_xl"
+    kwargs = captured["kwargs"]
+    assert isinstance(kwargs, dict)
+    assert kwargs["actor_critic"] is True
+    assert kwargs["action_type"] == "discrete"
+
+
+def test_normalize_model_profile_deprecates_official_like() -> None:
+    with pytest.warns(DeprecationWarning, match="official_like"):
+        normalized = dna._normalize_model_profile("official_like")
+    assert normalized == "official_xl"
+
+
+def test_run_dreamer_native_writes_diagnostics_jsonl(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    fake_env = _FakeEnv(action_dim=3, episode_len=2)
+    fake_model = _FakeModel(action_dim=3, actor_mode="finite")
+    _FakeTrainer.instances.clear()
+
+    def _stub_eval_with_std(**_: object) -> tuple[float, dict[str, int | float]]:
+        return 1.25, {
+            "actor_steps": 2,
+            "shooting_steps": 0,
+            "fallback_steps": 0,
+            "return_std": 0.2,
+        }
+
+    monkeypatch.setattr(dna, "build_atari_env", lambda **kwargs: fake_env)
+    monkeypatch.setattr(dna, "create_world_model", lambda *args, **kwargs: fake_model)
+    monkeypatch.setattr(dna, "Trainer", _FakeTrainer)
+    monkeypatch.setattr(dna, "_evaluate_policy", _stub_eval_with_std)
+    monkeypatch.setattr(dna, "_train_ready", lambda **kwargs: True)
+
+    run_dir = tmp_path / "diag_run"
+    dna.run_dreamer_native(
+        dna.DreamerNativeRunConfig(
+            task_id="atari100k_pong",
+            seed=3,
+            steps=8,
+            eval_interval=4,
+            eval_episodes=1,
+            eval_window=2,
+            env_backend="stub",
+            device="cpu",
+            run_dir=run_dir,
+            batch_size=2,
+            sequence_length=2,
+            warmup_steps=0,
+            replay_ratio=64.0,
+            train_chunk_size=2,
+            policy_mode="parity_candidate",
+            policy_impl="actor",
+            model_profile="ci",
+            dreamer_diagnostic=True,
+        )
+    )
+
+    diagnostics = run_dir / "diagnostics.jsonl"
+    assert diagnostics.exists()
+    rows = [
+        json.loads(line)
+        for line in diagnostics.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert rows
+
+    required_keys = {
+        "env_step",
+        "episode",
+        "buffer_size",
+        "update_credit",
+        "train_backlog",
+        "target_train_updates",
+        "train_updates_executed",
+        "policy_impl_effective",
+        "actor_steps",
+        "shooting_steps",
+        "actor_fallback_steps",
+        "eval_return_mean",
+        "eval_return_std",
+        "loss_total",
+        "loss_reward",
+        "loss_actor",
+        "loss_critic",
+    }
+    for row in rows:
+        assert required_keys.issubset(row.keys())
+
+    eval_rows = [row for row in rows if row.get("event") == "eval"]
+    assert eval_rows
+    assert eval_rows[-1]["eval_return_mean"] == pytest.approx(1.25)
+    assert eval_rows[-1]["eval_return_std"] == pytest.approx(0.2)
+
+
+def test_policy_fallback_counter_increments_in_run_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    fake_env = _FakeEnv(action_dim=3, episode_len=2)
+    fake_model = _FakeModel(action_dim=3, actor_mode="nonfinite")
+    _FakeTrainer.instances.clear()
+
+    monkeypatch.setattr(dna, "build_atari_env", lambda **kwargs: fake_env)
+    monkeypatch.setattr(dna, "create_world_model", lambda *args, **kwargs: fake_model)
+    monkeypatch.setattr(dna, "Trainer", _FakeTrainer)
+    monkeypatch.setattr(dna, "_evaluate_policy", _stub_eval)
+
+    _, metadata = dna.run_dreamer_native(
+        dna.DreamerNativeRunConfig(
+            task_id="atari100k_pong",
+            seed=4,
+            steps=4,
+            eval_interval=100,
+            eval_episodes=1,
+            eval_window=2,
+            env_backend="stub",
+            device="cpu",
+            run_dir=tmp_path / "fallback",
+            batch_size=2,
+            sequence_length=2,
+            warmup_steps=0,
+            replay_ratio=0.0,
+            train_chunk_size=1,
+            policy_mode="parity_candidate",
+            policy_impl="auto",
+            model_profile="ci",
+        )
+    )
+
+    assert metadata["actor_fallback_steps"] > 0

@@ -61,7 +61,13 @@ def _parse_args() -> argparse.Namespace:
         "--dreamer-model-profile",
         type=str,
         default="wf25m",
-        choices=["ci", "wf12m", "wf25m", "wf50m", "wf200m", "official_like"],
+        choices=["ci", "wf12m", "wf25m", "wf50m", "wf200m", "official_like", "official_xl"],
+    )
+    parser.add_argument(
+        "--dreamer-diagnostic",
+        type=str,
+        default="false",
+        choices=["true", "false"],
     )
     parser.add_argument("--dreamer-lr", type=float, default=4e-5)
     return parser.parse_args()
@@ -84,6 +90,10 @@ def _resolve_backend(family: str, backend: str) -> str:
 
 def _override_int(value: int, default: int) -> int:
     return int(value) if int(value) > 0 else int(default)
+
+
+def _parse_bool_arg(value: str) -> bool:
+    return str(value).strip().lower() == "true"
 
 
 def _eval_protocol_hash(
@@ -179,6 +189,7 @@ def main() -> int:
                     train_chunk_size=_override_int(args.dreamer_train_chunk_size, 64),
                     model_profile=args.dreamer_model_profile,
                     learning_rate_override=float(args.dreamer_lr),
+                    dreamer_diagnostic=_parse_bool_arg(args.dreamer_diagnostic),
                 )
             )
         else:
