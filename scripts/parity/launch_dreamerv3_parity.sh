@@ -12,6 +12,7 @@
 #   bash scripts/parity/launch_dreamerv3_parity.sh [mode] --dry-run
 #   bash scripts/parity/launch_dreamerv3_parity.sh smoke --version=v3
 #   bash scripts/parity/launch_dreamerv3_parity.sh smoke --version=v3 --instance-type=p4d.24xlarge
+#   bash scripts/parity/launch_dreamerv3_parity.sh smoke --version=v3 --instance-type=p4d.24xlarge --auto-optimize=true
 #
 # Prerequisites:
 #   - AWS CLI configured with credentials for us-west-2
@@ -32,11 +33,13 @@ shift || true
 DRY_RUN=false
 VERSION="v2"
 INSTANCE_TYPE_OVERRIDE=""
+AUTO_OPTIMIZE=true
 for arg in "$@"; do
     case "$arg" in
         --dry-run) DRY_RUN=true ;;
         --version=*) VERSION="${arg#*=}" ;;
         --instance-type=*) INSTANCE_TYPE_OVERRIDE="${arg#*=}" ;;
+        --auto-optimize=*) AUTO_OPTIMIZE="${arg#*=}" ;;
         *) echo "Unknown argument: $arg"; exit 1 ;;
     esac
 done
@@ -44,12 +47,17 @@ done
 # Validate mode
 case "$MODE" in
     smoke|stage-a|full) ;;
-    *) echo "Usage: $0 {smoke|stage-a|full} [--dry-run] [--version=v2|v3] [--instance-type=TYPE]"; exit 1 ;;
+    *) echo "Usage: $0 {smoke|stage-a|full} [--dry-run] [--version=v2|v3] [--instance-type=TYPE] [--auto-optimize=true|false]"; exit 1 ;;
 esac
 
 case "$VERSION" in
     v2|v3) ;;
     *) echo "Unsupported version: ${VERSION}. Expected v2 or v3."; exit 1 ;;
+esac
+
+case "$AUTO_OPTIMIZE" in
+    true|false) ;;
+    *) echo "Unsupported --auto-optimize value: ${AUTO_OPTIMIZE}. Expected true or false."; exit 1 ;;
 esac
 
 # ── Configuration ────────────────────────────────────────────────────
@@ -62,6 +70,10 @@ GPU_INSTANCE_TYPE="g5.xlarge"
 GPU_AMI="ami-068674ce56829a0ea"  # Deep Learning AMI with CUDA
 FLEET_SIZE=11
 FLEET_SPLIT="11,0"  # all official-side, each runs both systems (44/48 vCPU headroom)
+SHARDING_MODE="seed_system"
+SEED_SHARD_UNIT="pair"
+GPU_SLOTS_PER_INSTANCE=1
+GPU_VOLUME_SIZE_GB=200
 if [ -n "$INSTANCE_TYPE_OVERRIDE" ]; then
     GPU_INSTANCE_TYPE="$INSTANCE_TYPE_OVERRIDE"
 fi
@@ -111,6 +123,62 @@ if [ "$VERSION" = "v3" ] && [[ "$GPU_INSTANCE_TYPE" == g5* ]]; then
     echo "         Recommended: --instance-type=p4d.24xlarge or p5.4xlarge"
 fi
 
+INSTANCE_SHAPE_JSON=$(aws ec2 describe-instance-types \
+    --region "${REGION}" \
+    --instance-types "${GPU_INSTANCE_TYPE}" \
+    --query "InstanceTypes[0].{VCpu:VCpuInfo.DefaultVCpus,Gpus:GpuInfo.Gpus[0].Count}" \
+    --output json)
+INSTANCE_VCPU=$(echo "${INSTANCE_SHAPE_JSON}" | python3 -c 'import json,sys; print(int((json.load(sys.stdin).get("VCpu") or 0)))')
+GPU_SLOTS_DETECTED=$(echo "${INSTANCE_SHAPE_JSON}" | python3 -c 'import json,sys; print(int((json.load(sys.stdin).get("Gpus") or 0)))')
+if [ "${GPU_SLOTS_DETECTED}" -gt 0 ]; then
+    GPU_SLOTS_PER_INSTANCE="${GPU_SLOTS_DETECTED}"
+fi
+
+if [ "$AUTO_OPTIMIZE" = "true" ]; then
+    if [[ "$GPU_INSTANCE_TYPE" == p* || "$GPU_INSTANCE_TYPE" == g* ]]; then
+        if [[ "$GPU_INSTANCE_TYPE" == p* ]]; then
+            QUOTA_CODE="L-417A185B" # Running On-Demand P instances (vCPU)
+        else
+            QUOTA_CODE="L-DB2E81BA" # Running On-Demand G and VT instances (vCPU)
+        fi
+
+        QUOTA_VCPU=$(aws service-quotas get-service-quota \
+            --region "${REGION}" \
+            --service-code ec2 \
+            --quota-code "${QUOTA_CODE}" \
+            --query "Quota.Value" \
+            --output text | python3 -c 'import sys; print(int(float(sys.stdin.read().strip() or "0")))')
+
+        if [ "${INSTANCE_VCPU}" -le 0 ]; then
+            echo "Unable to resolve vCPU count for ${GPU_INSTANCE_TYPE}"
+            exit 1
+        fi
+
+        MAX_INSTANCES=$((QUOTA_VCPU / INSTANCE_VCPU))
+        if [ "${MAX_INSTANCES}" -le 0 ]; then
+            echo "Quota ${QUOTA_VCPU} vCPU cannot launch ${GPU_INSTANCE_TYPE} (${INSTANCE_VCPU} vCPU)."
+            exit 1
+        fi
+
+        if [ "${FLEET_SIZE}" -gt "${MAX_INSTANCES}" ]; then
+            echo "Auto-optimize: clamping fleet-size ${FLEET_SIZE} -> ${MAX_INSTANCES} for ${GPU_INSTANCE_TYPE} (quota ${QUOTA_VCPU} vCPU)"
+            FLEET_SIZE="${MAX_INSTANCES}"
+        fi
+
+        if [[ "$GPU_INSTANCE_TYPE" == p* ]] || [ "${FLEET_SIZE}" -lt 2 ]; then
+            # Quota-constrained or P-family runs should use task sharding so one fleet can run both systems.
+            SHARDING_MODE="task"
+            FLEET_SPLIT="${FLEET_SIZE},0"
+        fi
+
+        # Parity disk guard expects >=800GB free on data path.
+        if [[ "$GPU_INSTANCE_TYPE" == p* ]] && [ "${GPU_VOLUME_SIZE_GB}" -lt 1200 ]; then
+            GPU_VOLUME_SIZE_GB=1200
+            echo "Auto-optimize: raising worker volume size to ${GPU_VOLUME_SIZE_GB}GB for disk-guard compatibility"
+        fi
+    fi
+fi
+
 # ── User-data script (runs on the control-plane at boot) ────────────
 USERDATA=$(cat <<'USERDATA_EOF'
 #!/bin/bash
@@ -145,6 +213,9 @@ GPU_AMI=$(get_tag "ParityGpuAmi")
 GPU_INSTANCE_TYPE=$(get_tag "ParityGpuInstanceType")
 FLEET_SIZE=$(get_tag "ParityFleetSize")
 FLEET_SPLIT=$(get_tag "ParityFleetSplit")
+GPU_SLOTS_PER_INSTANCE=$(get_tag "ParityGpuSlotsPerInstance")
+SHARDING_MODE=$(get_tag "ParityShardingMode")
+GPU_VOLUME_SIZE_GB=$(get_tag "ParityVolumeSizeGb")
 SUBNET_ID=$(get_tag "ParitySubnetId")
 SG_IDS=$(get_tag "ParitySecurityGroupIds")
 IAM_PROFILE=$(get_tag "ParityIamProfile")
@@ -164,6 +235,9 @@ echo "S3 prefix: ${S3_PREFIX}"
 echo "Manifest: ${MANIFEST}"
 echo "Full manifest: ${FULL_MANIFEST}"
 echo "Phase plan: ${PHASE_PLAN}"
+echo "Sharding mode: ${SHARDING_MODE}"
+echo "GPU slots/instance: ${GPU_SLOTS_PER_INSTANCE}"
+echo "Worker volume size (GB): ${GPU_VOLUME_SIZE_GB}"
 
 # Run the orchestrator
 export PYTHONUNBUFFERED=1
@@ -186,8 +260,9 @@ stdbuf -oL -eL python3 scripts/parity/aws_distributed_orchestrator.py \
     --security-group-ids "${SG_IDS}" \
     --iam-instance-profile "${IAM_PROFILE}" \
     --key-name "${KEY_NAME}" \
-    --gpu-slots-per-instance 1 \
-    --sharding-mode seed_system \
+    --volume-size-gb "${GPU_VOLUME_SIZE_GB}" \
+    --gpu-slots-per-instance "${GPU_SLOTS_PER_INSTANCE}" \
+    --sharding-mode "${SHARDING_MODE}" \
     --seed-shard-unit pair \
     --wait \
     --output-dir reports/parity \
@@ -218,9 +293,11 @@ echo "║  DreamerV3 Parity Verification Launch                      ║"
 echo "╠══════════════════════════════════════════════════════════════╣"
 echo "║  Mode           : ${MODE}"
 echo "║  Version        : ${VERSION}"
+echo "║  Auto optimize  : ${AUTO_OPTIMIZE}"
 echo "║  Control plane  : ${CONTROL_PLANE_TYPE} (${CONTROL_PLANE_AMI})"
 echo "║  GPU workers    : ${GPU_INSTANCE_TYPE} × ${FLEET_SIZE}"
-echo "║  GPU slots/inst : 1 (A10G 24GB)"
+echo "║  GPU slots/inst : ${GPU_SLOTS_PER_INSTANCE}"
+echo "║  Worker volume  : ${GPU_VOLUME_SIZE_GB}GB"
 echo "║  Region         : ${REGION}"
 echo "║  Run tag        : ${RUN_TAG}"
 echo "║  S3 prefix      : ${S3_PREFIX}"
@@ -228,6 +305,8 @@ echo "║  Branch         : ${WORLDFLUX_BRANCH}"
 echo "║  Manifest       : ${MANIFEST}"
 echo "║  Full manifest  : ${FULL_MANIFEST}"
 echo "║  Phase plan     : ${PHASE_PLAN}"
+echo "║  Sharding mode  : ${SHARDING_MODE}"
+echo "║  Fleet split    : ${FLEET_SPLIT}"
 echo "╚══════════════════════════════════════════════════════════════╝"
 
 if [ "$DRY_RUN" = true ]; then
@@ -253,12 +332,12 @@ RESULT=$(aws ec2 run-instances \
     --user-data "${USERDATA_B64}" \
     --block-device-mappings '[{"DeviceName":"/dev/sda1","Ebs":{"VolumeSize":30,"VolumeType":"gp3","DeleteOnTermination":true}}]' \
     --metadata-options '{"HttpTokens":"required","HttpPutResponseHopLimit":2,"HttpEndpoint":"enabled"}' \
-    --tag-specifications "$(python3 - "${RUN_TAG}" "${S3_PREFIX}" "${WORLDFLUX_BRANCH}" "${GPU_AMI}" "${GPU_INSTANCE_TYPE}" "${FLEET_SIZE}" "${FLEET_SPLIT}" "${SUBNET_ID}" "${SECURITY_GROUP_IDS}" "${IAM_INSTANCE_PROFILE}" "${KEY_NAME}" "${MANIFEST}" "${FULL_MANIFEST}" "${PHASE_PLAN}" <<'PYTAGS'
+    --tag-specifications "$(python3 - "${RUN_TAG}" "${S3_PREFIX}" "${WORLDFLUX_BRANCH}" "${GPU_AMI}" "${GPU_INSTANCE_TYPE}" "${FLEET_SIZE}" "${FLEET_SPLIT}" "${GPU_SLOTS_PER_INSTANCE}" "${SHARDING_MODE}" "${GPU_VOLUME_SIZE_GB}" "${SUBNET_ID}" "${SECURITY_GROUP_IDS}" "${IAM_INSTANCE_PROFILE}" "${KEY_NAME}" "${MANIFEST}" "${FULL_MANIFEST}" "${PHASE_PLAN}" <<'PYTAGS'
 import json, sys
 a = sys.argv[1:]
 tags = dict(zip(
     ["ParityRunTag","ParityS3Prefix","ParityBranch","ParityGpuAmi",
-     "ParityGpuInstanceType","ParityFleetSize","ParityFleetSplit",
+     "ParityGpuInstanceType","ParityFleetSize","ParityFleetSplit","ParityGpuSlotsPerInstance","ParityShardingMode","ParityVolumeSizeGb",
      "ParitySubnetId","ParitySecurityGroupIds","ParityIamProfile","ParityKeyName",
      "ParityManifest","ParityFullManifest","ParityPhasePlan"], a))
 tags["Name"] = "worldflux-dreamerv3-parity-orchestrator"
