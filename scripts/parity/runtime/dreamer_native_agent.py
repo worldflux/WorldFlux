@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import math
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -12,15 +14,21 @@ import torch
 import torch.nn.functional as F
 
 from worldflux import create_world_model
-from worldflux.core.config import DreamerV3Config
 from worldflux.core.state import State
-from worldflux.models.dreamer.world_model import DreamerV3WorldModel
 from worldflux.training import ReplayBuffer, Trainer, TrainingConfig
 
 from .atari_env import AtariEnvError, build_atari_env
 
 _VALID_POLICY_IMPLS = {"auto", "actor", "shooting"}
-_VALID_MODEL_PROFILES = {"ci", "wf12m", "wf25m", "wf50m", "wf200m", "official_like"}
+_VALID_MODEL_PROFILES = {
+    "ci",
+    "wf12m",
+    "wf25m",
+    "wf50m",
+    "wf200m",
+    "official_like",
+    "official_xl",
+}
 
 
 @dataclass(frozen=True)
@@ -48,6 +56,7 @@ class DreamerNativeRunConfig:
     train_chunk_size: int = 64
     model_profile: str = "wf25m"
     learning_rate_override: float = 4e-5
+    dreamer_diagnostic: bool = False
 
 
 def _normalize_policy_impl(value: str) -> str:
@@ -61,6 +70,13 @@ def _normalize_policy_impl(value: str) -> str:
 
 def _normalize_model_profile(value: str) -> str:
     normalized = str(value).strip().lower()
+    if normalized == "official_like":
+        warnings.warn(
+            "model_profile='official_like' is deprecated, use 'official_xl'",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        normalized = "official_xl"
     if normalized not in _VALID_MODEL_PROFILES:
         raise AtariEnvError(
             f"model_profile must be one of {sorted(_VALID_MODEL_PROFILES)}, got {value!r}"
@@ -125,31 +141,13 @@ def _build_dreamer_model(
         "critic_lr": float(learning_rate),
     }
 
-    if profile == "official_like":
-        config = DreamerV3Config(
-            model_name="official_like",
-            obs_shape=tuple(obs_shape),
-            action_dim=int(action_dim),
-            action_type="discrete",
-            deter_dim=8192,
-            stoch_discrete=32,
-            stoch_classes=64,
-            hidden_dim=1024,
-            cnn_depth=64,
-            actor_critic=True,
-            learning_rate=float(learning_rate),
-            actor_lr=float(learning_rate),
-            critic_lr=float(learning_rate),
-        )
-        model = DreamerV3WorldModel(config).to(torch.device(device))
-        return model, "dreamerv3:official_like"
-
     profile_to_model_id = {
         "ci": "dreamerv3:ci",
         "wf12m": "dreamerv3:size12m",
         "wf25m": "dreamerv3:size25m",
         "wf50m": "dreamerv3:size50m",
         "wf200m": "dreamerv3:size200m",
+        "official_xl": "dreamerv3:official_xl",
     }
     model_id = profile_to_model_id[profile]
     model = create_world_model(
@@ -296,7 +294,7 @@ def _evaluate_policy(
     device: str,
     shooting_horizon: int,
     shooting_num_candidates: int,
-) -> tuple[float, dict[str, int]]:
+) -> tuple[float, dict[str, int | float]]:
     """Evaluate policy on real environment episodes with deterministic seeds."""
     rng = np.random.default_rng(seed)
     returns: list[float] = []
@@ -370,11 +368,32 @@ def _evaluate_policy(
             model.train()
 
     mean_return = float(np.mean(returns)) if returns else 0.0
+    std_return = float(np.std(returns)) if returns else 0.0
     return mean_return, {
         "actor_steps": int(actor_steps),
         "shooting_steps": int(shooting_steps),
         "fallback_steps": int(fallback_steps),
+        "return_std": std_return,
     }
+
+
+def _safe_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(parsed):
+        return None
+    return parsed
+
+
+def _metric_lookup(metrics: dict[str, Any], *keys: str) -> float | None:
+    for key in keys:
+        if key in metrics:
+            return _safe_float(metrics[key])
+    return None
 
 
 def _train_ready(
@@ -483,6 +502,51 @@ def run_dreamer_native(
     eval_actor_steps = 0
     eval_shooting_steps = 0
     actor_fallback_steps = 0
+    policy_impl_effective = "shooting" if policy_impl == "shooting" else "actor"
+    last_eval_return_mean: float | None = None
+    last_eval_return_std: float | None = None
+
+    diagnostics_path = config.run_dir / "diagnostics.jsonl"
+    diagnostics_enabled = bool(config.dreamer_diagnostic)
+    next_diagnostic_step = 100
+    if diagnostics_enabled:
+        config.run_dir.mkdir(parents=True, exist_ok=True)
+        diagnostics_path.write_text("", encoding="utf-8")
+
+    def _append_diagnostic_record(
+        *,
+        event: str,
+        eval_return_mean: float | None = None,
+        eval_return_std: float | None = None,
+    ) -> None:
+        if not diagnostics_enabled:
+            return
+        trainer_metrics = getattr(getattr(trainer, "state", None), "metrics", {})
+        if not isinstance(trainer_metrics, dict):
+            trainer_metrics = {}
+        record = {
+            "event": str(event),
+            "env_step": int(env_steps),
+            "episode": int(episodes),
+            "buffer_size": int(len(buffer)),
+            "update_credit": float(update_credit),
+            "train_backlog": int(train_backlog),
+            "target_train_updates": int(target_train_updates),
+            "train_updates_executed": int(train_updates),
+            "policy_impl_effective": str(policy_impl_effective),
+            "actor_steps": int(train_actor_steps),
+            "shooting_steps": int(train_shooting_steps),
+            "actor_fallback_steps": int(actor_fallback_steps),
+            "eval_return_mean": _safe_float(eval_return_mean),
+            "eval_return_std": _safe_float(eval_return_std),
+            "loss_total": _metric_lookup(trainer_metrics, "loss_total", "total", "loss"),
+            "loss_reward": _metric_lookup(trainer_metrics, "loss_reward", "reward"),
+            "loss_actor": _metric_lookup(trainer_metrics, "loss_actor", "actor"),
+            "loss_critic": _metric_lookup(trainer_metrics, "loss_critic", "critic"),
+        }
+        with diagnostics_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, sort_keys=True))
+            handle.write("\n")
 
     try:
         while env_steps < int(config.steps):
@@ -533,6 +597,7 @@ def run_dreamer_native(
                         train_actor_steps += 1
                     else:
                         train_shooting_steps += 1
+                    policy_impl_effective = "actor" if used_impl == "actor" else "shooting"
                     if did_fallback:
                         actor_fallback_steps += 1
                 else:
@@ -571,6 +636,9 @@ def run_dreamer_native(
                         train_target_steps=train_target_steps,
                         train_updates=train_updates,
                     )
+                while env_steps >= next_diagnostic_step:
+                    _append_diagnostic_record(event="periodic")
+                    next_diagnostic_step += 100
 
                 while env_steps >= next_eval:
                     eval_return, eval_stats = _evaluate_policy(
@@ -590,7 +658,14 @@ def run_dreamer_native(
                     eval_actor_steps += int(eval_stats.get("actor_steps", 0))
                     eval_shooting_steps += int(eval_stats.get("shooting_steps", 0))
                     actor_fallback_steps += int(eval_stats.get("fallback_steps", 0))
+                    last_eval_return_mean = float(eval_return)
+                    last_eval_return_std = _safe_float(eval_stats.get("return_std"))
                     curve.append((float(env_steps), float(eval_return)))
+                    _append_diagnostic_record(
+                        event="eval",
+                        eval_return_mean=last_eval_return_mean,
+                        eval_return_std=last_eval_return_std,
+                    )
                     next_eval += max(1, int(config.eval_interval))
 
                 if ep_len >= int(config.max_episode_steps):
@@ -655,7 +730,20 @@ def run_dreamer_native(
         eval_actor_steps += int(eval_stats.get("actor_steps", 0))
         eval_shooting_steps += int(eval_stats.get("shooting_steps", 0))
         actor_fallback_steps += int(eval_stats.get("fallback_steps", 0))
+        last_eval_return_mean = float(eval_return)
+        last_eval_return_std = _safe_float(eval_stats.get("return_std"))
         curve.append((float(config.steps), float(eval_return)))
+        _append_diagnostic_record(
+            event="eval",
+            eval_return_mean=last_eval_return_mean,
+            eval_return_std=last_eval_return_std,
+        )
+
+    _append_diagnostic_record(
+        event="end",
+        eval_return_mean=last_eval_return_mean,
+        eval_return_std=last_eval_return_std,
+    )
 
     policy_impl_effective = _resolve_policy_impl_label(
         policy_mode=policy_mode,
