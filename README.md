@@ -27,13 +27,7 @@ WorldFlux provides a unified Python interface for world models used in reinforce
 
 ## Demo
 
-### Imagination Rollout
-
-World model rolls out future frames from a single observation:
-
-![Imagination Rollout](docs/assets/imagination_rollout.gif)
-
-*Left: Real game frames | Right: Model's imagination*
+https://github.com/worldflux/WorldFlux/releases/download/demo-assets/dogrun.mp4
 
 ## Features
 
