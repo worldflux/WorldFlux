@@ -319,6 +319,46 @@ def test_replay_ratio_scheduler_matches_expected_update_count(
     assert _FakeTrainer.instances[0].calls == [4, 8]
 
 
+def test_long_episode_flushes_replay_and_executes_updates(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    fake_env = _FakeEnv(action_dim=3, episode_len=10_000)
+    fake_model = _FakeModel(action_dim=3, actor_mode="finite")
+    _FakeTrainer.instances.clear()
+
+    monkeypatch.setattr(dna, "build_atari_env", lambda **kwargs: fake_env)
+    monkeypatch.setattr(dna, "create_world_model", lambda *args, **kwargs: fake_model)
+    monkeypatch.setattr(dna, "Trainer", _FakeTrainer)
+    monkeypatch.setattr(dna, "_evaluate_policy", _stub_eval)
+
+    _, metadata = dna.run_dreamer_native(
+        dna.DreamerNativeRunConfig(
+            task_id="atari100k_pong",
+            seed=11,
+            steps=256,
+            eval_interval=1000,
+            eval_episodes=1,
+            eval_window=2,
+            env_backend="stub",
+            device="cpu",
+            run_dir=tmp_path / "long_ep_flush",
+            batch_size=16,
+            sequence_length=64,
+            warmup_steps=0,
+            replay_ratio=64.0,
+            train_chunk_size=4,
+            policy_mode="diagnostic_random",
+            model_profile="ci",
+        )
+    )
+
+    assert metadata["target_train_updates"] == 16
+    assert metadata["train_updates_executed"] == 16
+    assert _FakeTrainer.instances
+    assert _FakeTrainer.instances[0].calls[-1] == 16
+
+
 def test_build_dreamer_model_supports_official_xl_via_factory(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

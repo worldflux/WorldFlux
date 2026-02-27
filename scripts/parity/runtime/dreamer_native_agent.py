@@ -448,13 +448,12 @@ def run_dreamer_native(
     )
 
     replay_ratio = max(0.0, float(config.replay_ratio))
+    max_env_steps = max(0, int(config.steps))
     sequence_length = max(2, int(config.sequence_length))
     batch_size = max(1, int(config.batch_size))
     train_chunk_size = max(1, int(config.train_chunk_size))
     updates_per_env_step = replay_ratio / float(batch_size * sequence_length)
-    target_train_updates = int(
-        math.floor(float(max(0, int(config.steps))) * updates_per_env_step + 1e-12)
-    )
+    target_train_updates = int(math.floor(float(max_env_steps) * updates_per_env_step + 1e-12))
 
     trainer = Trainer(
         model,
@@ -494,7 +493,8 @@ def run_dreamer_native(
     next_eval = max(1, int(config.eval_interval))
     update_credit = 0.0
     train_backlog = 0
-    min_buffer_steps = batch_size * sequence_length
+    # ReplayBuffer samples sequences with replacement, so readiness only needs one valid sequence.
+    min_buffer_steps = sequence_length
     warmup_steps = max(0, int(config.warmup_steps))
 
     train_actor_steps = 0
@@ -548,8 +548,25 @@ def run_dreamer_native(
             handle.write(json.dumps(record, sort_keys=True))
             handle.write("\n")
 
+    def _drain_if_ready() -> None:
+        nonlocal train_backlog, train_target_steps, train_updates
+        if _train_ready(
+            buffer=buffer,
+            env_steps=env_steps,
+            warmup_steps=warmup_steps,
+            min_buffer_steps=min_buffer_steps,
+        ):
+            train_backlog, train_target_steps, train_updates = _drain_backlog(
+                trainer=trainer,
+                buffer=buffer,
+                backlog=train_backlog,
+                chunk_size=train_chunk_size,
+                train_target_steps=train_target_steps,
+                train_updates=train_updates,
+            )
+
     try:
-        while env_steps < int(config.steps):
+        while env_steps < max_env_steps:
             obs = env.reset(seed=config.seed + episodes)
             ep_obs: list[np.ndarray] = []
             ep_actions: list[np.ndarray] = []
@@ -567,7 +584,35 @@ def run_dreamer_native(
                     (1, int(env.action_dim)), device=torch.device(config.device)
                 )
 
-            while not done and env_steps < int(config.steps):
+            def _flush_replay_chunk(*, force_terminal: bool) -> None:
+                chunk_len = len(ep_obs)
+                if chunk_len <= 0:
+                    return
+                if not force_terminal:
+                    chunk_len = min(sequence_length, chunk_len)
+                    if chunk_len < sequence_length:
+                        return
+
+                obs_chunk = np.stack(ep_obs[:chunk_len], axis=0).astype(np.float32)
+                actions_chunk = np.stack(ep_actions[:chunk_len], axis=0).astype(np.float32)
+                rewards_chunk = np.asarray(ep_rewards[:chunk_len], dtype=np.float32)
+                dones_chunk = np.asarray(ep_dones[:chunk_len], dtype=np.float32)
+                if dones_chunk.size > 0:
+                    dones_chunk[-1] = 1.0 if force_terminal else 0.0
+
+                buffer.add_episode(
+                    obs=obs_chunk,
+                    actions=actions_chunk,
+                    rewards=rewards_chunk,
+                    dones=dones_chunk,
+                )
+
+                del ep_obs[:chunk_len]
+                del ep_actions[:chunk_len]
+                del ep_rewards[:chunk_len]
+                del ep_dones[:chunk_len]
+
+            while not done and env_steps < max_env_steps:
                 if policy_mode == "parity_candidate":
                     assert policy_state is not None
                     assert prev_action is not None
@@ -622,20 +667,9 @@ def run_dreamer_native(
                     train_backlog += newly_due
                     update_credit -= float(newly_due)
 
-                if _train_ready(
-                    buffer=buffer,
-                    env_steps=env_steps,
-                    warmup_steps=warmup_steps,
-                    min_buffer_steps=min_buffer_steps,
-                ):
-                    train_backlog, train_target_steps, train_updates = _drain_backlog(
-                        trainer=trainer,
-                        buffer=buffer,
-                        backlog=train_backlog,
-                        chunk_size=train_chunk_size,
-                        train_target_steps=train_target_steps,
-                        train_updates=train_updates,
-                    )
+                if not done and env_steps < max_env_steps and len(ep_obs) >= sequence_length:
+                    _flush_replay_chunk(force_terminal=False)
+                _drain_if_ready()
                 while env_steps >= next_diagnostic_step:
                     _append_diagnostic_record(event="periodic")
                     next_diagnostic_step += 100
@@ -672,30 +706,10 @@ def run_dreamer_native(
                     break
 
             if ep_obs:
-                dones = np.asarray(ep_dones, dtype=np.float32)
-                dones[-1] = 1.0
-                buffer.add_episode(
-                    obs=np.stack(ep_obs, axis=0).astype(np.float32),
-                    actions=np.stack(ep_actions, axis=0).astype(np.float32),
-                    rewards=np.asarray(ep_rewards, dtype=np.float32),
-                    dones=dones,
-                )
+                _flush_replay_chunk(force_terminal=True)
+            if ep_len > 0:
                 episodes += 1
-
-                if _train_ready(
-                    buffer=buffer,
-                    env_steps=env_steps,
-                    warmup_steps=warmup_steps,
-                    min_buffer_steps=min_buffer_steps,
-                ):
-                    train_backlog, train_target_steps, train_updates = _drain_backlog(
-                        trainer=trainer,
-                        buffer=buffer,
-                        backlog=train_backlog,
-                        chunk_size=train_chunk_size,
-                        train_target_steps=train_target_steps,
-                        train_updates=train_updates,
-                    )
+            _drain_if_ready()
     finally:
         env.close()
 
