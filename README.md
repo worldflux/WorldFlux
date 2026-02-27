@@ -27,7 +27,7 @@ WorldFlux provides a unified Python interface for world models used in reinforce
 
 ## Demo
 
-<video src="https://github.com/worldflux/WorldFlux/releases/download/demo-assets/dogrun.mp4" controls width="100%"></video>
+![Demo: DreamerV3 dog-run](docs/assets/dogrun.gif)
 
 ## Features
 
