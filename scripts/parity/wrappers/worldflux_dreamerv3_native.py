@@ -42,7 +42,13 @@ def _parse_args() -> argparse.Namespace:
         "--dreamer-model-profile",
         type=str,
         default="wf25m",
-        choices=["ci", "wf12m", "wf25m", "wf50m", "wf200m", "official_like"],
+        choices=["ci", "wf12m", "wf25m", "wf50m", "wf200m", "official_like", "official_xl"],
+    )
+    parser.add_argument(
+        "--dreamer-diagnostic",
+        type=str,
+        default="false",
+        choices=["true", "false"],
     )
     parser.add_argument("--dreamer-lr", type=float, default=4e-5)
     parser.add_argument("--timeout-sec", type=int, default=0)
@@ -79,6 +85,7 @@ def main() -> int:
         "dreamer_replay_ratio": args.dreamer_replay_ratio,
         "dreamer_train_chunk_size": args.dreamer_train_chunk_size,
         "dreamer_model_profile": args.dreamer_model_profile,
+        "dreamer_diagnostic": args.dreamer_diagnostic,
         "dreamer_lr": args.dreamer_lr,
     }
 
@@ -119,6 +126,8 @@ def main() -> int:
             str(args.dreamer_train_chunk_size),
             "--dreamer-model-profile",
             str(args.dreamer_model_profile),
+            "--dreamer-diagnostic",
+            str(args.dreamer_diagnostic),
             "--dreamer-lr",
             str(args.dreamer_lr),
         ]
