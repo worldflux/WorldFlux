@@ -39,6 +39,7 @@ MODEL_ALIASES: dict[str, str] = {
     "dreamer-small": "dreamerv3:size12m",
     "dreamer-medium": "dreamerv3:size50m",
     "dreamer-large": "dreamerv3:size200m",
+    "dreamerv3:official": "dreamerv3:official_xl",
     # TD-MPC2 aliases
     "tdmpc": "tdmpc2:5m",
     "tdmpc2-ci": "tdmpc2:ci",
@@ -103,6 +104,13 @@ MODEL_CATALOG: dict[str, dict[str, Any]] = {
     "dreamerv3:size200m": {
         "description": "DreamerV3 200M params - Maximum capacity",
         "params": "~200M",
+        "type": "dreamer",
+        "default_obs": "image",
+        "maturity": ModelMaturity.REFERENCE.value,
+    },
+    "dreamerv3:official_xl": {
+        "description": "DreamerV3 official XL - Matches danijar/dreamerv3 default architecture",
+        "params": "~200-300M",
         "type": "dreamer",
         "default_obs": "image",
         "maturity": ModelMaturity.REFERENCE.value,

@@ -28,6 +28,7 @@ class TestListModels:
         assert isinstance(models, list)
         assert "dreamer:ci" in models
         assert "dreamerv3:size12m" in models
+        assert "dreamerv3:official_xl" in models
         assert "tdmpc2:ci" in models
         assert "tdmpc2:5m" in models
         assert "jepa:base" in models
@@ -112,6 +113,15 @@ class TestGetConfig:
         assert config.model_type == "tdmpc2"
         assert config.latent_dim == 256
 
+    def test_get_config_dreamer_official_xl(self):
+        config = get_config("dreamerv3:official_xl")
+        assert config.model_type == "dreamer"
+        assert config.deter_dim == 8192
+        assert config.stoch_discrete == 32
+        assert config.stoch_classes == 64
+        assert config.hidden_dim == 1024
+        assert config.cnn_depth == 64
+
     def test_get_config_with_overrides(self):
         """Config with custom overrides."""
         config = get_config("tdmpc2:5m", obs_shape=(100,), action_dim=8)
@@ -174,6 +184,24 @@ class TestCreateWorldModel:
         model = create_world_model("dreamer", device="cpu")
         assert model.device == torch.device("cpu")
 
+    def test_create_official_alias_resolves_to_official_xl(self, monkeypatch):
+        captured: dict[str, str] = {}
+        tiny_model = torch.nn.Identity()
+
+        def _fake_from_pretrained(model_id: str, **kwargs: object) -> torch.nn.Module:
+            _ = kwargs
+            captured["model_id"] = model_id
+            return tiny_model
+
+        monkeypatch.setattr(
+            "worldflux.factory.WorldModelRegistry.from_pretrained",
+            _fake_from_pretrained,
+        )
+        model = create_world_model("dreamerv3:official", device="cpu")
+
+        assert model is tiny_model
+        assert captured["model_id"] == "dreamerv3:official_xl"
+
     def test_create_vjepa2_basic(self):
         model = create_world_model("vjepa2:base", obs_shape=(4,), action_dim=1)
         assert isinstance(model, VJEPA2WorldModel)
@@ -228,6 +256,7 @@ class TestModelAliases:
         assert MODEL_ALIASES["dreamer-small"] == "dreamerv3:size12m"
         assert MODEL_ALIASES["dreamer-medium"] == "dreamerv3:size50m"
         assert MODEL_ALIASES["dreamer-large"] == "dreamerv3:size200m"
+        assert MODEL_ALIASES["dreamerv3:official"] == "dreamerv3:official_xl"
 
     def test_tdmpc_aliases(self):
         """TD-MPC2 aliases are correct."""
@@ -249,7 +278,7 @@ class TestModelCatalog:
 
     def test_catalog_has_all_dreamer_sizes(self):
         """Catalog has all DreamerV3 size presets."""
-        expected = ["size12m", "size25m", "size50m", "size100m", "size200m"]
+        expected = ["size12m", "size25m", "size50m", "size100m", "size200m", "official_xl"]
         assert "dreamer:ci" in MODEL_CATALOG
         for size in expected:
             assert f"dreamerv3:{size}" in MODEL_CATALOG

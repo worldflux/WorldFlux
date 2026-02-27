@@ -313,6 +313,7 @@ class DreamerV3Config(WorldModelConfig):
         - size50m:  50M params - deter=4096, stoch=32x32, hidden=640
         - size100m: 100M params - deter=8192, stoch=32x32, hidden=768
         - size200m: 200M params - deter=8192, stoch=32x32, hidden=1024
+        - official_xl: official parity profile - deter=8192, stoch=32x64, hidden=1024, cnn=64
 
     Attributes:
         stoch_discrete: Number of categorical distributions.
@@ -515,6 +516,13 @@ class DreamerV3Config(WorldModelConfig):
                 "stoch_discrete": 32,
                 "stoch_classes": 32,
                 "hidden_dim": 1024,
+            },
+            "official_xl": {
+                "deter_dim": 8192,
+                "stoch_discrete": 32,
+                "stoch_classes": 64,
+                "hidden_dim": 1024,
+                "cnn_depth": 64,
             },
         }
         if size not in presets:

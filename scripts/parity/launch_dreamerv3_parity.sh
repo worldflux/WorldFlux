@@ -10,6 +10,8 @@
 #   bash scripts/parity/launch_dreamerv3_parity.sh stage-a     # 4→10-seed auto_power
 #   bash scripts/parity/launch_dreamerv3_parity.sh full        # smoke → stage-a sequential
 #   bash scripts/parity/launch_dreamerv3_parity.sh [mode] --dry-run
+#   bash scripts/parity/launch_dreamerv3_parity.sh smoke --version=v3
+#   bash scripts/parity/launch_dreamerv3_parity.sh smoke --version=v3 --instance-type=p4d.24xlarge
 #
 # Prerequisites:
 #   - AWS CLI configured with credentials for us-west-2
@@ -28,9 +30,13 @@ MODE="${1:-smoke}"
 shift || true
 
 DRY_RUN=false
+VERSION="v2"
+INSTANCE_TYPE_OVERRIDE=""
 for arg in "$@"; do
     case "$arg" in
         --dry-run) DRY_RUN=true ;;
+        --version=*) VERSION="${arg#*=}" ;;
+        --instance-type=*) INSTANCE_TYPE_OVERRIDE="${arg#*=}" ;;
         *) echo "Unknown argument: $arg"; exit 1 ;;
     esac
 done
@@ -38,7 +44,12 @@ done
 # Validate mode
 case "$MODE" in
     smoke|stage-a|full) ;;
-    *) echo "Usage: $0 {smoke|stage-a|full} [--dry-run]"; exit 1 ;;
+    *) echo "Usage: $0 {smoke|stage-a|full} [--dry-run] [--version=v2|v3] [--instance-type=TYPE]"; exit 1 ;;
+esac
+
+case "$VERSION" in
+    v2|v3) ;;
+    *) echo "Unsupported version: ${VERSION}. Expected v2 or v3."; exit 1 ;;
 esac
 
 # ── Configuration ────────────────────────────────────────────────────
@@ -51,6 +62,9 @@ GPU_INSTANCE_TYPE="g5.xlarge"
 GPU_AMI="ami-068674ce56829a0ea"  # Deep Learning AMI with CUDA
 FLEET_SIZE=11
 FLEET_SPLIT="11,0"  # all official-side, each runs both systems (44/48 vCPU headroom)
+if [ -n "$INSTANCE_TYPE_OVERRIDE" ]; then
+    GPU_INSTANCE_TYPE="$INSTANCE_TYPE_OVERRIDE"
+fi
 
 # Networking / IAM (reuse existing parity infrastructure)
 SUBNET_ID="subnet-017e9b9db46658c71"
@@ -60,13 +74,18 @@ KEY_NAME="worldflux"
 
 # S3 and run configuration
 S3_BUCKET="worldflux-parity"
-RUN_TAG="dreamerv3_${MODE}_$(date -u +%Y%m%dT%H%M%SZ)"
+RUN_TAG="dreamerv3_${MODE}_${VERSION}_$(date -u +%Y%m%dT%H%M%SZ)"
 S3_PREFIX="s3://${S3_BUCKET}/${RUN_TAG}"
 WORLDFLUX_BRANCH="main"
 
 # Manifest paths
-SMOKE_MANIFEST="scripts/parity/manifests/dreamerv3_smoke_v2.yaml"
-STAGE_A_MANIFEST="scripts/parity/manifests/dreamerv3_stage_a_v2.yaml"
+if [ "$VERSION" = "v3" ]; then
+    SMOKE_MANIFEST="scripts/parity/manifests/dreamerv3_smoke_v3.yaml"
+    STAGE_A_MANIFEST="scripts/parity/manifests/dreamerv3_stage_a_v3.yaml"
+else
+    SMOKE_MANIFEST="scripts/parity/manifests/dreamerv3_smoke_v2.yaml"
+    STAGE_A_MANIFEST="scripts/parity/manifests/dreamerv3_stage_a_v2.yaml"
+fi
 
 # Mode-specific orchestrator flags
 case "$MODE" in
@@ -86,6 +105,11 @@ case "$MODE" in
         PHASE_PLAN="two_stage_proof"
         ;;
 esac
+
+if [ "$VERSION" = "v3" ] && [[ "$GPU_INSTANCE_TYPE" == g5* ]]; then
+    echo "WARNING: official_xl (~200-300M params) may OOM on A10G 24GB."
+    echo "         Recommended: --instance-type=p4d.24xlarge or p5.4xlarge"
+fi
 
 # ── User-data script (runs on the control-plane at boot) ────────────
 USERDATA=$(cat <<'USERDATA_EOF'
@@ -193,6 +217,7 @@ echo "╔═══════════════════════�
 echo "║  DreamerV3 Parity Verification Launch                      ║"
 echo "╠══════════════════════════════════════════════════════════════╣"
 echo "║  Mode           : ${MODE}"
+echo "║  Version        : ${VERSION}"
 echo "║  Control plane  : ${CONTROL_PLANE_TYPE} (${CONTROL_PLANE_AMI})"
 echo "║  GPU workers    : ${GPU_INSTANCE_TYPE} × ${FLEET_SIZE}"
 echo "║  GPU slots/inst : 1 (A10G 24GB)"
