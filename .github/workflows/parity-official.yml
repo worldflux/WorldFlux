@@ -172,7 +172,7 @@ jobs:
 
       - name: Upload orchestrator summary
         if: ${{ steps.auth.outputs.mode != 'none' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         with:
           name: parity-orchestrator-summary
           path: reports/parity/**/orchestrator_summary.json
