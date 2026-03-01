@@ -122,14 +122,14 @@ jobs:
 
       - name: Configure AWS credentials (OIDC role)
         if: ${{ steps.auth.outputs.mode == 'oidc' }}
-        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502
+        uses: aws-actions/configure-aws-credentials@8df5847569e6427dd6c4fb1cf565c83acfa8afa7
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ github.event.inputs.wf_region || 'us-west-2' }}
 
       - name: Configure AWS credentials (access keys)
         if: ${{ steps.auth.outputs.mode == 'keys' }}
-        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502
+        uses: aws-actions/configure-aws-credentials@8df5847569e6427dd6c4fb1cf565c83acfa8afa7
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
