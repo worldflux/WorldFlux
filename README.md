@@ -25,6 +25,26 @@
 
 WorldFlux provides a unified Python interface for world models used in reinforcement learning.
 
+## Why WorldFlux?
+
+World models let RL agents **imagine before acting** — predicting future states, rewards, and outcomes without touching the real environment. This makes them 10-100x more sample efficient than model-free approaches.
+
+**The problem**: every research team reimplements the same core components from scratch. DreamerV3, TD-MPC2, JEPA — different codebases, different APIs, incompatible training loops. Want to swap an encoder while keeping DreamerV3's dynamics? Rewrite everything.
+
+**WorldFlux solves this** with a unified interface:
+
+```python
+# One API for any world model architecture
+model = create_world_model("dreamerv3:size12m")
+state = model.encode(obs)
+trajectory = model.rollout(state, actions)  # imagine 15 steps ahead
+```
+
+- **Swap components independently** with the 5-layer pluggable architecture
+- **Parity verified** against official implementations (numerical match, not just "it trains")
+- **Production-ready training** with replay buffers, checkpointing, and callbacks
+- **One API** — `encode()`, `transition()`, `decode()`, `rollout()` — works across all model families
+
 ## Demo
 
 ![Demo: DreamerV3 dog-run](docs/assets/dogrun.gif)

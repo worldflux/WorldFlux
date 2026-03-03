@@ -100,6 +100,9 @@ reports/parity/local_dryrun_check/
 reports/parity/suite-policy-validation.json
 reports/public-contract/update-result.json
 
+# Local workspace
+local/
+
 # OS files
 .DS_Store
 Thumbs.db
@@ -112,7 +115,6 @@ Thumbs.db
 credentials.json
 secrets.yaml
 site/
-strategy/
 
 # Docusaurus
 website/build/
