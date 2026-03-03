@@ -1,0 +1,48 @@
+"""Smoke tests for {{ model_name }} world model."""
+
+from __future__ import annotations
+
+import torch
+
+from worldflux import create_world_model
+
+
+def test_{{ model_type }}_instantiate():
+    """Model can be created from preset."""
+    model = create_world_model("{{ model_type }}:ci", obs_shape=(10,), action_dim=4)
+    assert model is not None
+    assert model.config.model_type == "{{ model_type }}"
+
+
+def test_{{ model_type }}_forward():
+    """Basic encode → transition → decode pipeline."""
+    model = create_world_model("{{ model_type }}:ci", obs_shape=(10,), action_dim=4)
+    batch_size = 2
+
+    obs = torch.randn(batch_size, 10)
+    state = model.encode(obs)
+    assert "latent" in state.tensors
+
+    action = torch.randn(batch_size, 4)
+    next_state = model.transition(state, action)
+    assert "latent" in next_state.tensors
+
+    output = model.decode(next_state)
+    assert "reward" in output.predictions
+
+
+def test_{{ model_type }}_loss():
+    """Loss computation returns valid LossOutput."""
+    from worldflux.core.batch import Batch
+
+    model = create_world_model("{{ model_type }}:ci", obs_shape=(10,), action_dim=4)
+
+    batch = Batch(
+        obs=torch.randn(2, 5, 10),
+        actions=torch.randn(2, 5, 4),
+        rewards=torch.randn(2, 5),
+        terminations=torch.zeros(2, 5),
+    )
+    loss_output = model.loss(batch)
+    assert loss_output.loss.requires_grad
+    assert isinstance(loss_output.metrics, dict)
