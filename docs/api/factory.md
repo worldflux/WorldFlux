@@ -71,6 +71,8 @@ from worldflux import MODEL_ALIASES
 print(MODEL_ALIASES)
 ```
 
+In the current implementation, `dreamer` family aliases resolve to DreamerV3 presets.
+
 #### Load from Path
 
 ```python
