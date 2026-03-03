@@ -13,10 +13,11 @@ Before running, make sure your environment meets these requirements:
 | Disk | 500 MB | 1 GB |
 | PyTorch | 2.0.0 | 2.x latest |
 
-!!! tip "Check your Python version"
-    ```bash
-    python --version  # must be 3.10, 3.11, or 3.12
-    ```
+:::tip Check your Python version
+```bash
+python --version  # must be 3.10, 3.11, or 3.12
+```
+:::
 
 ## Run
 
@@ -106,10 +107,11 @@ After a successful run, `summary.json` contains the following fields:
 | `artifacts` | Paths to the generated output files |
 | `success` | `true` only if all criteria pass |
 
-!!! note "The imagination.ppm file"
-    This is a PPM-format reward heatmap showing predicted rewards across the rollout
-    horizon. You can view it with any image viewer that supports PPM, or convert it
-    with ImageMagick: `convert imagination.ppm imagination.png`.
+:::note The imagination.ppm file
+This is a PPM-format reward heatmap showing predicted rewards across the rollout
+horizon. You can view it with any image viewer that supports PPM, or convert it
+with ImageMagick: `convert imagination.ppm imagination.png`.
+:::
 
 ## Troubleshooting
 
@@ -127,10 +129,11 @@ rm -rf outputs/quickstart_cpu
 
 ### Memory issues (OOM or slow performance)
 
-!!! warning "Low memory environments"
-    The `--quick` configuration uses approximately 500 MB of RAM. If you are on a
-    constrained machine (e.g. CI runner, small VM), ensure at least 2 GB of free
-    memory.
+:::warning Low memory environments
+The `--quick` configuration uses approximately 500 MB of RAM. If you are on a
+constrained machine (e.g. CI runner, small VM), ensure at least 2 GB of free
+memory.
+:::
 
 If you encounter `MemoryError` or the system becomes unresponsive:
 
@@ -180,9 +183,10 @@ uv sync --extra dev
 uv pip install "torch>=2.0.0,<3.0.0"
 ```
 
-!!! warning "Apple Silicon (M1/M2/M3)"
-    Make sure you have a native ARM PyTorch build, not an x86 version under Rosetta.
-    Install with: `uv pip install torch` -- uv will select the correct platform wheel.
+:::warning Apple Silicon (M1/M2/M3)
+Make sure you have a native ARM PyTorch build, not an x86 version under Rosetta.
+Install with: `uv pip install torch` -- uv will select the correct platform wheel.
+:::
 
 ### `uv sync` fails
 
@@ -248,13 +252,14 @@ model = create_world_model(
 )
 ```
 
-!!! tip "Scaling recommendations"
-    | Environment | Recommended Model | GPU Memory |
-    |-------------|-------------------|------------|
-    | Simple vector tasks | `tdmpc2:5m` | < 2 GB |
-    | Image tasks (64x64) | `dreamerv3:size12m` | ~4 GB |
-    | Complex image tasks | `dreamerv3:size50m` | ~8 GB |
-    | Large-scale training | `dreamerv3:size200m` | ~16 GB |
+:::tip Scaling recommendations
+| Environment | Recommended Model | GPU Memory |
+|-------------|-------------------|------------|
+| Simple vector tasks | `tdmpc2:5m` | < 2 GB |
+| Image tasks (64x64) | `dreamerv3:size12m` | ~4 GB |
+| Complex image tasks | `dreamerv3:size50m` | ~8 GB |
+| Large-scale training | `dreamerv3:size200m` | ~16 GB |
+:::
 
 For full training workflows, see:
 

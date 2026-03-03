@@ -2,10 +2,11 @@
 
 Understanding WorldFlux architecture and key components.
 
-!!! warning "Reference / Deprecated onboarding page"
-    This page is retained for backward compatibility and deep background reading.
-    For the supported onboarding path, use [Installation](installation.md) and
-    [Quick Start](quickstart.md).
+:::warning Reference / Deprecated onboarding page
+This page is retained for backward compatibility and deep background reading.
+For the supported onboarding path, use [Installation](installation.md) and
+[Quick Start](quickstart.md).
+:::
 
 ## What Is a World Model?
 
