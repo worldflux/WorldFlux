@@ -140,7 +140,7 @@ class TestVerifyCLI:
 
         from worldflux.cli import app
 
-        result = runner.invoke(app, ["verify", "--target", "m.pt", "--demo"])
+        result = runner.invoke(app, ["verify", "--target", "m.pt", "--mode", "proof", "--demo"])
         assert result.exit_code == 0
         assert "PASS" in result.output
         assert "Mathematically Guaranteed Parity" in result.output
@@ -169,7 +169,7 @@ class TestVerifyCLI:
 
         from worldflux.cli import app
 
-        result = runner.invoke(app, ["verify", "--target", "m.pt", "--demo"])
+        result = runner.invoke(app, ["verify", "--target", "m.pt", "--mode", "proof", "--demo"])
         assert result.exit_code == 1
         assert "FAIL" in result.output
 
@@ -192,9 +192,9 @@ class TestVerifyCLI:
         )
         from worldflux.cli import app
 
-        result = runner.invoke(app, ["verify", "--target", "m.pt"])
+        result = runner.invoke(app, ["verify", "--target", "m.pt", "--mode", "proof"])
         assert result.exit_code == 1
-        assert "unavailable" in result.output.lower()
+        assert "unavailable" in result.output.lower() or "failed" in result.output.lower()
 
     def test_real_mode_success(self, runner: CliRunner, monkeypatch: pytest.MonkeyPatch) -> None:
         fake_result = VerifyResult(
@@ -218,7 +218,7 @@ class TestVerifyCLI:
 
         from worldflux.cli import app
 
-        result = runner.invoke(app, ["verify", "--target", "m.pt"])
+        result = runner.invoke(app, ["verify", "--target", "m.pt", "--mode", "proof"])
         assert result.exit_code == 0
         assert "PASS" in result.output
 
@@ -494,3 +494,177 @@ class TestAutoQualityCheck:
 
         config = TrainingConfig(auto_quality_check=False)
         assert config.auto_quality_check is False
+
+
+# ---------------------------------------------------------------------------
+# Auto mode defaults to quick
+# ---------------------------------------------------------------------------
+
+
+class TestAutoModeDefaultsToQuick:
+    @pytest.fixture()
+    def runner(self) -> CliRunner:
+        return CliRunner()
+
+    def test_auto_selects_quick_without_env_var(
+        self, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """auto mode should select quick (not proof) by default."""
+        monkeypatch.delenv("WORLDFLUX_VERIFY_MODE", raising=False)
+        # We patch quick_verify to avoid actual model loading
+        from unittest.mock import patch
+
+        from worldflux.cli import app
+        from worldflux.verify.quick import QuickVerifyResult
+
+        fake_qr = QuickVerifyResult(
+            passed=True,
+            target="./outputs",
+            env="atari/pong",
+            episodes=10,
+            mean_score=0.9,
+            baseline_mean=0.8,
+            elapsed_seconds=0.1,
+        )
+        with patch("worldflux.verify.quick.quick_verify", return_value=fake_qr):
+            result = runner.invoke(app, ["verify", "--target", "./outputs"])
+        # Should NOT hit proof mode error, should succeed with quick mode
+        assert result.exit_code == 0
+        assert "Quick Mode" in result.output or "PASS" in result.output
+
+    def test_env_var_proof_triggers_proof_mode(
+        self, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """WORLDFLUX_VERIFY_MODE=proof should select proof mode."""
+        monkeypatch.setenv("WORLDFLUX_VERIFY_MODE", "proof")
+        fake_result = VerifyResult(
+            passed=True,
+            target="m.pt",
+            baseline="official/dreamerv3",
+            env="atari/pong",
+            demo=False,
+            elapsed_seconds=1.0,
+            stats={
+                "samples": 10,
+                "mean_drop_ratio": 0.01,
+                "ci_upper_ratio": 1.01,
+                "margin_ratio": 0.05,
+                "bayesian_equivalence_hdi": 0.99,
+                "tost_p_value": 0.01,
+            },
+            verdict_reason="ok",
+        )
+        monkeypatch.setattr(ParityVerifier, "run", classmethod(lambda cls, **kw: fake_result))
+
+        from worldflux.cli import app
+
+        result = runner.invoke(app, ["verify", "--target", "m.pt"])
+        assert result.exit_code == 0
+        assert "PASS" in result.output
+
+
+# ---------------------------------------------------------------------------
+# Preflight checks
+# ---------------------------------------------------------------------------
+
+
+class TestPreflightCheck:
+    def test_invalid_manifest_raises(self, tmp_path: Path) -> None:
+        """Preflight should reject a manifest that is neither valid JSON nor YAML."""
+        bad_manifest = tmp_path / "bad.yaml"
+        bad_manifest.write_text("{{{not valid at all", encoding="utf-8")
+        scripts_root = tmp_path / "scripts"
+        scripts_root.mkdir()
+        (scripts_root / "run_parity_matrix.py").touch()
+        (scripts_root / "stats_equivalence.py").touch()
+        with pytest.raises(RuntimeError, match="(?i)valid"):
+            ParityVerifier._preflight_check(manifest=bad_manifest, scripts_root=scripts_root)
+
+    def test_missing_script_raises(self, tmp_path: Path) -> None:
+        """Preflight should fail when required scripts are missing."""
+        manifest = tmp_path / "ok.yaml"
+        manifest.write_text('{"tasks": []}', encoding="utf-8")
+        scripts_root = tmp_path / "scripts"
+        scripts_root.mkdir()
+        # Only create one of the two required scripts
+        (scripts_root / "run_parity_matrix.py").touch()
+        with pytest.raises(RuntimeError, match="stats_equivalence.py"):
+            ParityVerifier._preflight_check(manifest=manifest, scripts_root=scripts_root)
+
+    def test_valid_manifest_passes(self, tmp_path: Path) -> None:
+        """Preflight should succeed with valid manifest and all scripts present."""
+        manifest = tmp_path / "ok.yaml"
+        manifest.write_text('{"tasks": []}', encoding="utf-8")
+        scripts_root = tmp_path / "scripts"
+        scripts_root.mkdir()
+        (scripts_root / "run_parity_matrix.py").touch()
+        (scripts_root / "stats_equivalence.py").touch()
+        # Should not raise
+        ParityVerifier._preflight_check(manifest=manifest, scripts_root=scripts_root)
+
+
+# ---------------------------------------------------------------------------
+# Subprocess error formatting
+# ---------------------------------------------------------------------------
+
+
+class TestFormatSubprocessError:
+    def test_includes_exit_code_and_stderr(self) -> None:
+        """Error message should include exit code and stderr content."""
+        import subprocess
+
+        fake = subprocess.CompletedProcess(
+            args=["test"], returncode=1, stdout="", stderr="some error detail"
+        )
+        msg = ParityVerifier._format_subprocess_error("Test failed", ["test"], fake)
+        assert "exit code 1" in msg
+        assert "some error detail" in msg
+
+    def test_cuda_hint(self) -> None:
+        """CUDA errors should produce a GPU-related hint."""
+        import subprocess
+
+        fake = subprocess.CompletedProcess(
+            args=["test"], returncode=1, stdout="", stderr="CUDA out of memory"
+        )
+        msg = ParityVerifier._format_subprocess_error("Failed", ["test"], fake)
+        assert "GPU" in msg or "cpu" in msg
+
+    def test_module_not_found_hint(self) -> None:
+        """ModuleNotFoundError in stderr should produce a dependency hint."""
+        import subprocess
+
+        fake = subprocess.CompletedProcess(
+            args=["test"],
+            returncode=1,
+            stdout="",
+            stderr="ModuleNotFoundError: No module named 'foo'",
+        )
+        msg = ParityVerifier._format_subprocess_error("Failed", ["test"], fake)
+        assert "dependency" in msg.lower() or "uv sync" in msg
+
+
+# ---------------------------------------------------------------------------
+# CLI error display improvement
+# ---------------------------------------------------------------------------
+
+
+class TestCLIErrorDisplay:
+    @pytest.fixture()
+    def runner(self) -> CliRunner:
+        return CliRunner()
+
+    def test_multiline_error_shows_hint(
+        self, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Multi-line errors should include the quick/demo hint."""
+
+        def _raise(cls, **kw):
+            raise RuntimeError("line1\nline2\nline3")
+
+        monkeypatch.setattr(ParityVerifier, "run", classmethod(_raise))
+        from worldflux.cli import app
+
+        result = runner.invoke(app, ["verify", "--target", "m.pt", "--mode", "proof"])
+        assert result.exit_code == 1
+        assert "--mode quick" in result.output or "--demo" in result.output

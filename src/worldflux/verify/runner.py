@@ -213,6 +213,111 @@ class ParityVerifier:
         )
 
     @classmethod
+    def _preflight_check(cls, *, manifest: Path, scripts_root: Path) -> None:
+        """Validate proof-mode prerequisites before launching subprocesses.
+
+        Raises :class:`RuntimeError` with a descriptive message on failure.
+        """
+        # 1. Manifest must be parseable (JSON or YAML)
+        try:
+            raw = manifest.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise RuntimeError(f"Cannot read manifest: {manifest} ({exc})") from exc
+
+        manifest_data: dict[str, Any] | None = None
+        try:
+            manifest_data = json.loads(raw)
+        except json.JSONDecodeError:
+            pass
+
+        if manifest_data is None:
+            try:
+                import yaml  # type: ignore[import-untyped]
+
+                manifest_data = yaml.safe_load(raw)
+            except ImportError:
+                raise RuntimeError(
+                    f"Manifest {manifest.name} is not valid JSON and pyyaml is not "
+                    "installed.  Install pyyaml or fix the JSON syntax."
+                )
+            except Exception as exc:
+                raise RuntimeError(
+                    f"Manifest {manifest.name} is neither valid JSON nor valid YAML: {exc}"
+                ) from exc
+
+        if not isinstance(manifest_data, dict):
+            raise RuntimeError(f"Manifest must be a JSON/YAML object, got {type(manifest_data)}")
+
+        # 2. Required scripts exist
+        for script_name in ("run_parity_matrix.py", "stats_equivalence.py"):
+            script_path = scripts_root / script_name
+            if not script_path.exists():
+                raise RuntimeError(
+                    f"Required proof script not found: {script_path}\n"
+                    "Ensure you are running from a complete WorldFlux repository checkout."
+                )
+
+        # 3. Check official repo paths referenced in commands
+        for task in manifest_data.get("tasks", []):
+            if not isinstance(task, dict):
+                continue
+            official = task.get("official", {})
+            if not isinstance(official, dict):
+                continue
+            cmd = official.get("command", [])
+            for i, arg in enumerate(cmd):
+                if arg == "--repo-root" and i + 1 < len(cmd):
+                    repo_path_str = cmd[i + 1]
+                    # Skip template variables
+                    if "{" in repo_path_str:
+                        continue
+                    # Resolve relative to the cwd specified in manifest
+                    cwd = official.get("cwd", ".")
+                    base = (scripts_root / "manifests" / cwd).resolve()
+                    repo_path = (base / repo_path_str).resolve()
+                    if not repo_path.exists():
+                        task_id = task.get("task_id", "?")
+                        raise RuntimeError(
+                            f"Official repository not found for task '{task_id}': "
+                            f"{repo_path}\n"
+                            f"Clone the official repo or use --mode quick for "
+                            "lightweight verification."
+                        )
+
+    @staticmethod
+    def _format_subprocess_error(
+        label: str,
+        command: list[str],
+        result: subprocess.CompletedProcess[str],
+    ) -> str:
+        """Build a descriptive error message from a failed subprocess."""
+        stderr_tail = (result.stderr or "").strip()[-2000:]
+        stdout_tail = (result.stdout or "").strip()[-1000:]
+
+        lines = [
+            f"{label} (exit code {result.returncode})",
+            f"Command: {' '.join(command)}",
+        ]
+        if stderr_tail:
+            lines.append(f"stderr (last 2000 chars):\n{stderr_tail}")
+        if stdout_tail:
+            lines.append(f"stdout (last 1000 chars):\n{stdout_tail}")
+
+        # Actionable hints based on common error patterns
+        combined = stderr_tail + stdout_tail
+        if "repo root not found" in combined or "No such file or directory" in combined:
+            lines.append(
+                "Hint: An expected directory is missing. Check that official "
+                "repositories are cloned alongside the WorldFlux repo."
+            )
+        if "ModuleNotFoundError" in combined:
+            lines.append("Hint: A Python dependency is missing. Run `uv sync --extra dev`.")
+        if "CUDA" in combined or "cuda" in combined:
+            lines.append("Hint: CUDA error detected. Try --device cpu or check GPU drivers.")
+
+        return "\n".join(lines)
+
+    @classmethod
     def _run_real(
         cls,
         *,
@@ -233,6 +338,9 @@ class ParityVerifier:
         manifest = cls._select_manifest(target=target, baseline=baseline, scripts_root=scripts_root)
         if not manifest.exists():
             raise RuntimeError(f"Parity manifest not found: {manifest}")
+
+        # Preflight validation
+        cls._preflight_check(manifest=manifest, scripts_root=scripts_root)
 
         output_root = cls._DEFAULT_OUTPUT_DIR
         output_root.mkdir(parents=True, exist_ok=True)
@@ -270,9 +378,7 @@ class ParityVerifier:
         run_result = cls._run_subprocess(run_cmd, cwd=repo_root)
         if run_result.returncode != 0:
             raise RuntimeError(
-                "Proof run failed.\n"
-                f"Command: {' '.join(run_cmd)}\n"
-                f"stderr: {run_result.stderr.strip()}"
+                cls._format_subprocess_error("Proof run failed", run_cmd, run_result)
             )
 
         if not runs_jsonl.exists():
@@ -296,9 +402,9 @@ class ParityVerifier:
         stats_result = cls._run_subprocess(stats_cmd, cwd=repo_root)
         if stats_result.returncode != 0:
             raise RuntimeError(
-                "Equivalence stats computation failed.\n"
-                f"Command: {' '.join(stats_cmd)}\n"
-                f"stderr: {stats_result.stderr.strip()}"
+                cls._format_subprocess_error(
+                    "Equivalence stats computation failed", stats_cmd, stats_result
+                )
             )
 
         report_cmd = [
@@ -312,9 +418,9 @@ class ParityVerifier:
         report_result = cls._run_subprocess(report_cmd, cwd=repo_root)
         if report_result.returncode != 0:
             raise RuntimeError(
-                "Markdown report rendering failed.\n"
-                f"Command: {' '.join(report_cmd)}\n"
-                f"stderr: {report_result.stderr.strip()}"
+                cls._format_subprocess_error(
+                    "Markdown report rendering failed", report_cmd, report_result
+                )
             )
 
         report_payload = cls._load_report(equivalence_json)
