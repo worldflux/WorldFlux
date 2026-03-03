@@ -115,6 +115,8 @@ The following aliases are available for convenience:
 | `"physics"` | `"physics:base"` |
 | `"gan"` | `"gan:base"` |
 
+In the current implementation, `dreamer` family aliases resolve to DreamerV3 presets.
+
 ---
 
 ## list_models

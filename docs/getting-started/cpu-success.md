@@ -36,7 +36,7 @@ The script performs the following sequence:
 1. **Create a replay buffer** -- Generates random transitions with `obs_shape=(8,)` and
    `action_dim=2`. With `--quick`, 2 000 transitions across 40 episodes are created.
 
-2. **Build a Dreamer CI model** -- Instantiates a tiny Dreamer preset
+2. **Build a DreamerV3 CI model** -- Instantiates a tiny DreamerV3 preset
    (`dreamer:ci`, with compatible alias `dreamerv3:ci`) using MLP encoder/decoder,
    suitable for vector observations on CPU.
 
