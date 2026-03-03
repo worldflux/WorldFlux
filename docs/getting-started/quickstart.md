@@ -104,10 +104,11 @@ print(f"DreamerV3  rewards shape: {traj_d.rewards.shape}")   # [10, 1]
 print(f"TD-MPC2    rewards shape: {traj_t.rewards.shape}")   # [10, 1]
 ```
 
-!!! tip "Which model should I pick?"
-    Use **DreamerV3** for image/pixel observations with its RSSM latent dynamics.
-    Use **TD-MPC2** for low-dimensional vector states where fast MLP planning shines.
-    See [Unified Comparison](../reference/unified-comparison.md) for detailed benchmarks.
+:::tip Which model should I pick?
+Use **DreamerV3** for image/pixel observations with its RSSM latent dynamics.
+Use **TD-MPC2** for low-dimensional vector states where fast MLP planning shines.
+See [Unified Comparison](../reference/unified-comparison.md) for detailed benchmarks.
+:::
 
 ## 6) Configuration Customization
 
@@ -218,10 +219,11 @@ for t in range(trajectory.horizon):
     print(f"  Step {t}: batch_size={step_state.batch_size}")
 ```
 
-!!! note "Tensor layout convention"
-    Observations use **`[batch, ...]`** layout.
-    Action sequences for rollout use **`[horizon, batch, action_dim]`** layout.
-    Rewards and continues are returned as **`[horizon, batch]`**.
+:::note Tensor layout convention
+Observations use **`[batch, ...]`** layout.
+Action sequences for rollout use **`[horizon, batch, action_dim]`** layout.
+Rewards and continues are returned as **`[horizon, batch]`**.
+:::
 
 ## 8) Error Handling
 
@@ -289,10 +291,11 @@ except Exception as e:
     )
 ```
 
-!!! warning "DreamerV3 with vector observations"
-    DreamerV3 defaults to CNN encoder/decoder, which requires `obs_shape` with 3
-    dimensions (C, H, W). For vector observations, explicitly set
-    `encoder_type="mlp"` and `decoder_type="mlp"`.
+:::warning DreamerV3 with vector observations
+DreamerV3 defaults to CNN encoder/decoder, which requires `obs_shape` with 3
+dimensions (C, H, W). For vector observations, explicitly set
+`encoder_type="mlp"` and `decoder_type="mlp"`.
+:::
 
 ### Unknown model identifier
 

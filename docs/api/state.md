@@ -144,19 +144,17 @@ class State:
 
 ## API Reference
 
-::: worldflux.core.state.State
-    options:
-      show_source: false
-      members:
-        - get
-        - batch_size
-        - device
-        - to
-        - detach
-        - clone
-        - validate
-        - serialize
-        - deserialize
-        - to_shared_memory
-        - from_shared_memory
-        - close_shared_memory
+| Method / Property | Signature | Description |
+|---|---|---|
+| `get` | `get(key: str, default=None) -> Tensor \| None` | Safe tensor access by key. |
+| `batch_size` | `property -> int` | Batch dimension from first tensor. |
+| `device` | `property -> torch.device` | Device of first tensor. |
+| `to` | `to(device) -> State` | Move all tensors to device. |
+| `detach` | `detach() -> State` | Detach all tensors from computation graph. |
+| `clone` | `clone() -> State` | Deep copy with independent tensors. |
+| `validate` | `validate() -> None` | Check batch dimension consistency. Raises `StateError`. |
+| `serialize` | `serialize(version="v1", format="binary") -> bytes` | Binary serialization for checkpointing. |
+| `deserialize` | `State.deserialize(data: bytes) -> State` | Restore from serialized bytes. |
+| `to_shared_memory` | `to_shared_memory(namespace: str) -> dict` | Zero-copy IPC via shared memory. |
+| `from_shared_memory` | `State.from_shared_memory(descriptor, copy=False) -> State` | Attach to shared memory state. |
+| `close_shared_memory` | `close_shared_memory(unlink=True) -> None` | Release shared memory resources. |
