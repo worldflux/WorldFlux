@@ -11,23 +11,20 @@ def _read(path: str) -> str:
     return (REPO_ROOT / path).read_text(encoding="utf-8")
 
 
-def test_mkdocs_nav_exposes_cpu_success_and_reference_guides():
-    mkdocs = _read("mkdocs.yml")
-    assert "- Getting Started:" in mkdocs
-    assert "    - Installation: getting-started/installation.md" in mkdocs
-    assert "    - Quick Start: getting-started/quickstart.md" in mkdocs
-    assert "    - CPU Success Path: getting-started/cpu-success.md" in mkdocs
+def test_sidebars_expose_cpu_success_and_reference_guides():
+    sidebars = _read("website/sidebars.ts")
+    assert "'Getting Started'" in sidebars
+    assert "'getting-started/installation'" in sidebars
+    assert "'getting-started/quickstart'" in sidebars
+    assert "'getting-started/cpu-success'" in sidebars
 
-    # Core Concepts (Legacy) and Tutorials sections removed in nav cleanup
-    assert "Core Concepts (Legacy)" not in mkdocs
-
-    assert "- Reference:" in mkdocs
-    assert "    - Benchmarks: reference/benchmarks.md" in mkdocs
-    assert "    - Observation Shape and Action Dim: reference/observation-action.md" in mkdocs
-    assert "    - Parity Harness: reference/parity.md" in mkdocs
-    assert "    - Unified Comparison: reference/unified-comparison.md" in mkdocs
-    assert "    - Publishing: reference/publishing.md" in mkdocs
-    assert "    - WASR Metrics: reference/wasr.md" in mkdocs
+    assert "'Reference'" in sidebars
+    assert "'reference/benchmarks'" in sidebars
+    assert "'reference/observation-action'" in sidebars
+    assert "'reference/parity'" in sidebars
+    assert "'reference/unified-comparison'" in sidebars
+    assert "'reference/publishing'" in sidebars
+    assert "'reference/wasr'" in sidebars
 
 
 def test_docs_index_exposes_primary_paths_for_cpu_success_and_reference():

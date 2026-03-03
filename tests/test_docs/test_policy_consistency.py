@@ -39,7 +39,7 @@ def test_quality_docs_reference_current_gate_commands():
     assert "uvx ruff format --check src/ tests/ examples/ benchmarks/ scripts/" in gates
     assert "uv run mypy src/worldflux/" in gates
     assert "uv run pytest tests/" in gates
-    assert "uv run mkdocs build --strict" in gates
+    assert "npm run build" in gates
 
     assert "examples/quickstart_cpu_success.py --quick" in checklist
     assert "examples/compare_unified_training.py --quick" in checklist
@@ -49,8 +49,8 @@ def test_quality_docs_reference_current_gate_commands():
 def test_ci_includes_strict_docs_gate_and_new_smokes():
     ci = _read(".github/workflows/ci.yml")
     assert "docs:" in ci
-    assert "uv sync --extra docs" in ci
-    assert "uv run mkdocs build --strict" in ci
+    assert "npm ci" in ci
+    assert "npm run build" in ci
     assert "examples/quickstart_cpu_success.py --quick" in ci
     assert "examples/compare_unified_training.py --quick" in ci
 
