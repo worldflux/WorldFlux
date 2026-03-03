@@ -28,7 +28,7 @@ All PRs must pass:
   - `uv run python benchmarks/benchmark_dreamerv3_atari.py --quick --seed 42`
   - `uv run python benchmarks/benchmark_tdmpc2_mujoco.py --quick --seed 42`
   - `uv run python benchmarks/benchmark_diffusion_imagination.py --quick --seed 42`
-- **Docs build**: `uv run mkdocs build --strict`
+- **Docs build**: `cd website && npm run build`
 - **Docs domain TLS gate**:
   - `uv run python scripts/check_docs_domain_tls.py --host worldflux.ai --url https://worldflux.ai/ --expected-san worldflux.ai`
 - **Critical coverage threshold**: `uv run python scripts/check_critical_coverage.py --report coverage.xml`
@@ -76,5 +76,5 @@ uv run python scripts/check_parity_suite_coverage.py --policy reports/parity/sui
 uv run python scripts/update_public_contract_snapshot.py --snapshot tests/fixtures/public_contract_snapshot.json
 uv run python scripts/check_docs_domain_tls.py --host worldflux.ai --url https://worldflux.ai/ --expected-san worldflux.ai
 uv run python scripts/check_critical_coverage.py --report coverage.xml
-uv run mkdocs build --strict
+cd website && npm run build
 ```

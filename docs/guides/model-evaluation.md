@@ -10,7 +10,7 @@ The eval framework provides fast, reproducible metrics for assessing model quali
 
 | Suite | Metrics | Runtime |
 |-------|---------|---------|
-| `quick` | reconstruction_fidelity, latent_consistency | <5s |
+| `quick` | reconstruction_fidelity, latent_consistency | &lt;5s |
 | `standard` | + imagination_coherence, latent_utilization | ~30s |
 | `comprehensive` | + reward_prediction_accuracy, cross-model comparison | ~5min |
 
