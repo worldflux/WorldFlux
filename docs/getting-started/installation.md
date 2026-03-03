@@ -47,20 +47,21 @@ worldflux init my-world-model
 # Training infrastructure (Trainer, ReplayBuffer, callbacks)
 uv sync --extra training
 
-# Visualization (matplotlib, imageio for GIFs)
+# Visualization (matplotlib, scikit-learn)
 uv sync --extra viz
 
 # Atari environments (gymnasium[atari], ale-py)
 uv sync --extra atari
 
+# MuJoCo environments
+uv sync --extra mujoco
+
 # All optional dependencies
+# (bundle extra: dev, training, env, atari, viz, logging, cli, hub)
 uv sync --extra all
 
 # Development (testing, linting, type checking)
 uv sync --extra dev
-
-# Documentation tooling (MkDocs + API autogen plugins)
-uv sync --extra docs
 ```
 
 ## From PyPI
@@ -93,6 +94,7 @@ WorldFlux automatically uses CUDA if available:
 
 ```python
 import torch
+from worldflux import create_world_model
 print(f"CUDA available: {torch.cuda.is_available()}")
 
 # Models automatically use GPU when available
@@ -110,6 +112,7 @@ Use smaller model presets or reduce batch size:
 model = create_world_model("dreamerv3:size12m")  # Instead of size200m
 
 # Reduce training batch size
+from worldflux.training import TrainingConfig
 config = TrainingConfig(batch_size=8)  # Instead of 16
 ```
 
@@ -124,7 +127,10 @@ uv sync --extra training
 ## Build Documentation Locally
 
 ```bash
-uv sync --extra docs
-uv run mkdocs serve
-uv run mkdocs build --strict
+cd website
+npm ci
+npm run build
+
+# Optional: local docs dev server
+npm start
 ```

@@ -63,6 +63,13 @@ print(trajectory.rewards.shape)
 | Token | `base` |
 | Diffusion | `base` |
 
+This table highlights common presets. For the full model catalog (including CI, experimental,
+and skeleton families), run:
+
+```bash
+worldflux models list --verbose
+```
+
 ## Documentation
 
 ### Getting Started
