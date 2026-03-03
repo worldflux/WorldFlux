@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
@@ -68,9 +69,10 @@ def verify(
     # Determine verification mode
     effective_mode = mode.strip().lower()
     if effective_mode == "auto":
-        # Use quick mode when scripts/parity is not available (pip install users)
-        scripts_root = Path(__file__).resolve().parents[3] / "scripts" / "parity"
-        effective_mode = "proof" if scripts_root.exists() else "quick"
+        # Default to quick mode.  Use --mode proof or WORLDFLUX_VERIFY_MODE=proof
+        # (CI) to run the heavyweight proof pipeline.
+        env_mode = os.getenv("WORLDFLUX_VERIFY_MODE", "").strip().lower()
+        effective_mode = "proof" if env_mode == "proof" else "quick"
 
     if effective_mode == "quick":
         _run_quick_verify(
@@ -130,7 +132,24 @@ def verify(
                 device=device,
             )
         except (NotImplementedError, RuntimeError, OSError, ValueError) as exc:
-            console.print(f"[wf.fail]Verification unavailable:[/wf.fail] {exc}")
+            error_msg = str(exc)
+            if "\n" in error_msg:
+                from rich.panel import Panel
+
+                console.print(
+                    Panel(
+                        error_msg,
+                        title="[wf.fail]Verification failed[/wf.fail]",
+                        border_style="red",
+                        expand=False,
+                    )
+                )
+            else:
+                console.print(f"[wf.fail]Verification unavailable:[/wf.fail] {error_msg}")
+            console.print(
+                "[wf.muted]Hint: use --mode quick for lightweight local verification, "
+                "or --demo for a synthetic demonstration.[/wf.muted]"
+            )
             raise typer.Exit(code=1) from None
 
     if format == "json":
