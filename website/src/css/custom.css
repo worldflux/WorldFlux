@@ -1,26 +1,31 @@
 /**
- * WorldFlux Docusaurus theme — Material Indigo palette
+ * WorldFlux Docusaurus theme — VS Code Dark palette
  */
 
 :root {
-  --ifm-color-primary: #3f51b5;
-  --ifm-color-primary-dark: #3849a2;
-  --ifm-color-primary-darker: #354499;
-  --ifm-color-primary-darkest: #2c387e;
-  --ifm-color-primary-light: #5264c1;
-  --ifm-color-primary-lighter: #5b6cc5;
-  --ifm-color-primary-lightest: #7986cb;
+  --ifm-color-primary: #007acc;
+  --ifm-color-primary-dark: #006bb3;
+  --ifm-color-primary-darker: #0063a6;
+  --ifm-color-primary-darkest: #005289;
+  --ifm-color-primary-light: #1a8ad6;
+  --ifm-color-primary-lighter: #2691da;
+  --ifm-color-primary-lightest: #4da6e5;
   --ifm-code-font-size: 95%;
-  --docusaurus-highlighted-code-line-bg: rgba(63, 81, 181, 0.1);
+  --docusaurus-highlighted-code-line-bg: rgba(0, 122, 204, 0.1);
 }
 
 [data-theme='dark'] {
-  --ifm-color-primary: #7986cb;
-  --ifm-color-primary-dark: #6372c0;
-  --ifm-color-primary-darker: #5868bb;
-  --ifm-color-primary-darkest: #3f51b5;
-  --ifm-color-primary-light: #8f9ad6;
-  --ifm-color-primary-lighter: #9aa4db;
-  --ifm-color-primary-lightest: #c5cae9;
-  --docusaurus-highlighted-code-line-bg: rgba(121, 134, 203, 0.15);
+  --ifm-color-primary: #4fc1ff;
+  --ifm-color-primary-dark: #2db5ff;
+  --ifm-color-primary-darker: #1cafff;
+  --ifm-color-primary-darkest: #0090e8;
+  --ifm-color-primary-light: #71cdff;
+  --ifm-color-primary-lighter: #82d3ff;
+  --ifm-color-primary-lightest: #b5e4ff;
+  --ifm-background-color: #1e1e1e;
+  --ifm-background-surface-color: #252526;
+  --ifm-navbar-background-color: #333333;
+  --ifm-footer-background-color: #007acc;
+  --ifm-color-emphasis-300: #3c3c3c;
+  --docusaurus-highlighted-code-line-bg: rgba(79, 193, 255, 0.15);
 }
