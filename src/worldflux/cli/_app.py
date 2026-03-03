@@ -36,6 +36,8 @@ console = Console(theme=WF_THEME)
 # Constants (moved from cli.py)
 # ---------------------------------------------------------------------------
 
+MAX_PANEL_WIDTH = 60  # Max rendering width for panels/tables/rules (80→60 resize safe)
+
 ATARI_OPTIONAL_DEPENDENCIES: tuple[tuple[str, str], ...] = (
     ("gymnasium", "gymnasium"),
     ("ale_py", "ale-py"),
@@ -105,6 +107,12 @@ __        __         _     _ _____ _
   \ V  V / (_) | |  | | (_| |  _| | | |_| |>  <
    \_/\_/ \___/|_|  |_|\__,_|_|   |_|\__,_/_/\_\
 """
+
+BRAND_NAME = "WorldFlux"
+BRAND_TAGLINE = "scaffold world-model projects"
+
+WIZARD_STEPS: tuple[str, ...] = ("Project", "Environment", "Model", "Training")
+WIZARD_TOTAL = len(WIZARD_STEPS)
 
 # ---------------------------------------------------------------------------
 # Callbacks

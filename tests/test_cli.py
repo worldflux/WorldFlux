@@ -11,6 +11,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import torch
 
 if importlib.util.find_spec("typer") is None or importlib.util.find_spec("rich") is None:
     pytest.skip("CLI dependencies are not installed", allow_module_level=True)
@@ -148,14 +149,13 @@ def test_init_shows_guided_intro_panel(monkeypatch: pytest.MonkeyPatch) -> None:
         assert result.exit_code == 0
         assert "Create a ready-to-run WorldFlux project" in result.stdout
         assert "Configuration Summary" in result.stdout
-        assert cli.OBS_ACTION_GUIDE_URL in result.stdout
-        assert "Model fit" in result.stdout
+        assert "Best for" in result.stdout
 
 
 def test_init_gpu_fallback_to_cpu(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(cli, "_prompt_user_configuration", lambda: _base_context(device="cuda"))
     _patch_init_noninteractive(monkeypatch)
-    monkeypatch.setattr(cli.torch.cuda, "is_available", lambda: False)
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
 
     with runner.isolated_filesystem():
         result = runner.invoke(cli.app, ["init", "gpu-fallback"])
@@ -454,7 +454,9 @@ def test_handle_optional_atari_dependency_install_non_interactive_prints_hint(
     printed: list[str] = []
     monkeypatch.setattr(cli, "_missing_atari_dependency_packages", lambda: ["ale-py"])
     monkeypatch.setattr(cli, "_is_interactive_terminal", lambda: False)
-    monkeypatch.setattr(cli.console, "print", lambda message="": printed.append(str(message)))
+    monkeypatch.setattr(
+        cli.console, "print", lambda message="", **_kw: printed.append(str(message))
+    )
     monkeypatch.setattr(
         cli,
         "_confirm_optional_dependency_install",
@@ -481,7 +483,9 @@ def test_handle_optional_atari_dependency_install_interactive_and_confirmed(
         "_install_packages_with_pip",
         lambda packages: installed.append(packages) or True,
     )
-    monkeypatch.setattr(cli.console, "print", lambda message="": printed.append(str(message)))
+    monkeypatch.setattr(
+        cli.console, "print", lambda message="", **_kw: printed.append(str(message))
+    )
 
     cli._handle_optional_atari_dependency_install({"environment": "atari"})
 
@@ -575,8 +579,10 @@ def test_prompt_with_inquirer_retries_invalid_values_and_falls_back_to_cpu(
         confirm=lambda **_kwargs: SimpleNamespace(execute=lambda: True),
     )
     monkeypatch.setitem(sys.modules, "InquirerPy", SimpleNamespace(inquirer=fake_inquirer))
-    monkeypatch.setattr(cli.torch.cuda, "is_available", lambda: False)
-    monkeypatch.setattr(cli.console, "print", lambda message="": printed.append(str(message)))
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    monkeypatch.setattr(
+        cli.console, "print", lambda message="", **_kw: printed.append(str(message))
+    )
     monkeypatch.setattr(
         cli,
         "_print_model_choices",
@@ -621,7 +627,7 @@ def test_prompt_with_inquirer_allows_alternative_model_selection(
             "cuda",  # device (CUDA available)
         ]
     )
-    monkeypatch.setattr(cli.torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
 
     def _text(*_args, **_kwargs):
         return SimpleNamespace(execute=lambda: next(text_answers))
@@ -674,8 +680,10 @@ def test_prompt_with_rich_retries_invalid_values_and_falls_back_to_cpu(
     monkeypatch.setattr(cli.Confirm, "ask", staticmethod(lambda *_args, **_kwargs: True))
     monkeypatch.setattr(cli, "_numbered_select", lambda *_args, **_kwargs: next(numbered_answers))
     monkeypatch.setattr(cli, "_select_model_with_rich", lambda _recommended: "tdmpc2:ci")
-    monkeypatch.setattr(cli.torch.cuda, "is_available", lambda: False)
-    monkeypatch.setattr(cli.console, "print", lambda message="": printed.append(str(message)))
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    monkeypatch.setattr(
+        cli.console, "print", lambda message="", **_kw: printed.append(str(message))
+    )
     monkeypatch.setattr(
         cli,
         "_print_model_choices",
@@ -745,12 +753,15 @@ def test_prompt_user_configuration_falls_back_to_rich(monkeypatch: pytest.Monkey
 
 
 def test_print_logo_writes_banner_and_header(monkeypatch: pytest.MonkeyPatch) -> None:
-    printed: list[str] = []
-    monkeypatch.setattr(cli.console, "print", lambda message="": printed.append(str(message)))
+    printed: list[object] = []
+    monkeypatch.setattr(cli.console, "print", lambda message="", **_kw: printed.append(message))
     cli._print_logo()
-    assert len(printed) == 5
-    assert "WorldFlux CLI" in printed[1]
-    assert "Panel" in printed[3]
+    assert len(printed) == 4
+    # printed[0] is brand Panel, printed[2] is welcome Panel
+    from rich.panel import Panel
+
+    assert isinstance(printed[0], Panel)
+    assert isinstance(printed[2], Panel)
 
 
 def test_parity_run_enforce_exits_non_zero_on_failed_verdict(

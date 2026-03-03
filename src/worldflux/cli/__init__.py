@@ -8,7 +8,6 @@ import shutil  # noqa: F401
 import subprocess  # noqa: F401
 import sys  # noqa: F401
 
-import torch  # noqa: F401 - tests reference cli.torch.cuda
 from rich.prompt import Confirm as Confirm  # noqa: F401
 from rich.prompt import IntPrompt as IntPrompt  # noqa: F401
 from rich.prompt import Prompt as Prompt  # noqa: F401
@@ -62,6 +61,12 @@ from ._app import (
     BATCH_SIZE_PRESETS as BATCH_SIZE_PRESETS,  # noqa: F401
 )
 from ._app import (
+    BRAND_NAME as BRAND_NAME,  # noqa: F401
+)
+from ._app import (
+    BRAND_TAGLINE as BRAND_TAGLINE,  # noqa: F401
+)
+from ._app import (
     DEFAULT_BATCH_SIZE as DEFAULT_BATCH_SIZE,  # noqa: F401
 )
 from ._app import (
@@ -69,6 +74,9 @@ from ._app import (
 )
 from ._app import (
     ENVIRONMENT_OPTIONS as ENVIRONMENT_OPTIONS,  # noqa: F401
+)
+from ._app import (
+    MAX_PANEL_WIDTH as MAX_PANEL_WIDTH,  # noqa: F401
 )
 from ._app import (
     MODEL_CHOICE_IDS as MODEL_CHOICE_IDS,  # noqa: F401
@@ -81,6 +89,12 @@ from ._app import (
 )
 from ._app import (
     TOTAL_STEPS_PRESETS as TOTAL_STEPS_PRESETS,  # noqa: F401
+)
+from ._app import (
+    WIZARD_STEPS as WIZARD_STEPS,  # noqa: F401
+)
+from ._app import (
+    WIZARD_TOTAL as WIZARD_TOTAL,  # noqa: F401
 )
 from ._app import (
     app as app,  # noqa: F401
@@ -158,6 +172,12 @@ from ._parity import (
     parity_campaign_run as parity_campaign_run,  # noqa: F401
 )
 from ._rich_output import (
+    _bounded_width as _bounded_width,  # noqa: F401
+)
+from ._rich_output import (
+    grouped_summary_panel as grouped_summary_panel,  # noqa: F401
+)
+from ._rich_output import (
     key_value_panel as key_value_panel,  # noqa: F401
 )
 from ._rich_output import (
@@ -171,6 +191,9 @@ from ._rich_output import (
 )
 from ._rich_output import (
     status_table as status_table,  # noqa: F401
+)
+from ._rich_output import (
+    step_progress as step_progress,  # noqa: F401
 )
 from ._theme import (
     PALETTE as PALETTE,  # noqa: F401
