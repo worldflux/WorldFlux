@@ -1,0 +1,148 @@
+"""{{ model_name }} World Model implementation."""
+
+from __future__ import annotations
+
+import torch
+from torch import Tensor
+
+from worldflux.core.batch import Batch
+from worldflux.core.config import WorldModelConfig
+from worldflux.core.model import WorldModel
+from worldflux.core.output import LossOutput, ModelOutput
+from worldflux.core.payloads import ActionPayload, ConditionPayload, WorldModelInput
+from worldflux.core.registry import WorldModelRegistry
+from worldflux.core.spec import (
+    ActionSpec,
+    Capability,
+    ModalityKind,
+    ModalitySpec,
+    ModelIOContract,
+    ObservationSpec,
+    PredictionSpec,
+    SequenceLayout,
+    StateSpec,
+)
+from worldflux.core.state import State
+
+from .config import {{ config_class }}
+
+
+@WorldModelRegistry.register("{{ model_type }}", {{ config_class }})
+class {{ model_class }}(WorldModel):
+    """{{ model_name }} world model implementation.
+
+    TODO: Add model description and architecture details.
+    """
+
+    def __init__(self, config: {{ config_class }}):
+        super().__init__()
+        self.config = config
+        self.capabilities = {
+            Capability.LATENT_DYNAMICS,
+            Capability.REWARD_PRED,
+        }
+
+        # TODO: Initialize model components (encoder, dynamics, decoder, heads)
+        self.register_buffer("_device_tracker", torch.empty(0))
+
+    @property
+    def device(self) -> torch.device:
+        device = self._device_tracker.device
+        if not isinstance(device, torch.device):
+            raise TypeError(f"Expected torch.device, got {type(device)}")
+        return device
+
+    def io_contract(self) -> ModelIOContract:
+        return ModelIOContract(
+            observation_spec=ObservationSpec(
+                modalities={
+                    "obs": ModalitySpec(kind=ModalityKind.VECTOR, shape=self.config.obs_shape)
+                }
+            ),
+            action_spec=ActionSpec(
+                kind=self.config.action_type,
+                dim=self.config.action_dim,
+                discrete=self.config.action_type == "discrete",
+            ),
+            state_spec=StateSpec(
+                tensors={
+                    "latent": ModalitySpec(
+                        kind=ModalityKind.VECTOR, shape=(self.config.latent_dim,)
+                    )
+                }
+            ),
+            prediction_spec=PredictionSpec(
+                tensors={
+                    "reward": ModalitySpec(kind=ModalityKind.VECTOR, shape=(1,)),
+                }
+            ),
+            sequence_layout=SequenceLayout(
+                axes_by_field={
+                    "obs": "BT...",
+                    "actions": "BT...",
+                    "rewards": "BT",
+                }
+            ),
+            required_batch_keys=("obs", "actions", "rewards"),
+            required_state_keys=("latent",),
+        )
+
+    def encode(
+        self,
+        obs: Tensor | dict[str, Tensor] | WorldModelInput,
+        deterministic: bool = False,
+    ) -> State:
+        """Encode observation to latent state."""
+        del deterministic
+        if isinstance(obs, WorldModelInput):
+            obs = obs.observations
+        if isinstance(obs, dict):
+            obs = obs["obs"]
+        # TODO: Implement encoder forward pass
+        z = torch.zeros(obs.shape[0], self.config.latent_dim, device=obs.device)
+        return State(tensors={"latent": z}, meta={})
+
+    def transition(
+        self,
+        state: State,
+        action: ActionPayload | Tensor | None,
+        conditions: ConditionPayload | None = None,
+        deterministic: bool = False,
+    ) -> State:
+        """Predict next latent state."""
+        del conditions, deterministic
+        z = state.tensors["latent"]
+        # TODO: Implement dynamics forward pass
+        z_next = torch.zeros_like(z)
+        return State(tensors={"latent": z_next}, meta={})
+
+    def decode(self, state: State, conditions: ConditionPayload | None = None) -> ModelOutput:
+        """Decode latent state to predictions."""
+        del conditions
+        z = state.tensors["latent"]
+        # TODO: Implement decoder forward pass
+        reward = torch.zeros(z.shape[0], 1, device=z.device)
+        return ModelOutput(predictions={"reward": reward}, state=state)
+
+    def initial_state(self, batch_size: int, device: torch.device | None = None) -> State:
+        """Create zero-initialized initial state."""
+        if device is None:
+            device = self.device
+        z = torch.zeros(batch_size, self.config.latent_dim, device=device)
+        return State(tensors={"latent": z}, meta={})
+
+    def loss(self, batch: Batch) -> LossOutput:
+        """Compute training loss."""
+        obs = batch.obs
+        if isinstance(obs, dict):
+            obs = obs["obs"]
+        if obs is None:
+            raise ValueError("{{ model_name }} requires obs tensor in batch")
+
+        # TODO: Implement training loss computation
+        dummy_loss = torch.tensor(0.0, device=obs.device, requires_grad=True)
+        return LossOutput(
+            loss=dummy_loss,
+            components={"placeholder": dummy_loss},
+            metrics={"placeholder": 0.0},
+        )

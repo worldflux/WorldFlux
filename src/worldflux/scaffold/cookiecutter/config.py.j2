@@ -1,0 +1,40 @@
+"""Configuration for {{ model_name }} world model."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any, ClassVar
+
+from worldflux.core.config import DynamicsType, LatentType, WorldModelConfig
+
+
+@dataclass
+class {{ config_class }}(WorldModelConfig):
+    """{{ model_name }} configuration.
+
+    Size Presets:
+        - ci:   Tiny model for CI testing
+        - base: Default model size
+
+    TODO: Add model-specific fields and documentation.
+    """
+
+    model_type: str = "{{ model_type }}"
+    latent_type: LatentType = LatentType.DETERMINISTIC
+    dynamics_type: DynamicsType = DynamicsType.MLP
+
+    # TODO: Add model-specific configuration fields here
+    # Example:
+    # num_layers: int = 4
+    # num_heads: int = 4
+
+    PRESETS: ClassVar[dict[str, dict[str, Any]]] = {
+        "ci": {
+            "hidden_dim": 32,
+            "latent_dim": 32,
+        },
+        "base": {
+            "hidden_dim": 256,
+            "latent_dim": 256,
+        },
+    }
