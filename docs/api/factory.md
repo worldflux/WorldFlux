@@ -24,8 +24,8 @@ model = create_world_model(
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `model` | `str` | required | Model preset, alias, or path to a saved model |
-| `obs_shape` | `tuple[int, ...]` | `None` | Observation shape (required for new model creation) |
-| `action_dim` | `int` | `None` | Action dimension (required for new model creation) |
+| `obs_shape` | `tuple[int, ...]` | `None` | Optional observation-shape override for the selected preset/config |
+| `action_dim` | `int` | `None` | Optional action-dimension override (defaults to config value, typically `6`) |
 | `device` | `str` | `"cpu"` | Device to place model on |
 | `api_version` | `str` | `"v3"` | API compatibility mode |
 | `**kwargs` |  |  | Config overrides for the selected model family |
@@ -62,6 +62,13 @@ model = create_world_model("tdmpc2-ci", ...)     # tdmpc2:ci
 model = create_world_model("tdmpc-small", ...)   # tdmpc2:5m
 model = create_world_model("tdmpc-medium", ...)  # tdmpc2:48m
 model = create_world_model("tdmpc-large", ...)   # tdmpc2:317m
+```
+
+The list above shows common aliases. For the current full alias map in your runtime:
+
+```python
+from worldflux import MODEL_ALIASES
+print(MODEL_ALIASES)
 ```
 
 #### Load from Path
@@ -141,3 +148,9 @@ models = list_models(verbose=True)
 | `tdmpc2:19m` | ~19M | 512 | 512 | 5 |
 | `tdmpc2:48m` | ~48M | 512 | 1024 | 5 |
 | `tdmpc2:317m` | ~317M | 1024 | 2048 | 5 |
+
+For the complete catalog (including experimental/skeleton families), use:
+
+```bash
+worldflux models list --verbose
+```

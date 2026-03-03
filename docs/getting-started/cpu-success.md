@@ -36,8 +36,9 @@ The script performs the following sequence:
 1. **Create a replay buffer** -- Generates random transitions with `obs_shape=(8,)` and
    `action_dim=2`. With `--quick`, 2 000 transitions across 40 episodes are created.
 
-2. **Build a DreamerV3 CI model** -- Instantiates a tiny DreamerV3 model
-   (`dreamerv3:ci`) with MLP encoder/decoder, suitable for vector observations on CPU.
+2. **Build a Dreamer CI model** -- Instantiates a tiny Dreamer preset
+   (`dreamer:ci`, with compatible alias `dreamerv3:ci`) using MLP encoder/decoder,
+   suitable for vector observations on CPU.
 
 3. **Measure initial loss** -- Evaluates the untrained model on 2 random batches from
    the buffer to establish a baseline loss value.
@@ -151,7 +152,7 @@ If you encounter `MemoryError` or the system becomes unresponsive:
    import torch
 
    model = create_world_model(
-       "dreamerv3:ci",
+       "dreamer:ci",
        obs_shape=(8,),
        action_dim=2,
        encoder_type="mlp",

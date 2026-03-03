@@ -52,7 +52,7 @@ Choose the right example for your use case.
 | [`plugins/custom_dynamics_plugin/`](plugins/custom_dynamics_plugin/) | Custom residual `DynamicsModel` component plugin |
 | [`plugins/smoke_minimal_plugin.py`](plugins/smoke_minimal_plugin.py) | Smoke test for the minimal plugin |
 
-See [Extensibility docs](../docs/EXTENSIBILITY.md) for the full plugin development guide.
+See [Extensibility docs](../docs/reference/extensibility.md) for the full plugin development guide.
 
 ## Running Examples
 

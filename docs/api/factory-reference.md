@@ -38,8 +38,8 @@ way to create world models.
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `model` | `str` | required | Model identifier. Can be a full preset (`"dreamerv3:size12m"`, `"tdmpc2:5m"`), an alias (`"dreamer"`, `"tdmpc"`, `"dreamer-large"`), or a local path (`"./my_trained_model"`). |
-| `obs_shape` | `tuple[int, ...] \| None` | `None` | Observation shape. Default depends on model type: DreamerV3 uses `(3, 64, 64)` for images; TD-MPC2 must be specified for vector observations. |
-| `action_dim` | `int \| None` | `None` | Action dimension. Default: `6`. |
+| `obs_shape` | `tuple[int, ...] \| None` | `None` | Optional observation-shape override for the selected preset/config. |
+| `action_dim` | `int \| None` | `None` | Optional action-dimension override (defaults to config value, typically `6`). |
 | `observation_modalities` | `dict[str, dict[str, Any]] \| None` | `None` | Optional dict describing multi-modal observation inputs. Keys are modality names and values are dicts with `"kind"` and `"shape"` entries, e.g. `{"image": {"kind": "image", "shape": (3, 64, 64)}}`. |
 | `action_spec` | `dict[str, Any] \| None` | `None` | Optional dict overriding the default action specification. Recognized keys include `"kind"` (`"continuous"`, `"discrete"`, etc.), `"dim"`, and `"num_actions"`. |
 | `component_overrides` | `dict[str, object] \| None` | `None` | Optional component-slot overrides. Values may be a registered component id (`str`), a component class, or a pre-built component instance. |
@@ -92,15 +92,28 @@ The following aliases are available for convenience:
 | Alias | Resolves To |
 |-------|-------------|
 | `"dreamer"` | `"dreamerv3:size12m"` |
+| `"dreamer-ci"` | `"dreamer:ci"` |
 | `"dreamerv3"` | `"dreamerv3:size12m"` |
 | `"dreamer-small"` | `"dreamerv3:size12m"` |
 | `"dreamer-medium"` | `"dreamerv3:size50m"` |
 | `"dreamer-large"` | `"dreamerv3:size200m"` |
+| `"dreamerv3:official"` | `"dreamerv3:official_xl"` |
 | `"tdmpc"` | `"tdmpc2:5m"` |
+| `"tdmpc2-ci"` | `"tdmpc2:ci"` |
 | `"tdmpc2"` | `"tdmpc2:5m"` |
 | `"tdmpc-small"` | `"tdmpc2:5m"` |
 | `"tdmpc-medium"` | `"tdmpc2:48m"` |
 | `"tdmpc-large"` | `"tdmpc2:317m"` |
+| `"jepa"` | `"jepa:base"` |
+| `"vjepa2"` | `"vjepa2:base"` |
+| `"v-jepa2"` | `"vjepa2:base"` |
+| `"token"` | `"token:base"` |
+| `"diffusion"` | `"diffusion:base"` |
+| `"dit"` | `"dit:base"` |
+| `"ssm"` | `"ssm:base"` |
+| `"renderer3d"` | `"renderer3d:base"` |
+| `"physics"` | `"physics:base"` |
+| `"gan"` | `"gan:base"` |
 
 ---
 

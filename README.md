@@ -106,9 +106,6 @@ uv sync --extra all
 
 # For development
 uv sync --extra dev
-
-# For documentation tooling
-uv sync --extra docs
 ```
 
 ### From PyPI
@@ -121,9 +118,12 @@ worldflux init my-world-model
 ### Build Docs Locally
 
 ```bash
-uv sync --extra docs
-uv run mkdocs serve
-uv run mkdocs build --strict
+cd website
+npm ci
+npm run build
+
+# Optional: local docs dev server
+npm start
 ```
 
 ## Quick Start
@@ -213,6 +213,13 @@ trained_model.save_pretrained("./my_model")
 | V-JEPA2 | `ci`, `tiny`, `base` |
 | Token | `base` |
 | Diffusion | `base` |
+
+This table lists commonly used presets. For the full catalog (including CI, experimental, and
+skeleton families), run:
+
+```bash
+worldflux models list --verbose
+```
 
 ## API Reference
 
