@@ -9,7 +9,7 @@ uv run pytest tests/test_factory.py -x  # Run single file
 uv run ruff check src/ tests/ examples/  # Lint
 uv run ruff check --fix src/  # Auto-fix
 uv run mypy src/worldflux/   # Type check
-uv run mkdocs build --strict # Build docs (catches broken refs)
+cd website && npm run build  # Build docs (onBrokenLinks: 'throw')
 make ci                      # Full local CI gate
 ```
 
@@ -38,4 +38,4 @@ make ci                      # Full local CI gate
 ## Gotchas
 
 - `ReplayBuffer` is NOT thread-safe. Single writer thread only.
-- mkdocs build requires `--strict` — broken cross-refs fail the build.
+- Docusaurus uses `onBrokenLinks: 'throw'` — broken cross-refs fail the build.
