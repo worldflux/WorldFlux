@@ -1,0 +1,26 @@
+/**
+ * WorldFlux Docusaurus theme — Material Indigo palette
+ */
+
+:root {
+  --ifm-color-primary: #3f51b5;
+  --ifm-color-primary-dark: #3849a2;
+  --ifm-color-primary-darker: #354499;
+  --ifm-color-primary-darkest: #2c387e;
+  --ifm-color-primary-light: #5264c1;
+  --ifm-color-primary-lighter: #5b6cc5;
+  --ifm-color-primary-lightest: #7986cb;
+  --ifm-code-font-size: 95%;
+  --docusaurus-highlighted-code-line-bg: rgba(63, 81, 181, 0.1);
+}
+
+[data-theme='dark'] {
+  --ifm-color-primary: #7986cb;
+  --ifm-color-primary-dark: #6372c0;
+  --ifm-color-primary-darker: #5868bb;
+  --ifm-color-primary-darkest: #3f51b5;
+  --ifm-color-primary-light: #8f9ad6;
+  --ifm-color-primary-lighter: #9aa4db;
+  --ifm-color-primary-lightest: #c5cae9;
+  --docusaurus-highlighted-code-line-bg: rgba(121, 134, 203, 0.15);
+}
