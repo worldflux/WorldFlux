@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import torch
 import typer
 
 from worldflux.config_loader import load_config
@@ -137,6 +136,8 @@ def train(
         return
 
     # Resolve auto device
+    import torch  # late import: avoid 2-5s startup penalty for all CLI commands
+
     if effective_device == "auto":
         effective_device = "cuda" if torch.cuda.is_available() else "cpu"
     if effective_device == "cuda" and not torch.cuda.is_available():

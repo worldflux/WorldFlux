@@ -72,6 +72,11 @@ WF_THEME = Theme(
         "wf.border.success": f"{PALETTE.success}",
         "wf.border.error": f"{PALETTE.error}",
         "wf.border.info": f"{PALETTE.info}",
+        # Wizard / init
+        "wf.step": f"bold {PALETTE.accent}",
+        "wf.hint": f"italic {PALETTE.text_muted}",
+        "wf.celebrate": f"bold {PALETTE.success}",
+        "wf.section": f"{PALETTE.primary_dim}",
     }
 )
 

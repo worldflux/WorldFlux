@@ -4,31 +4,33 @@ from __future__ import annotations
 
 import re
 import shutil
+import signal
 import subprocess
 import sys
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
-import torch
 import typer
 from rich.prompt import Confirm, IntPrompt, Prompt
 from rich.rule import Rule
 
 from ._app import (
-    ASCII_LOGO,
     BATCH_SIZE_PRESETS,
+    BRAND_NAME,
+    BRAND_TAGLINE,
     DEFAULT_BATCH_SIZE,
     DEFAULT_TOTAL_STEPS,
     ENVIRONMENT_OPTIONS,
-    MODEL_CHOICE_IDS,
     MODEL_UI_CARDS,
     OBS_ACTION_GUIDE_URL,
     TOTAL_STEPS_PRESETS,
+    WIZARD_STEPS,
+    WIZARD_TOTAL,
     app,
     console,
 )
-from ._rich_output import key_value_panel, result_banner
+from ._rich_output import _bounded_width, grouped_summary_panel, result_banner, step_progress
 from ._utils import (
     _is_preset_environment,
     _model_choice_order,
@@ -45,6 +47,52 @@ from ._utils import (
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
+# ---------------------------------------------------------------------------
+# Wizard resize guard – clear screen when terminal shrinks below rendered width
+# ---------------------------------------------------------------------------
+
+_wizard_max_rendered_width: int = 0
+_wizard_resize_pending: bool = False
+_wizard_prev_sigwinch: Any = None
+
+
+def _on_wizard_resize(_sig: int, _frame: object) -> None:
+    global _wizard_resize_pending
+    _wizard_resize_pending = True
+
+
+def _start_wizard_resize_guard() -> None:
+    global _wizard_max_rendered_width, _wizard_resize_pending, _wizard_prev_sigwinch
+    _wizard_max_rendered_width = 0
+    _wizard_resize_pending = False
+    _wizard_prev_sigwinch = signal.getsignal(signal.SIGWINCH)
+    signal.signal(signal.SIGWINCH, _on_wizard_resize)
+
+
+def _stop_wizard_resize_guard() -> None:
+    global _wizard_prev_sigwinch
+    if _wizard_prev_sigwinch is not None:
+        signal.signal(signal.SIGWINCH, _wizard_prev_sigwinch)
+        _wizard_prev_sigwinch = None
+
+
+def _wizard_record_width(w: int) -> None:
+    global _wizard_max_rendered_width
+    _wizard_max_rendered_width = max(_wizard_max_rendered_width, w)
+
+
+def _wizard_check_and_clear() -> None:
+    """Clear screen if a resize made the terminal narrower than rendered content."""
+    global _wizard_resize_pending, _wizard_max_rendered_width
+    if not _wizard_resize_pending:
+        return
+    _wizard_resize_pending = False
+    new_cols = shutil.get_terminal_size().columns
+    if _wizard_max_rendered_width > new_cols:
+        sys.stdout.write("\033[2J\033[H")  # clear screen + cursor to top-left
+        sys.stdout.flush()
+        _wizard_max_rendered_width = 0  # reset
+
 
 def _format_model_choice_label(model_id: str, *, recommended: bool) -> str:
     card = MODEL_UI_CARDS[model_id]
@@ -56,25 +104,43 @@ def _format_model_choice_label(model_id: str, *, recommended: bool) -> str:
 
 
 def _print_model_choices(recommended_model: str) -> None:
-    console.print(Rule("Model Choices", style="wf.header"))
+    from rich.table import Table
+
+    console.print()
+    table = Table(
+        show_lines=False,
+        padding=(0, 1),
+        title="Model Choices",
+        title_style="wf.header",
+        width=_bounded_width(),
+    )
+    table.add_column("", width=1, no_wrap=True)
+    table.add_column("Model", style="wf.brand", no_wrap=True)
+    table.add_column("Best for")
+    table.add_column("Compute", no_wrap=True)
+    table.add_column("Tradeoff")
+
     for model_id in _model_choice_order(recommended_model):
         card = MODEL_UI_CARDS[model_id]
-        badge = (
-            " [wf.accent]\u2605 recommended[/wf.accent]" if model_id == recommended_model else ""
+        star = "[wf.accent]\u2605[/wf.accent]" if model_id == recommended_model else " "
+        table.add_row(
+            star,
+            model_id,
+            card["best_for"],
+            card["compute_profile"],
+            card["tradeoff_note"],
         )
-        console.print(f"  [wf.brand]{model_id}[/wf.brand]{badge}")
-        console.print(f"    [wf.label]Best for:[/wf.label]     {card['best_for']}")
-        console.print(f"    [wf.label]Obs fit:[/wf.label]      {card['observation_fit']}")
-        console.print(f"    [wf.label]Compute:[/wf.label]      {card['compute_profile']}")
-        console.print(f"    [wf.label]Tradeoff:[/wf.label]     {card['tradeoff_note']}")
-        console.print()
+
+    console.print(table)
+    _wizard_record_width(_bounded_width())
+    console.print()
 
 
 def _select_model_with_inquirer(inquirer: Any, recommended_model: str) -> str:
     try:
         return str(
             inquirer.select(
-                message="Choose model (recommended is preselected):",
+                message="Choose model:",
                 choices=[
                     {
                         "name": _format_model_choice_label(
@@ -119,44 +185,69 @@ def _arrow_select(
     # Used to recalculate screen rows at the current terminal width
     # so that erase is correct even after a terminal resize.
     prev_plain_lines: list[str] = []
+    # Plain-text of the header (label + hint) for resize-aware erase.
+    header_plain_lines: list[str] = []
     resized = False
 
     def _on_resize(_sig: int, _frame: object) -> None:
         nonlocal resized
         resized = True
 
-    def _draw(idx: int, *, erase: bool = False) -> None:
+    def _capture_plain(markup: str) -> str:
+        """Print *markup* to stdout and return the plain-text content."""
+        with console.capture() as capture:
+            console.print(markup)
+        output = capture.get()
+        sys.stdout.write(output)
+        return output
+
+    def _plain_lines_from(output: str) -> list[str]:
+        lines: list[str] = []
+        for seg in output.split("\n"):
+            plain = _ANSI_RE.sub("", seg)
+            if plain:
+                lines.append(plain)
+        return lines
+
+    def _draw_header() -> None:
+        nonlocal header_plain_lines
+        header_plain_lines = []
+        for markup in [
+            f"[wf.header]{label}[/wf.header]",
+            "[wf.dim]  \u2191/\u2193 select  Enter confirm[/wf.dim]",
+        ]:
+            output = _capture_plain(markup)
+            header_plain_lines.extend(_plain_lines_from(output))
+
+    def _draw(idx: int, *, erase: bool = False, erase_header: bool = False) -> None:
         nonlocal prev_plain_lines
-        if erase and prev_plain_lines:
-            # Recalculate at CURRENT width — handles resize correctly.
-            tw = shutil.get_terminal_size().columns
-            erase_count = sum(max(1, -(-len(p) // tw)) for p in prev_plain_lines)
-            for _ in range(erase_count):
-                sys.stdout.write("\033[A\033[2K")
-            sys.stdout.flush()
+        if erase:
+            all_lines = (
+                (header_plain_lines + prev_plain_lines) if erase_header else prev_plain_lines
+            )
+            if all_lines:
+                tw = shutil.get_terminal_size().columns
+                erase_count = sum(max(1, -(-len(p) // tw)) for p in all_lines)
+                for _ in range(erase_count):
+                    sys.stdout.write("\033[A\033[2K")
+                sys.stdout.flush()
+        if erase_header:
+            _draw_header()
         new_plain: list[str] = []
         for i, opt in enumerate(options):
             if i == idx:
                 markup = f"  [wf.accent]\u203a[/wf.accent] [bold]{opt['name']}[/bold]"
             else:
                 markup = f"    [wf.muted]{opt['name']}[/wf.muted]"
-            with console.capture() as capture:
-                console.print(markup)
-            output = capture.get()
-            sys.stdout.write(output)
-            # Store plain-text of each rendered line for resize-aware erase
-            for seg in output.split("\n"):
-                plain = _ANSI_RE.sub("", seg)
-                if plain:
-                    new_plain.append(plain)
+            output = _capture_plain(markup)
+            new_plain.extend(_plain_lines_from(output))
         prev_plain_lines = new_plain
         sys.stdout.flush()
 
     old_handler = signal.getsignal(signal.SIGWINCH)
     signal.signal(signal.SIGWINCH, _on_resize)
     try:
-        console.print(f"[wf.header]{label}[/wf.header]")
-        console.print("[wf.dim]  \u2191/\u2193 select  Enter confirm[/wf.dim]")
+        _draw_header()
         _draw(selected)
         tty.setraw(fd)
         while True:
@@ -165,7 +256,7 @@ def _arrow_select(
             if resized:
                 resized = False
                 termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-                _draw(selected, erase=True)
+                _draw(selected, erase=True, erase_header=True)
                 tty.setraw(fd)
             if ch in ("\r", "\n"):
                 break
@@ -261,66 +352,44 @@ def _print_model_recommendation(
     obs_shape: list[int],
     model: str,
 ) -> None:
-    other_model = next(candidate for candidate in MODEL_CHOICE_IDS if candidate != model)
     if environment == "atari":
-        why_now = (
-            "This environment is image-based, and dreamer:ci is usually the safer first choice "
-            "for pixel observations."
-        )
+        reason = "Image-based env -- dreamer:ci is the safer first choice for pixel obs."
     elif environment == "mujoco":
-        why_now = (
-            "This environment is vector-based, and tdmpc2:ci is usually the safer first choice "
-            "for compact state inputs."
-        )
+        reason = "Vector-based env -- tdmpc2:ci is the safer first choice for compact state inputs."
     elif len(obs_shape) >= 3:
-        why_now = (
-            "Your observation has 3+ dimensions, which is usually spatial or image-like, "
-            "so dreamer:ci is recommended."
-        )
+        reason = "3+ dim observation (spatial/image-like) -- dreamer:ci is recommended."
     else:
-        why_now = "Your observation is a compact vector, so tdmpc2:ci is recommended."
-    if model == "dreamer:ci":
-        when_other = (
-            f"Choose {other_model} when your task is mostly vector observations "
-            "and you want a lighter setup."
-        )
-    else:
-        when_other = (
-            f"Choose {other_model} when your task is image-heavy "
-            "and latent imagination quality is the priority."
-        )
+        reason = "Compact vector observation -- tdmpc2:ci is recommended."
     console.print()
-    console.print(f"[wf.pass]Recommended model:[/wf.pass] {model}")
-    console.print(
-        key_value_panel(
-            {
-                "Recommended model": model,
-                "Why recommended now": why_now,
-                "When to choose other": when_other,
-            },
-            title="Recommendation",
-            border="wf.accent",
-        )
-    )
+    console.print(f"[wf.ok]\u2713[/wf.ok] [wf.pass]Recommended model:[/wf.pass] {model}")
+    console.print(f"  [wf.hint]{reason}[/wf.hint]")
 
 
 def _print_configuration_summary(context: dict[str, Any], target_path: Path, force: bool) -> None:
     model_fit = MODEL_UI_CARDS.get(str(context["model"]), {}).get("best_for", "n/a")
+    console.print()
     console.print(
-        key_value_panel(
+        grouped_summary_panel(
             {
-                "Project name": context["project_name"],
-                "Environment": context["environment"],
-                "Observation shape": str(tuple(context["obs_shape"])),
-                "Action dim": str(context["action_dim"]),
-                "Shape/Action guide": OBS_ACTION_GUIDE_URL,
-                "Total steps": str(context["training_total_steps"]),
-                "Batch size": str(context["training_batch_size"]),
-                "Model": context["model"],
-                "Model fit": model_fit,
-                "Device": context["device"],
-                "Target path": str(target_path.resolve()),
-                "Overwrite existing": "yes" if force else "no",
+                "Project": {
+                    "Name": context["project_name"],
+                    "Path": str(target_path.resolve()),
+                    "Overwrite": "yes" if force else "no",
+                },
+                "Environment": {
+                    "Type": context["environment"],
+                    "Obs shape": str(tuple(context["obs_shape"])),
+                    "Action dim": str(context["action_dim"]),
+                },
+                "Model": {
+                    "Preset": context["model"],
+                    "Best for": model_fit,
+                },
+                "Training": {
+                    "Steps": str(context["training_total_steps"]),
+                    "Batch size": str(context["training_batch_size"]),
+                    "Device": context["device"],
+                },
             },
             title="Configuration Summary",
             border="wf.border",
@@ -354,9 +423,13 @@ def _prompt_with_inquirer() -> dict[str, Any] | None:
     except ModuleNotFoundError:
         return None
 
+    # -- Step 1/4: Project --
+    _wizard_check_and_clear()
+    step_progress(1, WIZARD_TOTAL, WIZARD_STEPS[0])
+    _wizard_record_width(_bounded_width())
     project_name = (
         inquirer.text(
-            message="Project name (folder name for generated files):",
+            message="Project name:",
             default="my-world-model",
             validate=lambda value: bool(str(value).strip()),
             invalid_message="Project name cannot be empty. Use a short folder-style name.",
@@ -365,8 +438,12 @@ def _prompt_with_inquirer() -> dict[str, Any] | None:
         .strip()
     )
 
+    # -- Step 2/4: Environment --
+    _wizard_check_and_clear()
+    step_progress(2, WIZARD_TOTAL, WIZARD_STEPS[1])
+    _wizard_record_width(_bounded_width())
     environment = inquirer.select(
-        message="Environment type (what kind of observations your task provides):",
+        message="Environment type:",
         choices=[
             {"name": _format_environment_choice("atari"), "value": "atari"},
             {"name": _format_environment_choice("mujoco"), "value": "mujoco"},
@@ -383,15 +460,13 @@ def _prompt_with_inquirer() -> dict[str, Any] | None:
             f"obs_shape={tuple(obs_shape)}, action_dim={action_dim}[/wf.muted]"
         )
     else:
-        console.print(
-            f"[wf.muted]Need help with Observation shape or Action dim? {OBS_ACTION_GUIDE_URL}[/wf.muted]"
-        )
+        console.print(f"[wf.hint]Guide: {OBS_ACTION_GUIDE_URL}[/wf.hint]")
 
         obs_default = ENVIRONMENT_OPTIONS[environment]["obs_shape"]
         while True:
             obs_value = (
                 inquirer.text(
-                    message="Observation shape (comma-separated integers, e.g. 3,64,64 or 39):",
+                    message="Observation shape (e.g. 3,64,64):",
                     default=obs_default,
                 )
                 .execute()
@@ -401,16 +476,17 @@ def _prompt_with_inquirer() -> dict[str, Any] | None:
                 obs_shape = _parse_obs_shape(obs_value)
                 break
             except ValueError as exc:
+                console.print(f"[wf.fail]Invalid observation shape:[/wf.fail] {exc}")
                 console.print(
-                    f"[wf.fail]Invalid observation shape:[/wf.fail] {exc} "
-                    "Expected format like 3,64,64 or 39."
+                    "[wf.hint]  Format: comma-separated positive integers, "
+                    "e.g. 3,64,64 or 39[/wf.hint]"
                 )
 
         action_default = str(ENVIRONMENT_OPTIONS[environment]["action_dim"])
         while True:
             action_value = (
                 inquirer.text(
-                    message="Action dimension (positive integer, e.g. 6):",
+                    message="Action dimension (e.g. 6):",
                     default=action_default,
                 )
                 .execute()
@@ -420,17 +496,23 @@ def _prompt_with_inquirer() -> dict[str, Any] | None:
                 action_dim = _parse_action_dim(action_value)
                 break
             except ValueError as exc:
-                console.print(
-                    f"[wf.fail]Invalid action dim:[/wf.fail] {exc} "
-                    "Expected a positive integer like 6."
-                )
+                console.print(f"[wf.fail]Invalid action dim:[/wf.fail] {exc}")
+                console.print("[wf.hint]  Must be a positive integer, e.g. 6[/wf.hint]")
 
+    # -- Step 3/4: Model --
+    _wizard_check_and_clear()
+    step_progress(3, WIZARD_TOTAL, WIZARD_STEPS[2])
+    _wizard_record_width(_bounded_width())
     recommended_model, _ = _resolve_model(environment, obs_shape)
     _cli._print_model_recommendation(environment, obs_shape, recommended_model)
     _cli._print_model_choices(recommended_model)
     model = _cli._select_model_with_inquirer(inquirer, recommended_model)
     model_type = _model_type_from_model_id(model)
 
+    # -- Step 4/4: Training --
+    _wizard_check_and_clear()
+    step_progress(4, WIZARD_TOTAL, WIZARD_STEPS[3])
+    _wizard_record_width(_bounded_width())
     steps_choice = inquirer.select(
         message="Total training steps:",
         choices=[{"name": p["name"], "value": p["value"]} for p in TOTAL_STEPS_PRESETS],
@@ -440,10 +522,7 @@ def _prompt_with_inquirer() -> dict[str, Any] | None:
         while True:
             total_steps_value = (
                 inquirer.text(
-                    message=(
-                        f"Total training steps (recommended {DEFAULT_TOTAL_STEPS:,}, "
-                        "positive integer):"
-                    ),
+                    message=f"Total training steps (default {DEFAULT_TOTAL_STEPS:,}):",
                     default=str(DEFAULT_TOTAL_STEPS),
                 )
                 .execute()
@@ -469,7 +548,7 @@ def _prompt_with_inquirer() -> dict[str, Any] | None:
         while True:
             batch_size_value = (
                 inquirer.text(
-                    message=(f"Batch size (recommended {DEFAULT_BATCH_SIZE}, positive integer):"),
+                    message=f"Batch size (default {DEFAULT_BATCH_SIZE}):",
                     default=str(DEFAULT_BATCH_SIZE),
                 )
                 .execute()
@@ -485,6 +564,8 @@ def _prompt_with_inquirer() -> dict[str, Any] | None:
                 console.print(f"[wf.fail]Invalid batch size:[/wf.fail] {exc}")
     else:
         training_batch_size = int(batch_choice)
+
+    import torch  # late import: avoid 2-5s startup penalty for all CLI commands
 
     cuda_avail = torch.cuda.is_available()
     device_choices = [
@@ -521,9 +602,13 @@ def _prompt_with_inquirer() -> dict[str, Any] | None:
 def _prompt_with_rich() -> dict[str, Any]:
     import worldflux.cli as _cli  # support monkeypatch on cli namespace
 
+    # -- Step 1/4: Project --
+    _wizard_check_and_clear()
+    step_progress(1, WIZARD_TOTAL, WIZARD_STEPS[0])
+    _wizard_record_width(_bounded_width())
     project_name = str(
         Prompt.ask(
-            "Project name (folder name for generated files)",
+            "Project name",
             default="my-world-model",
         )
     ).strip()
@@ -531,18 +616,20 @@ def _prompt_with_rich() -> dict[str, Any]:
         console.print("[wf.fail]Project name cannot be empty.[/wf.fail]")
         project_name = str(
             Prompt.ask(
-                "Project name (folder name for generated files)",
+                "Project name",
                 default="my-world-model",
             )
         ).strip()
 
+    # -- Step 2/4: Environment --
+    _wizard_check_and_clear()
+    step_progress(2, WIZARD_TOTAL, WIZARD_STEPS[1])
+    _wizard_record_width(_bounded_width())
     env_options = [
         {"name": _format_environment_choice(key), "value": key}
         for key in ("atari", "mujoco", "custom")
     ]
-    environment = _cli._numbered_select(
-        "Choose your environment type:", env_options, default_index=0
-    )
+    environment = _cli._numbered_select("Environment type:", env_options, default_index=0)
 
     if _is_preset_environment(environment):
         obs_shape = _parse_obs_shape(str(ENVIRONMENT_OPTIONS[environment]["obs_shape"]))
@@ -552,15 +639,13 @@ def _prompt_with_rich() -> dict[str, Any]:
             f"obs_shape={tuple(obs_shape)}, action_dim={action_dim}[/wf.muted]"
         )
     else:
-        console.print(
-            f"[wf.muted]Need help with Observation shape or Action dim? {OBS_ACTION_GUIDE_URL}[/wf.muted]"
-        )
+        console.print(f"[wf.hint]Guide: {OBS_ACTION_GUIDE_URL}[/wf.hint]")
 
         obs_default = ENVIRONMENT_OPTIONS[environment]["obs_shape"]
         while True:
             obs_value = str(
                 Prompt.ask(
-                    "Observation shape (comma-separated integers, e.g. 3,64,64 or 39)",
+                    "Observation shape (e.g. 3,64,64)",
                     default=obs_default,
                 )
             ).strip()
@@ -568,16 +653,17 @@ def _prompt_with_rich() -> dict[str, Any]:
                 obs_shape = _parse_obs_shape(obs_value)
                 break
             except ValueError as exc:
+                console.print(f"[wf.fail]Invalid observation shape:[/wf.fail] {exc}")
                 console.print(
-                    f"[wf.fail]Invalid observation shape:[/wf.fail] {exc} "
-                    "Expected format like 3,64,64 or 39."
+                    "[wf.hint]  Format: comma-separated positive integers, "
+                    "e.g. 3,64,64 or 39[/wf.hint]"
                 )
 
         action_default = str(ENVIRONMENT_OPTIONS[environment]["action_dim"])
         while True:
             action_value = str(
                 Prompt.ask(
-                    "Action dimension (positive integer, e.g. 6)",
+                    "Action dimension (e.g. 6)",
                     default=action_default,
                 )
             ).strip()
@@ -585,17 +671,23 @@ def _prompt_with_rich() -> dict[str, Any]:
                 action_dim = _parse_action_dim(action_value)
                 break
             except ValueError as exc:
-                console.print(
-                    f"[wf.fail]Invalid action dim:[/wf.fail] {exc} "
-                    "Expected a positive integer like 6."
-                )
+                console.print(f"[wf.fail]Invalid action dim:[/wf.fail] {exc}")
+                console.print("[wf.hint]  Must be a positive integer, e.g. 6[/wf.hint]")
 
+    # -- Step 3/4: Model --
+    _wizard_check_and_clear()
+    step_progress(3, WIZARD_TOTAL, WIZARD_STEPS[2])
+    _wizard_record_width(_bounded_width())
     recommended_model, _ = _resolve_model(environment, obs_shape)
     _cli._print_model_recommendation(environment, obs_shape, recommended_model)
     _cli._print_model_choices(recommended_model)
     model = _cli._select_model_with_rich(recommended_model)
     model_type = _model_type_from_model_id(model)
 
+    # -- Step 4/4: Training --
+    _wizard_check_and_clear()
+    step_progress(4, WIZARD_TOTAL, WIZARD_STEPS[3])
+    _wizard_record_width(_bounded_width())
     steps_choice = _cli._numbered_select(
         "Total training steps:", list(TOTAL_STEPS_PRESETS), default_index=1
     )
@@ -603,7 +695,7 @@ def _prompt_with_rich() -> dict[str, Any]:
         while True:
             total_steps_value = str(
                 Prompt.ask(
-                    f"Total training steps (recommended {DEFAULT_TOTAL_STEPS:,})",
+                    f"Total training steps (default {DEFAULT_TOTAL_STEPS:,})",
                     default=str(DEFAULT_TOTAL_STEPS),
                 )
             ).strip()
@@ -623,7 +715,7 @@ def _prompt_with_rich() -> dict[str, Any]:
         while True:
             batch_size_value = str(
                 Prompt.ask(
-                    f"Batch size (recommended {DEFAULT_BATCH_SIZE})",
+                    f"Batch size (default {DEFAULT_BATCH_SIZE})",
                     default=str(DEFAULT_BATCH_SIZE),
                 )
             ).strip()
@@ -637,6 +729,8 @@ def _prompt_with_rich() -> dict[str, Any]:
                 console.print(f"[wf.fail]Invalid batch size:[/wf.fail] {exc}")
     else:
         training_batch_size = int(batch_choice)
+
+    import torch  # late import: avoid 2-5s startup penalty for all CLI commands
 
     cuda_avail = torch.cuda.is_available()
     device_options = [
@@ -680,22 +774,47 @@ def _prompt_user_configuration() -> dict[str, Any]:
 
 
 def _print_logo() -> None:
-    term_width = shutil.get_terminal_size().columns
-    if term_width >= 50:  # ASCII logo is 48 chars wide + 2 margin
-        console.print(f"[wf.brand]{ASCII_LOGO}[/wf.brand]")
-    console.print("[wf.header]WorldFlux CLI[/wf.header]  |  scaffold world-model projects")
+    from rich.align import Align
+    from rich.box import ROUNDED
+    from rich.panel import Panel
+
+    from ._theme import PANEL_PADDING
+
+    # Brand panel (replaces figlet ASCII which breaks in some terminals)
+    logo_width = min(40, shutil.get_terminal_size().columns - 2)
+    brand_panel = Panel(
+        Align.center(f"[wf.brand]{BRAND_NAME}[/wf.brand]"),
+        subtitle=f"[wf.muted]{BRAND_TAGLINE}[/wf.muted]",
+        border_style="wf.border",
+        box=ROUNDED,
+        padding=(0, 2),
+        width=logo_width,
+    )
+    console.print(brand_panel)
+    _wizard_record_width(logo_width)
     console.print()
+
+    # Welcome panel
+    welcome_text = (
+        "Create a ready-to-run WorldFlux project with\n"
+        "train.py, inference.py, and worldflux.toml.\n"
+        "\n"
+        f"[wf.muted]You'll set up {WIZARD_TOTAL} things: "
+        + ", ".join(s.lower() for s in WIZARD_STEPS[:-1])
+        + f", and {WIZARD_STEPS[-1].lower()}.[/wf.muted]\n"
+        "[wf.muted]Press Ctrl+C anytime to cancel.[/wf.muted]"
+    )
     console.print(
-        key_value_panel(
-            {
-                "What": "Create a ready-to-run WorldFlux project with train.py, "
-                "inference.py, and worldflux.toml",
-                "How": "This guided setup explains each question and applies safe defaults",
-            },
-            title="Guided Setup",
-            border="wf.border",
+        Panel(
+            welcome_text,
+            title="Welcome",
+            border_style="wf.border",
+            box=ROUNDED,
+            padding=PANEL_PADDING,
+            width=_bounded_width(),
         )
     )
+    _wizard_record_width(_bounded_width())
     console.print()
 
 
@@ -818,9 +937,10 @@ def init(
     """
     import worldflux.cli as _cli  # support monkeypatch on cli namespace
 
-    _cli._print_logo()
-
+    _start_wizard_resize_guard()
     try:
+        _cli._print_logo()
+
         context = _cli._prompt_user_configuration()
         console.print(
             "[wf.info]Preparing bootstrap dependencies before project generation...[/wf.info]"
@@ -846,20 +966,51 @@ def init(
                     console.print(f"[wf.dim]{command}[/wf.dim]")
             raise typer.Exit(code=1)
 
+        import torch  # late import: avoid 2-5s startup penalty for all CLI commands
+
         if context["device"] == "cuda" and not torch.cuda.is_available():
             console.print("[wf.caution]CUDA is not available. Falling back to CPU.[/wf.caution]")
             context["device"] = "cpu"
 
         target_path = path if path is not None else Path.cwd() / str(context["project_name"])
+
+        _wizard_check_and_clear()
         _cli._print_configuration_summary(context, target_path, force=force)
+        _wizard_record_width(_bounded_width())
+
+        _wizard_check_and_clear()
         if not _cli._confirm_generation():
             console.print(
                 "\n[wf.caution]Initialization cancelled. No files were generated.[/wf.caution]"
             )
             raise typer.Exit(code=130)
         # Pop launcher before scaffold validation (templates use .get with default)
-        preferred_launcher = context.pop("preferred_python_launcher", None)
+        context.pop("preferred_python_launcher", None)
         _cli.generate_project(target_path, context, force=force)
+
+        resolved_target = target_path.resolve()
+
+        _wizard_check_and_clear()
+        console.print()
+        console.print(Rule(style="wf.section"), width=_bounded_width())
+        console.print("  [wf.celebrate]\u2713 Project created successfully![/wf.celebrate]")
+        console.print(f"  {resolved_target}")
+        console.print()
+        console.print(
+            result_banner(
+                passed=True,
+                title="\u2713 Get Started",
+                lines=[
+                    f"[wf.label]1.[/wf.label] cd {resolved_target}",
+                    "[wf.label]2.[/wf.label] worldflux train",
+                    "[wf.label]3.[/wf.label] worldflux verify --target ./outputs",
+                    "",
+                    "[wf.hint]Edit worldflux.toml to tune settings.[/wf.hint]",
+                    "[wf.hint]Alt: python train.py[/wf.hint]",
+                ],
+            )
+        )
+        _wizard_record_width(_bounded_width())
     except KeyboardInterrupt:
         console.print(
             "\n[wf.caution]Initialization cancelled. No files were generated.[/wf.caution]"
@@ -868,21 +1019,5 @@ def init(
     except (ValueError, FileExistsError, IsADirectoryError, OSError) as exc:
         console.print(f"[wf.fail]Error:[/wf.fail] {exc}")
         raise typer.Exit(code=1) from None
-
-    resolved_target = target_path.resolve()
-    console.print(f"\n[wf.pass]Project created:[/wf.pass] {resolved_target}")
-    launcher = str(preferred_launcher or _cli._resolve_python_launcher())
-    console.print(
-        result_banner(
-            passed=True,
-            title="Next Steps",
-            lines=[
-                f"[wf.label]1.[/wf.label] cd {resolved_target}",
-                "[wf.label]2.[/wf.label] worldflux train             # start training",
-                f"[wf.label]3.[/wf.label] {launcher} train.py   # start training (legacy path)",
-                f"[wf.label]4.[/wf.label] {launcher} inference.py   # run inference (legacy path)",
-                "[wf.label]5.[/wf.label] worldflux verify --target ./outputs  # verify your model",
-                "[wf.label]6.[/wf.label] Edit worldflux.toml to tune settings for your environment",
-            ],
-        )
-    )
+    finally:
+        _stop_wizard_resize_guard()
