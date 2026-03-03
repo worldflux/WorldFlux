@@ -38,10 +38,10 @@ security: ## Run security checks
 	uv run pip-audit
 
 docs: ## Build documentation
-	uv run mkdocs build --strict
+	cd website && npm run build
 
 docs-serve: ## Serve documentation locally
-	uv run mkdocs serve
+	cd website && npm start
 
 quickstart: ## Run CPU quickstart
 	uv run python examples/quickstart_cpu_success.py --quick
