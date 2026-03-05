@@ -74,7 +74,7 @@ class ComponentHostMixin:
         }
         if slot not in valid_slots:
             raise ValueError(
-                f"Unknown component slot: {slot!r}. " f"Valid slots: {sorted(valid_slots)}"
+                f"Unknown component slot: {slot!r}. Valid slots: {sorted(valid_slots)}"
             )
         previous = getattr(self, slot, None)
         setattr(self, slot, component)

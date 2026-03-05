@@ -435,7 +435,12 @@ class WorldModelRegistry:
             model_class = cls._model_registry[model_type]
             return model_class(config)
 
-        raise ValueError(f"Invalid model identifier: {name_or_path}")
+        available = list(cls._model_registry.keys())
+        raise ValueError(
+            f"Unknown model '{name_or_path}'. "
+            f"Available model types: {', '.join(available)}. "
+            f"Format: 'type:size' (e.g. 'dreamerv3:size12m')"
+        )
 
     @classmethod
     def list_models(cls) -> dict[str, type]:

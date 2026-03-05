@@ -444,6 +444,19 @@ class DreamerV3Config(WorldModelConfig):
                 config_name=self.model_name,
             )
 
+        if (
+            self.encoder_type == "cnn"
+            and len(self.obs_shape) == 3
+            and self.obs_shape[2] <= 4
+            and self.obs_shape[0] > 4
+        ):
+            warnings.warn(
+                f"obs_shape={self.obs_shape} looks like HWC format. "
+                f"PyTorch uses CHW. Did you mean {(self.obs_shape[2], *self.obs_shape[:2])}?",
+                UserWarning,
+                stacklevel=4,
+            )
+
         if self.kl_free < 0:
             raise ConfigurationError(
                 f"kl_free must be non-negative, got {self.kl_free}",
