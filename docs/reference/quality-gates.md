@@ -44,6 +44,7 @@ All PRs must pass:
 - Fixed parity artifacts must validate before publish:
   - `uv run python scripts/generate_release_parity_fixtures.py`
   - `uv run python scripts/validate_parity_artifacts.py --run reports/parity/runs/dreamer_atari100k.json --run reports/parity/runs/tdmpc2_dmcontrol39.json --aggregate reports/parity/aggregate.json --lock reports/parity/upstream_lock.json --required-suite dreamer_atari100k --required-suite tdmpc2_dmcontrol39 --max-missing-pairs 0`
+  - Generated parity JSON stays local and ignored; the fixture spec remains the committed source of truth.
 - Required-family suite policy must validate:
   - `uv run python scripts/check_parity_suite_coverage.py --policy reports/parity/suite_policy.json --lock reports/parity/upstream_lock.json --aggregate reports/parity/aggregate.json --enforce-pass`
 - Release stops when either DreamerV3 or TD-MPC2 fails non-inferiority.

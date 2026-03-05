@@ -9,7 +9,7 @@ WorldFlux uses PyPI Trusted Publishing (OIDC) from GitHub Actions.
 - Validate fixed parity artifacts (`DreamerV3` + `TD-MPC2`) before build/publish.
 - Validate parity suite policy (`reports/parity/suite_policy.json`) against lock + aggregate before build/publish.
 - Generate verification report artifacts (`verification-report.json` / `.md`) and attach to release workflow artifacts.
-- The release dry-run regenerates deterministic parity fixtures for local reproducibility; those fixtures are not proof-grade evidence.
+- The release dry-run regenerates deterministic parity fixtures into ignored local `reports/parity/` outputs for reproducibility; those fixtures are not proof-grade evidence.
 - Publish in separate jobs with `id-token: write`.
 - No PyPI API token/password is required in GitHub secrets.
 
@@ -41,7 +41,7 @@ For TestPyPI, repeat the same setup on TestPyPI and map the `testpypi` environme
    - `worldflux parity run ...`
    - `worldflux parity aggregate ...`
    - `worldflux parity report ...`
-5. If you need to inspect individual release gates manually, validate release parity gate against fixed artifacts:
+5. If you need to inspect individual release gates manually, validate the release parity gate against locally regenerated artifacts:
    - `uv run python scripts/generate_release_parity_fixtures.py`
    - `uv run python scripts/validate_parity_artifacts.py --run reports/parity/runs/dreamer_atari100k.json --run reports/parity/runs/tdmpc2_dmcontrol39.json --aggregate reports/parity/aggregate.json --lock reports/parity/upstream_lock.json --required-suite dreamer_atari100k --required-suite tdmpc2_dmcontrol39 --max-missing-pairs 0`
 6. Validate suite policy gate:

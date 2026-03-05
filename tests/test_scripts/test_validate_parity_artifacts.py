@@ -22,6 +22,16 @@ def _write_json(path: Path, payload: object) -> None:
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
+def _fixture_repo_root(tmp_path: Path) -> Path:
+    repo_root = tmp_path / "repo"
+    source_root = Path(__file__).resolve().parents[2]
+    lock_source = source_root / "reports" / "parity" / "upstream_lock.json"
+    lock_target = repo_root / "reports" / "parity" / "upstream_lock.json"
+    lock_target.parent.mkdir(parents=True, exist_ok=True)
+    lock_target.write_text(lock_source.read_text(encoding="utf-8"), encoding="utf-8")
+    return repo_root
+
+
 def test_validate_parity_artifacts_passes_for_matching_lock(tmp_path: Path) -> None:
     mod = _load_module("validate_parity_artifacts.py")
 
@@ -140,17 +150,16 @@ def test_validate_parity_artifacts_fails_on_commit_mismatch(tmp_path: Path) -> N
     assert any("commit mismatch" in failure for failure in failures)
 
 
-def test_checked_in_release_parity_fixtures_validate() -> None:
-    mod = _load_module("validate_parity_artifacts.py")
-    root = Path(__file__).resolve().parents[2]
+def test_generated_release_parity_fixtures_validate(tmp_path: Path) -> None:
+    generator = _load_module("generate_release_parity_fixtures.py")
+    validator = _load_module("validate_parity_artifacts.py")
+    repo_root = _fixture_repo_root(tmp_path)
+    run_paths, aggregate_path = generator.generate_release_parity_fixtures(repo_root=repo_root)
 
-    failures, report = mod.validate_parity_artifacts(
-        run_paths=[
-            root / "reports/parity/runs/dreamer_atari100k.json",
-            root / "reports/parity/runs/tdmpc2_dmcontrol39.json",
-        ],
-        aggregate_path=root / "reports/parity/aggregate.json",
-        lock_path=root / "reports/parity/upstream_lock.json",
+    failures, report = validator.validate_parity_artifacts(
+        run_paths=run_paths,
+        aggregate_path=aggregate_path,
+        lock_path=repo_root / "reports" / "parity" / "upstream_lock.json",
         required_suites=["dreamer_atari100k", "tdmpc2_dmcontrol39"],
         max_missing_pairs=0,
     )
@@ -159,17 +168,24 @@ def test_checked_in_release_parity_fixtures_validate() -> None:
     assert report["success"] is True
 
 
-def test_checked_in_release_parity_fixtures_are_labeled_not_proof() -> None:
-    root = Path(__file__).resolve().parents[2]
-    run_payload = json.loads(
-        (root / "reports/parity/runs/dreamer_atari100k.json").read_text(encoding="utf-8")
-    )
-    aggregate_payload = json.loads(
-        (root / "reports/parity/aggregate.json").read_text(encoding="utf-8")
-    )
+def test_generated_release_parity_fixtures_are_labeled_not_proof(tmp_path: Path) -> None:
+    generator = _load_module("generate_release_parity_fixtures.py")
+    repo_root = _fixture_repo_root(tmp_path)
+    run_paths, aggregate_path = generator.generate_release_parity_fixtures(repo_root=repo_root)
+    run_payload = json.loads(run_paths[0].read_text(encoding="utf-8"))
+    aggregate_payload = json.loads(aggregate_path.read_text(encoding="utf-8"))
 
     assert run_payload["release_fixture"]["classification"] == "release_gate_fixture"
     assert run_payload["release_fixture"]["proof_claim_allowed"] is False
     assert "not proof-grade evidence" in run_payload["release_fixture"]["note"].lower()
     assert aggregate_payload["release_fixture"]["classification"] == "release_gate_fixture"
     assert aggregate_payload["release_fixture"]["public_claims_allowed"] is False
+
+
+def test_generate_release_parity_fixtures_stays_within_repo_root(tmp_path: Path) -> None:
+    generator = _load_module("generate_release_parity_fixtures.py")
+    repo_root = _fixture_repo_root(tmp_path)
+    run_paths, aggregate_path = generator.generate_release_parity_fixtures(repo_root=repo_root)
+
+    for path in [*run_paths, aggregate_path]:
+        path.resolve().relative_to(repo_root.resolve())
