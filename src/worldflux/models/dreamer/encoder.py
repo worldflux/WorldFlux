@@ -1,5 +1,7 @@
 """Encoder modules for DreamerV3."""
 
+from __future__ import annotations
+
 import torch.nn as nn
 from torch import Tensor
 

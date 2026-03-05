@@ -1,5 +1,7 @@
 """Latent space implementations for different world model architectures."""
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 
 import torch

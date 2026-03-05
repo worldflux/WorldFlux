@@ -1,5 +1,7 @@
 """TD-MPC2 Encoder."""
 
+from __future__ import annotations
+
 import torch.nn as nn
 from torch import Tensor
 

@@ -1,5 +1,7 @@
 """TD-MPC2 world model."""
 
+from __future__ import annotations
+
 from .dynamics import Dynamics
 from .encoder import MLPEncoder
 from .heads import PolicyHead, QEnsemble, QNetwork, RewardHead

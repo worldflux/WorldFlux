@@ -24,6 +24,8 @@ Aliases:
     - "jepa", "vjepa2", "token", "diffusion"
 """
 
+from __future__ import annotations
+
 from .core import (
     ACTION_COMPONENTS_KEY,
     PLANNER_HORIZON_KEY,

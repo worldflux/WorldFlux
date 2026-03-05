@@ -1,5 +1,7 @@
 """World model implementations."""
 
+from __future__ import annotations
+
 from .diffusion import DiffusionWorldModel
 from .dit import DiTSkeletonWorldModel  # noqa: F401 — skeleton, non-public
 from .dreamer import DreamerV3WorldModel

@@ -1,5 +1,7 @@
 """WorldFlux upstream-parity harness utilities."""
 
+from __future__ import annotations
+
 from .badge import generate_badge_svg, save_badge
 from .campaign import (
     CampaignRunOptions,

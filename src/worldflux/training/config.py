@@ -1,5 +1,7 @@
 """Training configuration for WorldFlux."""
 
+from __future__ import annotations
+
 import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -146,7 +148,7 @@ class TrainingConfig:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> "TrainingConfig":
+    def from_dict(cls, d: dict[str, Any]) -> TrainingConfig:
         """Create config from dictionary."""
         return cls(**d)
 
@@ -158,7 +160,7 @@ class TrainingConfig:
             json.dump(self.to_dict(), f, indent=2)
 
     @classmethod
-    def load(cls, path: str | Path) -> "TrainingConfig":
+    def load(cls, path: str | Path) -> TrainingConfig:
         """Load config from JSON file."""
         with open(path) as f:
             d = json.load(f)
@@ -172,7 +174,7 @@ class TrainingConfig:
             return "cuda" if torch.cuda.is_available() else "cpu"
         return self.device
 
-    def with_updates(self, **kwargs: Any) -> "TrainingConfig":
+    def with_updates(self, **kwargs: Any) -> TrainingConfig:
         """Return a new config with updated values.
 
         Args:

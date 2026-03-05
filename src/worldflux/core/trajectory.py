@@ -1,5 +1,7 @@
 """Trajectory representation for imagination rollouts."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 
 import torch
@@ -114,7 +116,7 @@ class Trajectory:
         """Stack a specific state tensor key across time [T+1, batch, ...]."""
         return torch.stack([s.tensors[key] for s in self.states], dim=0)
 
-    def to(self, device: torch.device) -> "Trajectory":
+    def to(self, device: torch.device) -> Trajectory:
         return Trajectory(
             states=[s.to(device) for s in self.states],
             actions=self.actions.to(device),
@@ -125,7 +127,7 @@ class Trajectory:
             sequence_layout=self.sequence_layout,
         )
 
-    def detach(self) -> "Trajectory":
+    def detach(self) -> Trajectory:
         return Trajectory(
             states=[s.detach() for s in self.states],
             actions=self.actions.detach(),

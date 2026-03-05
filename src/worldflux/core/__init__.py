@@ -1,5 +1,7 @@
 """Core components for world models."""
 
+from __future__ import annotations
+
 from .batch import (
     Batch,
     BatchProvider,

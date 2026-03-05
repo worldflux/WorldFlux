@@ -1,5 +1,7 @@
 """Telemetry helpers."""
 
+from __future__ import annotations
+
 from .wasr import (
     OPTIONAL_EVENT_FIELDS,
     REQUIRED_EVENT_FIELDS,
