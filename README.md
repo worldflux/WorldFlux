@@ -44,7 +44,7 @@ trajectory = model.rollout(state, actions)  # imagine 15 steps ahead
 ```
 
 - **Swap components independently** with the 5-layer pluggable architecture
-- **Parity verified** against official implementations via [statistical equivalence testing](https://worldflux.ai/reference/parity/) — not just "it trains"
+- **Reference families parity-verified** against official implementations via [statistical equivalence testing](https://worldflux.ai/reference/parity/) — not just "it trains"
 - **Training infrastructure** with replay buffers, checkpointing, and callbacks
 - **One API** — `encode()`, `transition()`, `decode()`, `rollout()` — works across all model families
 

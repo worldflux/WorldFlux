@@ -1373,7 +1373,7 @@ class TestVerifyFormatOptions:
             demo=True,
             elapsed_seconds=3.1,
             stats={"samples": 500, "mean_drop_ratio": 0.01},
-            verdict_reason="Demo mode: synthetic pass",
+            verdict_reason="Synthetic demo mode: example pass (not proof)",
         )
         monkeypatch.setattr(cli.ParityVerifier, "run", classmethod(lambda cls, **kw: fake_result))
         # Force proof mode
@@ -1384,3 +1384,4 @@ class TestVerifyFormatOptions:
         assert result.exit_code == 0
         output = result.output
         assert '"passed": true' in output or '"passed":true' in output
+        assert '"synthetic_provenance"' in output

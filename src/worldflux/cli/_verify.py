@@ -25,12 +25,16 @@ def verify(
         "official/dreamerv3", "--baseline", help="Baseline to compare against."
     ),
     env: str = typer.Option("atari/pong", "--env", help="Target simulation environment."),
-    demo: bool = typer.Option(False, "--demo", help="Mock mode for demonstrations and VC pitches."),
+    demo: bool = typer.Option(
+        False,
+        "--demo",
+        help="Synthetic demonstration mode for pitches and screenshots. Never use as proof.",
+    ),
     device: str = typer.Option("cpu", "--device", help="Execution device."),
     mode: str = typer.Option(
         "auto",
         "--mode",
-        help="Verification mode: auto, quick, proof, or cloud.",
+        help="Verification mode: auto, quick, proof, or cloud (experimental).",
     ),
     format: str = typer.Option(
         "rich", "--format", help="Output format: rich (default), json, or badge."
@@ -107,7 +111,7 @@ def verify(
     console.print(
         key_value_panel(
             {
-                "Mode": "demo (synthetic)" if demo else "proof",
+                "Mode": "demo (synthetic, not proof)" if demo else "proof",
                 "Target": target,
                 "Baseline": baseline,
                 "Env": env,
@@ -163,7 +167,13 @@ def verify(
         return
 
     stats = result.stats
-    if result.passed:
+    if result.demo:
+        title = (
+            "\u2713 SYNTHETIC DEMO: Example parity report"
+            if result.passed
+            else "\u2717 SYNTHETIC DEMO: Example parity failure"
+        )
+    elif result.passed:
         title = "\u2713 PASS: Mathematically Guaranteed Parity"
     else:
         title = "\u2717 FAIL: Parity Threshold Not Met"
@@ -176,6 +186,11 @@ def verify(
         f"[wf.label]Margin:[/wf.label]                     {stats.get('margin_ratio', '-')}",
         f"[wf.label]Elapsed:[/wf.label]                    {result.elapsed_seconds:.3f}s",
     ]
+    if result.demo:
+        lines.insert(
+            0,
+            "[wf.label]Synthetic provenance:[/wf.label]       demo mode (not proof, not publishable evidence)",
+        )
     console.print(result_banner(passed=result.passed, title=title, lines=lines))
     if result.demo:
         console.print("[wf.muted]Results are synthetic (--demo mode)[/wf.muted]")
@@ -418,6 +433,12 @@ def _write_proof_evidence_bundle(*, output_dir: Path, result: VerifyResult, mode
         "stats": dict(result.stats),
         "verdict_reason": result.verdict_reason,
     }
+    if result.demo:
+        result_payload["synthetic_provenance"] = {
+            "kind": "demo",
+            "not_for_proof": True,
+            "label": "synthetic demonstration output",
+        }
     _write_evidence_manifest(
         output_dir=output_dir,
         mode=mode,
@@ -442,7 +463,7 @@ def _run_cloud_verify(
     output: Path | None,
     evidence_bundle: Path | None,
 ) -> None:
-    """Execute cloud verification mode through WorldFlux Cloud API."""
+    """Execute experimental cloud verification mode through WorldFlux Cloud API."""
     from worldflux.cloud import WorldFluxCloudClient
 
     client = WorldFluxCloudClient.from_env()
@@ -481,9 +502,9 @@ def _run_cloud_verify(
             console.print(json_payload)
     else:
         title = (
-            "\u2713 PASS: Cloud verification passed"
+            "\u2713 PASS: Experimental cloud verification passed"
             if passed
-            else "\u2717 FAIL: Cloud verification failed"
+            else "\u2717 FAIL: Experimental cloud verification failed"
         )
         lines = [
             f"[wf.label]Target:[/wf.label]    {response.get('target')}",
@@ -519,6 +540,12 @@ def _emit_verify_json(result: VerifyResult, output: Path | None) -> None:
         "stats": result.stats,
         "verdict_reason": result.verdict_reason,
     }
+    if result.demo:
+        payload["synthetic_provenance"] = {
+            "kind": "demo",
+            "not_for_proof": True,
+            "label": "synthetic demonstration output",
+        }
     json_str = json.dumps(payload, indent=2)
     if output is not None:
         output.parent.mkdir(parents=True, exist_ok=True)

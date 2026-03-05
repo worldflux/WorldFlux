@@ -1,4 +1,4 @@
-"""Cloud commands: login, jobs, logs, pull."""
+"""Experimental cloud commands: login, jobs, logs, pull."""
 
 from __future__ import annotations
 
@@ -10,17 +10,17 @@ from ._app import app, console
 from ._rich_output import key_value_panel
 
 
-@app.command(rich_help_panel="Cloud")
+@app.command(rich_help_panel="Cloud (Experimental)")
 def login(
     api_key: str = typer.Option(
         ...,
         "--api-key",
-        help="WorldFlux Cloud API key.",
+        help="WorldFlux Cloud API key for experimental cloud workflows.",
         prompt=True,
         hide_input=True,
     ),
 ) -> None:
-    """Store WorldFlux Cloud API credentials for CLI usage.
+    """Store WorldFlux Cloud API credentials for experimental CLI usage.
 
     [dim]Examples:[/dim]
       worldflux login --api-key sk-...
@@ -36,9 +36,9 @@ def login(
     console.print("[wf.ok]Cloud credentials saved.[/wf.ok]")
 
 
-@app.command(rich_help_panel="Cloud")
+@app.command(rich_help_panel="Cloud (Experimental)")
 def jobs() -> None:
-    """List cloud training jobs.
+    """List experimental cloud training jobs.
 
     [dim]Examples:[/dim]
       worldflux jobs
@@ -72,12 +72,12 @@ def jobs() -> None:
     console.print(key_value_panel(data, title="Cloud Jobs", border="wf.border"))
 
 
-@app.command(rich_help_panel="Cloud")
+@app.command(rich_help_panel="Cloud (Experimental)")
 def logs(
     job_id: str = typer.Argument(..., help="Cloud job ID."),
     limit: int = typer.Option(200, "--limit", help="Maximum log lines to fetch."),
 ) -> None:
-    """Show cloud job logs.
+    """Show experimental cloud job logs.
 
     [dim]Examples:[/dim]
       worldflux logs <job-id>
@@ -105,12 +105,12 @@ def logs(
         console.print(line)
 
 
-@app.command(rich_help_panel="Cloud")
+@app.command(rich_help_panel="Cloud (Experimental)")
 def pull(
     job_id: str = typer.Argument(..., help="Cloud job ID."),
     output_dir: Path = typer.Option(Path("./outputs/cloud"), "--output-dir", "-o"),
 ) -> None:
-    """Pull cloud artifact manifest for a job.
+    """Pull an experimental cloud artifact manifest for a job.
 
     [dim]Examples:[/dim]
       worldflux pull <job-id>

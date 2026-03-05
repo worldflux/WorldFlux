@@ -56,7 +56,7 @@ class ParityVerifier:
         env:
             Target simulation environment.
         demo:
-            When *True*, return synthetic results suitable for demonstrations.
+            When *True*, return synthetic results suitable for demonstrations only.
         device:
             Execution device string.
         """
@@ -209,7 +209,7 @@ class ParityVerifier:
                 "tost_p_value": tost_p,
                 "device": device,
             },
-            verdict_reason="Demo mode: synthetic pass",
+            verdict_reason="Synthetic demo mode: example pass (not proof)",
         )
 
     @classmethod
