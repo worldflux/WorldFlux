@@ -162,7 +162,7 @@ list_models(verbose=True)
 #     ...
 # }
 
-# Filter to production-ready models only
+# Filter to reference models only
 list_models(maturity="reference")
 ```
 

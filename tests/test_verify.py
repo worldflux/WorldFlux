@@ -134,7 +134,7 @@ class TestVerifyCLI:
                 "bayesian_equivalence_hdi": 0.985,
                 "tost_p_value": 0.012,
             },
-            verdict_reason="Demo mode: synthetic pass",
+            verdict_reason="Synthetic demo mode: example pass (not proof)",
         )
         monkeypatch.setattr(ParityVerifier, "run", classmethod(lambda cls, **kw: fake_result))
 
@@ -142,8 +142,8 @@ class TestVerifyCLI:
 
         result = runner.invoke(app, ["verify", "--target", "m.pt", "--mode", "proof", "--demo"])
         assert result.exit_code == 0
-        assert "PASS" in result.output
-        assert "Mathematically Guaranteed Parity" in result.output
+        assert "SYNTHETIC DEMO" in result.output
+        assert "not proof" in result.output
         assert "Bayesian Equivalence HDI" in result.output
         assert "TOST p-value" in result.output
 
@@ -171,7 +171,7 @@ class TestVerifyCLI:
 
         result = runner.invoke(app, ["verify", "--target", "m.pt", "--mode", "proof", "--demo"])
         assert result.exit_code == 1
-        assert "FAIL" in result.output
+        assert "SYNTHETIC DEMO" in result.output
 
     def test_target_required(self, runner: CliRunner) -> None:
         from worldflux.cli import app

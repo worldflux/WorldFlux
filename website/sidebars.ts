@@ -35,7 +35,7 @@ const sidebars: SidebarsConfig = {
         'guides/training-observability',
       ],
     },
-    // Tutorials hidden until content is production-ready (see tutorial-policy.md)
+    // Tutorials hidden until content is release-ready (see tutorial-policy.md)
     // {
     //   type: 'category',
     //   label: 'Tutorials',

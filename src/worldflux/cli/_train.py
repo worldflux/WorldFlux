@@ -43,7 +43,7 @@ def train(
     cloud: bool = typer.Option(
         False,
         "--cloud",
-        help="Submit a cloud training job instead of running local training.",
+        help="Submit an experimental cloud training job instead of running local training.",
     ),
     gpu: str | None = typer.Option(
         None,

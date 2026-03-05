@@ -16,13 +16,14 @@ app = typer.Typer(
         "  List models      → worldflux models list\n"
         "  Evaluate         → worldflux eval ./outputs --suite quick\n"
         "  System info      → worldflux doctor\n"
-        "  Docs             → https://worldflux.ai/[/dim]"
+        "  Docs             → https://worldflux.ai/\n"
+        "  Cloud (exp.)     → worldflux jobs[/dim]"
     ),
     rich_markup_mode="rich",
     no_args_is_help=True,
 )
 parity_app = typer.Typer(
-    help="Verify model outputs match upstream reference implementations.",
+    help="Verify reference-family outputs match upstream implementations.",
     rich_markup_mode="rich",
 )
 parity_campaign_app = typer.Typer(help="Run reproducible parity campaigns.")

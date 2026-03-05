@@ -1,4 +1,4 @@
-"""Minimal HTTP client for WorldFlux Cloud APIs."""
+"""Experimental HTTP client for WorldFlux Cloud APIs."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from .auth import get_api_key, set_api_key
 
 
 class WorldFluxCloudClient:
-    """Small JSON-over-HTTP client for cloud training and verification."""
+    """Small JSON-over-HTTP client for experimental cloud training and verification."""
 
     def __init__(self, *, base_url: str, api_key: str | None = None, timeout_sec: int = 30):
         self.base_url = base_url.rstrip("/")
