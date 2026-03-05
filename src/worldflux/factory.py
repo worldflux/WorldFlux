@@ -22,6 +22,8 @@ Example:
     print(list_models())
 """
 
+from __future__ import annotations
+
 import warnings
 from typing import Any
 
@@ -392,6 +394,11 @@ def list_models(
     if maturity is not None:
         maturity = maturity.lower()
         catalog = {k: v for k, v in catalog.items() if v.get("maturity") == maturity}
+    else:
+        # Default: exclude skeleton models (use maturity="skeleton" to see them)
+        catalog = {
+            k: v for k, v in catalog.items() if v.get("maturity") != ModelMaturity.SKELETON.value
+        }
     if verbose:
         return catalog
     return list(catalog.keys())
