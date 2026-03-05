@@ -19,6 +19,8 @@ worldflux parity report --aggregate reports/parity/aggregate.json --output repor
 
 Legacy parity uses the `src/worldflux/parity/*` harness and non-inferiority verdicts.
 It is not the source of truth for official equivalence proof.
+The release workflow also regenerates deterministic fixtures under `reports/parity/fixtures/`
+so local dry-runs stay reproducible. Those fixtures are not proof-grade evidence.
 
 ## Proof-Grade Official Equivalence Path
 

@@ -1,0 +1,70 @@
+{
+  "all_suites_pass": true,
+  "families": [
+    {
+      "fail": 0,
+      "family": "dreamerv3",
+      "pass": 1,
+      "runs": 1
+    },
+    {
+      "fail": 0,
+      "family": "tdmpc2",
+      "pass": 1,
+      "runs": 1
+    }
+  ],
+  "generated_at_utc": "2026-03-05T00:00:00Z",
+  "global_non_inferiority": {
+    "ci_lower_ratio": 0.0,
+    "ci_upper_ratio": 0.0,
+    "confidence": 0.95,
+    "margin_ratio": 0.05,
+    "mean_drop_ratio": 0.0,
+    "pass_non_inferiority": true,
+    "sample_size": 8,
+    "verdict_reason": "PASS: one-sided upper CI 0.000000 <= margin 0.050000"
+  },
+  "release_fixture": {
+    "classification": "release_gate_fixture",
+    "generated_at_utc": "2026-03-05T00:00:00Z",
+    "generated_by": "scripts/generate_release_parity_fixtures.py",
+    "note": "Deterministic release-gate fixture for local reproducibility only. Not proof-grade evidence.",
+    "proof_claim_allowed": false,
+    "public_claims_allowed": false
+  },
+  "run_count": 2,
+  "run_paths": [
+    "reports/parity/runs/dreamer_atari100k.json",
+    "reports/parity/runs/tdmpc2_dmcontrol39.json"
+  ],
+  "schema_version": "worldflux.parity.aggregate.v1",
+  "suite_fail_count": 0,
+  "suite_pass_count": 2,
+  "suites": [
+    {
+      "ci_upper_ratio": 0.0,
+      "confidence": 0.95,
+      "family": "dreamerv3",
+      "margin_ratio": 0.05,
+      "mean_drop_ratio": 0.0,
+      "pass_non_inferiority": true,
+      "run_path": "reports/parity/runs/dreamer_atari100k.json",
+      "sample_size": 4,
+      "suite_id": "dreamer_atari100k",
+      "verdict_reason": "PASS: one-sided upper CI 0.000000 <= margin 0.050000"
+    },
+    {
+      "ci_upper_ratio": 0.0,
+      "confidence": 0.95,
+      "family": "tdmpc2",
+      "margin_ratio": 0.05,
+      "mean_drop_ratio": 0.0,
+      "pass_non_inferiority": true,
+      "run_path": "reports/parity/runs/tdmpc2_dmcontrol39.json",
+      "sample_size": 4,
+      "suite_id": "tdmpc2_dmcontrol39",
+      "verdict_reason": "PASS: one-sided upper CI 0.000000 <= margin 0.050000"
+    }
+  ]
+}

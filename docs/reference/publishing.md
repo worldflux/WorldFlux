@@ -9,6 +9,7 @@ WorldFlux uses PyPI Trusted Publishing (OIDC) from GitHub Actions.
 - Validate fixed parity artifacts (`DreamerV3` + `TD-MPC2`) before build/publish.
 - Validate parity suite policy (`reports/parity/suite_policy.json`) against lock + aggregate before build/publish.
 - Generate verification report artifacts (`verification-report.json` / `.md`) and attach to release workflow artifacts.
+- The release dry-run regenerates deterministic parity fixtures for local reproducibility; those fixtures are not proof-grade evidence.
 - Publish in separate jobs with `id-token: write`.
 - No PyPI API token/password is required in GitHub secrets.
 
@@ -31,8 +32,8 @@ For TestPyPI, repeat the same setup on TestPyPI and map the `testpypi` environme
 
 1. Ensure CI is green on `main`.
 2. Update `CHANGELOG.md` and version metadata.
-3. Validate release metadata locally:
-   - `uv run python scripts/check_release_metadata.py --tag vX.Y.Z`
+3. Run the canonical local dry-run:
+   - `uv run python scripts/run_release_dry_run.py --tag vX.Y.Z --profile full`
 4. (Optional) Run parity pipeline report generation:
    - `uv run bash scripts/parity/fetch_oracles.sh --oracle-root /root/oracles --dreamer-commit <sha> --tdmpc2-commit <sha> --copy-to artifacts/upstream`
    - `worldflux parity campaign run benchmarks/parity/campaign/dreamer_atari100k.yaml --mode worldflux --device cuda --seeds 0,1,2,3,4 --resume`
@@ -40,7 +41,8 @@ For TestPyPI, repeat the same setup on TestPyPI and map the `testpypi` environme
    - `worldflux parity run ...`
    - `worldflux parity aggregate ...`
    - `worldflux parity report ...`
-5. Validate release parity gate against fixed artifacts:
+5. If you need to inspect individual release gates manually, validate release parity gate against fixed artifacts:
+   - `uv run python scripts/generate_release_parity_fixtures.py`
    - `uv run python scripts/validate_parity_artifacts.py --run reports/parity/runs/dreamer_atari100k.json --run reports/parity/runs/tdmpc2_dmcontrol39.json --aggregate reports/parity/aggregate.json --lock reports/parity/upstream_lock.json --required-suite dreamer_atari100k --required-suite tdmpc2_dmcontrol39 --max-missing-pairs 0`
 6. Validate suite policy gate:
    - `uv run python scripts/check_parity_suite_coverage.py --policy reports/parity/suite_policy.json --lock reports/parity/upstream_lock.json --aggregate reports/parity/aggregate.json --enforce-pass`

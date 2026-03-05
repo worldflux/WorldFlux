@@ -25,8 +25,8 @@ def test_check_release_metadata_normalizes_tags() -> None:
 
 def test_generate_verification_report_parses_check_entries() -> None:
     mod = _load_module("generate_verification_report.py")
-    parsed = mod._parse_check("docs_strict=pass")
-    assert parsed["name"] == "docs_strict"
+    parsed = mod._parse_check("docs_build=pass")
+    assert parsed["name"] == "docs_build"
     assert parsed["status"] == "pass"
 
 

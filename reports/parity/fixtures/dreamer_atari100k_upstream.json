@@ -1,0 +1,28 @@
+{
+  "scores": [
+    {
+      "score": 30.0,
+      "seed": 0,
+      "step": 100000,
+      "task": "atari_freeway"
+    },
+    {
+      "score": 31.0,
+      "seed": 1,
+      "step": 100000,
+      "task": "atari_freeway"
+    },
+    {
+      "score": 20.0,
+      "seed": 0,
+      "step": 100000,
+      "task": "atari_pong"
+    },
+    {
+      "score": 22.0,
+      "seed": 1,
+      "step": 100000,
+      "task": "atari_pong"
+    }
+  ]
+}

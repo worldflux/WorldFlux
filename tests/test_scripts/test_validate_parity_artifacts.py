@@ -138,3 +138,38 @@ def test_validate_parity_artifacts_fails_on_commit_mismatch(tmp_path: Path) -> N
     )
     assert report["success"] is False
     assert any("commit mismatch" in failure for failure in failures)
+
+
+def test_checked_in_release_parity_fixtures_validate() -> None:
+    mod = _load_module("validate_parity_artifacts.py")
+    root = Path(__file__).resolve().parents[2]
+
+    failures, report = mod.validate_parity_artifacts(
+        run_paths=[
+            root / "reports/parity/runs/dreamer_atari100k.json",
+            root / "reports/parity/runs/tdmpc2_dmcontrol39.json",
+        ],
+        aggregate_path=root / "reports/parity/aggregate.json",
+        lock_path=root / "reports/parity/upstream_lock.json",
+        required_suites=["dreamer_atari100k", "tdmpc2_dmcontrol39"],
+        max_missing_pairs=0,
+    )
+
+    assert failures == []
+    assert report["success"] is True
+
+
+def test_checked_in_release_parity_fixtures_are_labeled_not_proof() -> None:
+    root = Path(__file__).resolve().parents[2]
+    run_payload = json.loads(
+        (root / "reports/parity/runs/dreamer_atari100k.json").read_text(encoding="utf-8")
+    )
+    aggregate_payload = json.loads(
+        (root / "reports/parity/aggregate.json").read_text(encoding="utf-8")
+    )
+
+    assert run_payload["release_fixture"]["classification"] == "release_gate_fixture"
+    assert run_payload["release_fixture"]["proof_claim_allowed"] is False
+    assert "not proof-grade evidence" in run_payload["release_fixture"]["note"].lower()
+    assert aggregate_payload["release_fixture"]["classification"] == "release_gate_fixture"
+    assert aggregate_payload["release_fixture"]["public_claims_allowed"] is False

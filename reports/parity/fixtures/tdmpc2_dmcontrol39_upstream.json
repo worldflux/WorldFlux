@@ -1,0 +1,28 @@
+{
+  "scores": [
+    {
+      "score": 710.0,
+      "seed": 1,
+      "step": 4000000,
+      "task": "cheetah-run"
+    },
+    {
+      "score": 720.0,
+      "seed": 2,
+      "step": 4000000,
+      "task": "cheetah-run"
+    },
+    {
+      "score": 850.0,
+      "seed": 1,
+      "step": 4000000,
+      "task": "dog-run"
+    },
+    {
+      "score": 870.0,
+      "seed": 2,
+      "step": 4000000,
+      "task": "dog-run"
+    }
+  ]
+}

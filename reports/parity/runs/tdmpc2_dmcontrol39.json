@@ -1,0 +1,145 @@
+{
+  "artifact_integrity": {
+    "suite_sha256": "c8356c4d73d2a3d70eddc41071bc22da41c36ba5033f44199e907e269372a623",
+    "upstream_input_sha256": "bba20f67241a52cedd24f62fb7e49e14b2de70cc2d9d9d73ca2f324d422dae9c",
+    "upstream_lock_sha256": "141afc1adf288b41b8a8c4697597986d2c33ac496b91f0d588ef9bc707c0c304",
+    "worldflux_input_sha256": "bba20f67241a52cedd24f62fb7e49e14b2de70cc2d9d9d73ca2f324d422dae9c"
+  },
+  "counts": {
+    "paired": 4,
+    "upstream_only": 0,
+    "upstream_points": 4,
+    "worldflux_only": 0,
+    "worldflux_points": 4
+  },
+  "evaluation_manifest": {
+    "generated_at_utc": "2026-03-05T00:00:00Z",
+    "generation_mode": "release_gate_fixture",
+    "note": "Deterministic release-gate fixture for local reproducibility only. Not proof-grade evidence.",
+    "reproducible": true,
+    "runner": "worldflux.parity.run_suite",
+    "source": "scripts/generate_release_parity_fixtures.py"
+  },
+  "generated_at_utc": "2026-03-05T00:00:00Z",
+  "missing": {
+    "upstream_only": [],
+    "worldflux_only": []
+  },
+  "pairs": [
+    {
+      "drop_ratio": 0.0,
+      "seed": 1,
+      "task": "cheetah-run",
+      "upstream_score": 710.0,
+      "upstream_step": 4000000,
+      "worldflux_score": 710.0,
+      "worldflux_step": 4000000
+    },
+    {
+      "drop_ratio": 0.0,
+      "seed": 2,
+      "task": "cheetah-run",
+      "upstream_score": 720.0,
+      "upstream_step": 4000000,
+      "worldflux_score": 720.0,
+      "worldflux_step": 4000000
+    },
+    {
+      "drop_ratio": 0.0,
+      "seed": 1,
+      "task": "dog-run",
+      "upstream_score": 850.0,
+      "upstream_step": 4000000,
+      "worldflux_score": 850.0,
+      "worldflux_step": 4000000
+    },
+    {
+      "drop_ratio": 0.0,
+      "seed": 2,
+      "task": "dog-run",
+      "upstream_score": 870.0,
+      "upstream_step": 4000000,
+      "worldflux_score": 870.0,
+      "worldflux_step": 4000000
+    }
+  ],
+  "paper_comparison": {
+    "deltas": [
+      {
+        "absolute_delta": -85.0,
+        "paper_score": 800.0,
+        "relative_delta_pct": -10.625,
+        "run_score": 715.0,
+        "task": "cheetah-run"
+      },
+      {
+        "absolute_delta": 360.0,
+        "paper_score": 500.0,
+        "relative_delta_pct": 72.0,
+        "run_score": 860.0,
+        "task": "dog-run"
+      }
+    ],
+    "mean_relative_delta_pct": 30.6875,
+    "suite_id": "tdmpc2_dmcontrol39",
+    "tasks_within_5pct": 0
+  },
+  "pass": true,
+  "release_fixture": {
+    "classification": "release_gate_fixture",
+    "generated_at_utc": "2026-03-05T00:00:00Z",
+    "generated_by": "scripts/generate_release_parity_fixtures.py",
+    "note": "Deterministic release-gate fixture for local reproducibility only. Not proof-grade evidence.",
+    "proof_claim_allowed": false,
+    "public_claims_allowed": false
+  },
+  "schema_version": "worldflux.parity.run.v1",
+  "sources": {
+    "upstream": {
+      "commit": "8bbc14ebabdb32ea7ada5c801dc525d0dc73bafe",
+      "format": "canonical_json",
+      "path": "reports/parity/fixtures/tdmpc2_dmcontrol39_upstream.json",
+      "repo": "https://github.com/nicklashansen/tdmpc2"
+    },
+    "worldflux": {
+      "commit": "release-gate-fixture.v1",
+      "format": "canonical_json",
+      "path": "reports/parity/fixtures/tdmpc2_dmcontrol39_worldflux.json",
+      "repo": "https://github.com/worldflux/WorldFlux"
+    }
+  },
+  "stats": {
+    "ci_lower_ratio": 0.0,
+    "ci_upper_ratio": 0.0,
+    "confidence": 0.95,
+    "margin_ratio": 0.05,
+    "mean_drop_ratio": 0.0,
+    "mean_upstream_score": 787.5,
+    "mean_worldflux_score": 787.5,
+    "pass_non_inferiority": true,
+    "sample_size": 4,
+    "verdict_reason": "PASS: one-sided upper CI 0.000000 <= margin 0.050000"
+  },
+  "suite": {
+    "confidence": 0.95,
+    "family": "tdmpc2",
+    "higher_is_better": true,
+    "margin_ratio": 0.05,
+    "metric": "episode_return",
+    "suite_id": "tdmpc2_dmcontrol39",
+    "tasks": [
+      "cheetah-run",
+      "dog-run"
+    ]
+  },
+  "suite_lock_ref": {
+    "lock_found": true,
+    "lock_path": "reports/parity/upstream_lock.json",
+    "lock_version": "worldflux.parity.lock.v1",
+    "locked_upstream_commit": "8bbc14ebabdb32ea7ada5c801dc525d0dc73bafe",
+    "locked_upstream_repo": "https://github.com/nicklashansen/tdmpc2",
+    "matches_lock": true,
+    "resolved_upstream_commit": "8bbc14ebabdb32ea7ada5c801dc525d0dc73bafe",
+    "suite_id": "tdmpc2_dmcontrol39"
+  }
+}

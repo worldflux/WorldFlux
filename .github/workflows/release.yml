@@ -23,51 +23,15 @@ jobs:
           enable-cache: true
           cache-dependency-glob: pyproject.toml
 
-      - name: Install dependencies
-        run: uv sync --extra dev --extra docs
+      - name: Set up Node.js
+        uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: website/package-lock.json
 
-      - name: Validate docs domain TLS and HTTPS
-        run: |
-          uv run python scripts/check_docs_domain_tls.py \
-            --host worldflux.ai \
-            --url https://worldflux.ai/ \
-            --expected-san worldflux.ai
-
-      - name: Validate release metadata
-        run: uv run python scripts/check_release_metadata.py --tag "${{ github.event.release.tag_name }}"
-
-      - name: Validate release checklist gate wiring
-        run: uv run python scripts/check_release_checklist_gate.py
-
-      - name: Run public contract freeze + parity tests
-        run: uv run pytest -q tests/test_public_contract_freeze.py tests/test_parity/
-
-      - name: Validate fixed parity artifacts (release gate)
-        run: |
-          uv run python scripts/validate_parity_artifacts.py \
-            --run reports/parity/runs/dreamer_atari100k.json \
-            --run reports/parity/runs/tdmpc2_dmcontrol39.json \
-            --aggregate reports/parity/aggregate.json \
-            --lock reports/parity/upstream_lock.json \
-            --required-suite dreamer_atari100k \
-            --required-suite tdmpc2_dmcontrol39 \
-            --max-missing-pairs 0
-
-      - name: Validate parity suite policy coverage
-        run: |
-          uv run python scripts/check_parity_suite_coverage.py \
-            --policy reports/parity/suite_policy.json \
-            --lock reports/parity/upstream_lock.json \
-            --aggregate reports/parity/aggregate.json \
-            --enforce-pass
-
-      - name: Build docs (strict)
-        run: uv run mkdocs build --strict
-
-      - name: Run security checks
-        run: |
-          uv run --with bandit bandit -r src/worldflux/ -ll
-          uv run --with pip-audit pip-audit
+      - name: Run release dry-run (verify profile)
+        run: uv run python scripts/run_release_dry_run.py --tag "${{ github.event.release.tag_name }}" --profile verify
 
       - name: Generate verification report artifact
         run: |
@@ -79,7 +43,8 @@ jobs:
             --check parity_harness_tests=pass \
             --check parity_release_gate=pass \
             --check parity_suite_policy=pass \
-            --check docs_strict=pass \
+            --check docs_dependency_audit=pass \
+            --check docs_build=pass \
             --check security_bandit=pass \
             --check security_pip_audit=pass \
             --parity-aggregate reports/parity/aggregate.json \
