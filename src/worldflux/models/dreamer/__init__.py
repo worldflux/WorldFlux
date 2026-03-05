@@ -1,5 +1,7 @@
 """DreamerV3 world model."""
 
+from __future__ import annotations
+
 from .decoder import CNNDecoder, MLPDecoder
 from .encoder import CNNEncoder, MLPEncoder
 from .heads import (

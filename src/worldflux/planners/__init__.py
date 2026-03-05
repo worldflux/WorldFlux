@@ -1,5 +1,7 @@
 """Planning utilities for world models."""
 
+from __future__ import annotations
+
 from .cem import CEMPlanner
 from .interfaces import Planner, PlannerObjective, RewardObjective
 

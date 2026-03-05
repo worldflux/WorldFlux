@@ -1,5 +1,7 @@
 """Recurrent State-Space Model for DreamerV3."""
 
+from __future__ import annotations
+
 import torch
 import torch.nn as nn
 from torch import Tensor

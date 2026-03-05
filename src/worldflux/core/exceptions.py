@@ -1,5 +1,7 @@
 """Custom exceptions for WorldFlux."""
 
+from __future__ import annotations
+
 
 class WorldFluxError(Exception):
     """Base exception for all WorldFlux errors."""

@@ -1,5 +1,7 @@
 """Training infrastructure for WorldFlux."""
 
+from __future__ import annotations
+
 from .backend import JobHandle, JobStatus, LocalBackend, TrainingBackend
 from .callbacks import (
     Callback,

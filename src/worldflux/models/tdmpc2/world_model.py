@@ -1,5 +1,7 @@
 """TD-MPC2 World Model implementation."""
 
+from __future__ import annotations
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -32,7 +34,7 @@ from .heads import PolicyHead, QEnsemble, RewardHead
 
 
 class _TDMPC2ObservationEncoder(ObservationEncoder):
-    def __init__(self, model: "TDMPC2WorldModel"):
+    def __init__(self, model: TDMPC2WorldModel):
         self.model = model
 
     def encode(self, observations: dict[str, Tensor]) -> State:
@@ -58,7 +60,7 @@ class _TDMPC2ActionConditioner(ActionConditioner):
 
 
 class _TDMPC2Dynamics(DynamicsModel):
-    def __init__(self, model: "TDMPC2WorldModel"):
+    def __init__(self, model: TDMPC2WorldModel):
         self.model = model
 
     def transition(
@@ -77,7 +79,7 @@ class _TDMPC2Dynamics(DynamicsModel):
 
 
 class _TDMPC2Decoder(Decoder):
-    def __init__(self, model: "TDMPC2WorldModel"):
+    def __init__(self, model: TDMPC2WorldModel):
         self.model = model
 
     def decode(self, state: State, conditions: ConditionPayload | None = None) -> dict[str, Tensor]:
