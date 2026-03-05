@@ -17,9 +17,12 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![PyTorch 2.0+](https://img.shields.io/badge/pytorch-2.0+-ee4c2c.svg)](https://pytorch.org/)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![CI](https://github.com/worldflux/WorldFlux/actions/workflows/ci.yml/badge.svg)](https://github.com/worldflux/WorldFlux/actions/workflows/ci.yml)
 [![Type Checked: mypy](https://img.shields.io/badge/type%20checked-mypy-blue.svg)](https://mypy-lang.org/)
 
 </div>
+
+> **Alpha (v0.1.0)** — Under active development. API may change between minor versions.
 
 ---
 
@@ -27,7 +30,7 @@ WorldFlux provides a unified Python interface for world models used in reinforce
 
 ## Why WorldFlux?
 
-World models let RL agents **imagine before acting** — predicting future states, rewards, and outcomes without touching the real environment. This makes them 10-100x more sample efficient than model-free approaches.
+World models let RL agents **imagine before acting** — predicting future states, rewards, and outcomes without touching the real environment. This makes them 10-100x more sample efficient than model-free approaches ([Hafner et al., 2023](https://arxiv.org/abs/2301.04104); [Hansen et al., 2024](https://arxiv.org/abs/2310.16828)).
 
 **The problem**: every research team reimplements the same core components from scratch. DreamerV3, TD-MPC2, JEPA — different codebases, different APIs, incompatible training loops. Want to swap an encoder while keeping DreamerV3's dynamics? Rewrite everything.
 
@@ -41,8 +44,8 @@ trajectory = model.rollout(state, actions)  # imagine 15 steps ahead
 ```
 
 - **Swap components independently** with the 5-layer pluggable architecture
-- **Parity verified** against official implementations (numerical match, not just "it trains")
-- **Production-ready training** with replay buffers, checkpointing, and callbacks
+- **Parity verified** against official implementations via [statistical equivalence testing](https://worldflux.ai/reference/parity/) — not just "it trains"
+- **Training infrastructure** with replay buffers, checkpointing, and callbacks
 - **One API** — `encode()`, `transition()`, `decode()`, `rollout()` — works across all model families
 
 ## Demo
@@ -115,6 +118,12 @@ uv pip install worldflux
 worldflux init my-world-model
 ```
 
+### Verify Environment
+
+```bash
+worldflux doctor
+```
+
 ### Build Docs Locally
 
 ```bash
@@ -184,7 +193,7 @@ import torch
 obs = torch.randn(1, 3, 64, 64)
 state = model.encode(obs)
 
-actions = torch.randn(15, 1, 4)  # [horizon, batch, action_dim]
+actions = torch.randn(15, 1, 6)  # [horizon, batch, action_dim]
 trajectory = model.rollout(state, actions)
 
 print(f"Predicted rewards: {trajectory.rewards.shape}")
@@ -197,7 +206,7 @@ print(f"Continue probs: {trajectory.continues.shape}")
 from worldflux import create_world_model
 from worldflux.training import train, ReplayBuffer
 
-model = create_world_model("dreamerv3:size12m", obs_shape=(4,), action_dim=2)
+model = create_world_model("dreamerv3:size12m", obs_shape=(3, 64, 64), action_dim=6)
 buffer = ReplayBuffer.load("trajectories.npz")
 trained_model = train(model, buffer, total_steps=50_000)
 trained_model.save_pretrained("./my_model")
@@ -205,14 +214,16 @@ trained_model.save_pretrained("./my_model")
 
 ## Available Models
 
-| Family | Presets |
-|--------|---------|
-| DreamerV3 | `size12m`, `size25m`, `size50m`, `size100m`, `size200m` |
-| TD-MPC2 | `5m`, `19m`, `48m`, `317m` |
-| JEPA | `base` |
-| V-JEPA2 | `ci`, `tiny`, `base` |
-| Token | `base` |
-| Diffusion | `base` |
+| Family | Presets | Status |
+|--------|---------|--------|
+| DreamerV3 | `size12m`, `size25m`, `size50m`, `size100m`, `size200m` | Reference |
+| TD-MPC2 | `5m`, `19m`, `48m`, `317m` | Reference |
+| JEPA | `base` | Experimental |
+| V-JEPA2 | `ci`, `tiny`, `base` | Experimental |
+| Token | `base` | Experimental |
+| Diffusion | `base` | Experimental |
+
+> **Reference** models have [parity proofs](https://worldflux.ai/reference/parity/) against official implementations. **Experimental** models implement the full API but are not parity-verified and may return `None` for some predictions (e.g. rewards).
 
 This table lists commonly used presets. For the full catalog (including CI, experimental, and
 skeleton families), run:

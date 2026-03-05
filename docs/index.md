@@ -55,13 +55,13 @@ print(trajectory.rewards.shape)
 
 ## Available Models
 
-| Family | Presets |
-|-------|---------|
-| DreamerV3 | `size12m`, `size25m`, `size50m`, `size100m`, `size200m` |
-| TD-MPC2 | `5m`, `19m`, `48m`, `317m` |
-| JEPA | `base` |
-| Token | `base` |
-| Diffusion | `base` |
+| Family | Presets | Status |
+|-------|---------|--------|
+| DreamerV3 | `size12m`, `size25m`, `size50m`, `size100m`, `size200m` | Reference |
+| TD-MPC2 | `5m`, `19m`, `48m`, `317m` | Reference |
+| JEPA | `base` | Experimental |
+| Token | `base` | Experimental |
+| Diffusion | `base` | Experimental |
 
 This table highlights common presets. For the full model catalog (including CI, experimental,
 and skeleton families), run:

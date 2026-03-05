@@ -1,4 +1,9 @@
-"""Renderer3D skeleton world model."""
+"""Renderer3D skeleton world model.
+
+.. warning::
+    This is a **skeleton implementation** — not for production use.
+    It provides the WorldModel interface but lacks a trained architecture.
+"""
 
 from __future__ import annotations
 

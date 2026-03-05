@@ -40,7 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Q-function ensemble
   - Size presets: 5M, 19M, 48M, 317M parameters
 - Unified `WorldModel` protocol
-  - `encode()`, `predict()`, `observe()`, `decode()`, `imagine()`
+  - `encode()`, `transition()`, `update()`, `decode()`, `rollout()`
 - Training infrastructure
   - `Trainer` class with callbacks
   - `ReplayBuffer` for trajectory data

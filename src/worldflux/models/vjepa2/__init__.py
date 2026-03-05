@@ -1,4 +1,6 @@
-"""V-JEPA2 world model implementation."""
+"""V-JEPA2 world model implementation (experimental)."""
+
+from __future__ import annotations
 
 from .world_model import VJEPA2WorldModel
 

@@ -1,4 +1,10 @@
-"""V-JEPA2-style predictive representation world model."""
+"""V-JEPA2-style predictive representation world model.
+
+.. warning::
+    This is an **experimental implementation** — not for production use.
+    The API may change without notice and parity with the official
+    implementation has not been verified.
+"""
 
 from __future__ import annotations
 
