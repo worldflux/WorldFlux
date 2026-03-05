@@ -134,6 +134,11 @@ def main() -> int:
         if not success:
             print(json.dumps(summary, indent=2, sort_keys=True))
             return 1
+        print(
+            f"OK  loss {initial_loss:.2f} -> {final_loss:.2f}  "
+            f"horizon {int(rollout.actions.shape[0])}  "
+            f"artifacts {output_dir}/"
+        )
         return 0
 
     except Exception as exc:  # pragma: no cover - runtime guard
