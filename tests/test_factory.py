@@ -23,7 +23,7 @@ class TestListModels:
     """Tests for list_models function."""
 
     def test_list_models_simple(self):
-        """list_models returns list of model IDs."""
+        """list_models returns list of model IDs (skeletons excluded by default)."""
         models = list_models()
         assert isinstance(models, list)
         assert "dreamer:ci" in models
@@ -33,8 +33,9 @@ class TestListModels:
         assert "tdmpc2:5m" in models
         assert "jepa:base" in models
         assert "vjepa2:base" in models
-        assert "dit:base" in models
-        assert "ssm:base" in models
+        # Skeleton models excluded by default
+        assert "dit:base" not in models
+        assert "ssm:base" not in models
 
     def test_list_models_verbose(self):
         """list_models with verbose returns detailed info."""
