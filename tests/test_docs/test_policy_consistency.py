@@ -34,22 +34,30 @@ def test_public_docs_include_cpu_success_and_benchmark_paths():
 def test_quality_docs_reference_current_gate_commands():
     gates = _read("docs/reference/quality-gates.md")
     checklist = _read("docs/reference/release-checklist.md")
+    publishing = _read("docs/reference/publishing.md")
 
     assert "uvx ruff check src/ tests/ examples/ benchmarks/ scripts/" in gates
     assert "uvx ruff format --check src/ tests/ examples/ benchmarks/ scripts/" in gates
     assert "uv run mypy src/worldflux/" in gates
     assert "uv run pytest tests/" in gates
+    assert "npm audit --audit-level=high" in gates
     assert "npm run build" in gates
+    assert "scripts/generate_release_parity_fixtures.py" in gates
 
+    assert "scripts/run_release_dry_run.py" in checklist
+    assert "scripts/generate_release_parity_fixtures.py" in checklist
     assert "examples/quickstart_cpu_success.py --quick" in checklist
     assert "examples/compare_unified_training.py --quick" in checklist
     assert "benchmarks/benchmark_dreamerv3_atari.py --quick" in checklist
+    assert "scripts/run_release_dry_run.py" in publishing
+    assert "scripts/generate_release_parity_fixtures.py" in publishing
 
 
 def test_ci_includes_strict_docs_gate_and_new_smokes():
     ci = _read(".github/workflows/ci.yml")
     assert "docs:" in ci
     assert "npm ci" in ci
+    assert "npm audit --audit-level=high" in ci
     assert "npm run build" in ci
     assert "examples/quickstart_cpu_success.py --quick" in ci
     assert "examples/compare_unified_training.py --quick" in ci

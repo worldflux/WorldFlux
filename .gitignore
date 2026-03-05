@@ -98,6 +98,7 @@ data/
 # Generated reports
 reports/parity/local_dryrun_check/
 reports/parity/suite-policy-validation.json
+reports/parity/validation-summary.json
 reports/public-contract/update-result.json
 
 # Local workspace

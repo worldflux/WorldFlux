@@ -20,6 +20,7 @@ REQUIRED_CI_SNIPPETS: tuple[str, ...] = (
     "benchmarks/benchmark_dreamerv3_atari.py --quick --seed 42",
     "benchmarks/benchmark_tdmpc2_mujoco.py --quick --seed 42",
     "benchmarks/benchmark_diffusion_imagination.py --quick --seed 42",
+    "npm audit --audit-level=high",
     "npm run build",
     "bandit -r src/worldflux/ scripts/parity/ -ll",
     "pip-audit",
@@ -28,6 +29,8 @@ REQUIRED_CI_SNIPPETS: tuple[str, ...] = (
 )
 
 REQUIRED_CHECKLIST_SNIPPETS: tuple[str, ...] = (
+    "scripts/run_release_dry_run.py",
+    "scripts/generate_release_parity_fixtures.py",
     "Version and tag are aligned",
     "release-ready notes for the tag",
     "Build succeeds",
@@ -38,13 +41,10 @@ REQUIRED_CHECKLIST_SNIPPETS: tuple[str, ...] = (
 )
 
 REQUIRED_RELEASE_SNIPPETS: tuple[str, ...] = (
-    "scripts/validate_parity_artifacts.py",
-    "scripts/check_docs_domain_tls.py",
-    "reports/parity/runs/dreamer_atari100k.json",
-    "reports/parity/runs/tdmpc2_dmcontrol39.json",
-    "reports/parity/aggregate.json",
-    "scripts/check_parity_suite_coverage.py",
-    "reports/parity/suite_policy.json",
+    "scripts/run_release_dry_run.py",
+    "--profile verify",
+    "--check docs_dependency_audit=pass",
+    "--check docs_build=pass",
     "--check docs_domain_tls=pass",
     "--check parity_release_gate=pass",
     "--check parity_suite_policy=pass",

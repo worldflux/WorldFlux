@@ -43,6 +43,7 @@ This page defines the documentation tooling used by WorldFlux and explains why e
 
 ```bash
 cd website && npm install
+cd website && npm audit --audit-level=high
 cd website && npm start
 cd website && npm run build
 ```
@@ -51,4 +52,5 @@ cd website && npm run build
 
 - Runtime API/architecture is unchanged by docs-tooling updates.
 - Docs dependencies are managed via `website/package.json`, not `pyproject.toml`.
+- Docs dependency health is enforced with `npm audit --audit-level=high` in CI and release dry-runs.
 - New docs tooling should be added only when a concrete docs quality gap exists.

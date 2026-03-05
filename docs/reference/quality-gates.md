@@ -7,6 +7,7 @@ This document defines baseline quality checks for WorldFlux.
 All PRs must pass:
 
 - **Local all-in-one gate**: `uv run python scripts/run_local_ci_gate.py`
+- **Release dry-run parity with publish flow**: `uv run python scripts/run_release_dry_run.py --tag vX.Y.Z --profile full`
 - **Lint**: `uvx ruff check src/ tests/ examples/ benchmarks/ scripts/`
 - **Format**: `uvx ruff format --check src/ tests/ examples/ benchmarks/ scripts/`
 - **Typecheck**: `uv run mypy src/worldflux/`
@@ -29,6 +30,7 @@ All PRs must pass:
   - `uv run python benchmarks/benchmark_tdmpc2_mujoco.py --quick --seed 42`
   - `uv run python benchmarks/benchmark_diffusion_imagination.py --quick --seed 42`
 - **Docs build**: `cd website && npm run build`
+- **Docs dependency audit**: `cd website && npm audit --audit-level=high`
 - **Docs domain TLS gate**:
   - `uv run python scripts/check_docs_domain_tls.py --host worldflux.ai --url https://worldflux.ai/ --expected-san worldflux.ai`
 - **Critical coverage threshold**: `uv run python scripts/check_critical_coverage.py --report coverage.xml`
@@ -40,6 +42,7 @@ All PRs must pass:
 ## Release-only Parity Gate (Required on Release)
 
 - Fixed parity artifacts must validate before publish:
+  - `uv run python scripts/generate_release_parity_fixtures.py`
   - `uv run python scripts/validate_parity_artifacts.py --run reports/parity/runs/dreamer_atari100k.json --run reports/parity/runs/tdmpc2_dmcontrol39.json --aggregate reports/parity/aggregate.json --lock reports/parity/upstream_lock.json --required-suite dreamer_atari100k --required-suite tdmpc2_dmcontrol39 --max-missing-pairs 0`
 - Required-family suite policy must validate:
   - `uv run python scripts/check_parity_suite_coverage.py --policy reports/parity/suite_policy.json --lock reports/parity/upstream_lock.json --aggregate reports/parity/aggregate.json --enforce-pass`
@@ -66,15 +69,18 @@ All PRs must pass:
 
 ```bash
 uv run python scripts/run_local_ci_gate.py
+uv run python scripts/run_release_dry_run.py --tag vX.Y.Z --profile full
 uvx ruff check src/ tests/ examples/ benchmarks/ scripts/
 uvx ruff format --check src/ tests/ examples/ benchmarks/ scripts/
 uv run mypy src/worldflux/
 uv run pytest tests/
 uv run pytest -q tests/test_public_contract_freeze.py
 uv run pytest -q tests/test_parity/
+uv run python scripts/generate_release_parity_fixtures.py
 uv run python scripts/check_parity_suite_coverage.py --policy reports/parity/suite_policy.json --lock reports/parity/upstream_lock.json
 uv run python scripts/update_public_contract_snapshot.py --snapshot tests/fixtures/public_contract_snapshot.json
 uv run python scripts/check_docs_domain_tls.py --host worldflux.ai --url https://worldflux.ai/ --expected-san worldflux.ai
 uv run python scripts/check_critical_coverage.py --report coverage.xml
+cd website && npm audit --audit-level=high
 cd website && npm run build
 ```

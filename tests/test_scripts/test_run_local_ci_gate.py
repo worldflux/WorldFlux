@@ -32,7 +32,9 @@ def test_build_gate_commands_contains_core_ci_steps(monkeypatch) -> None:
     assert "Coverage report" in names
     assert "Critical coverage thresholds" in names
     assert "Bandit security linter" in names
-    assert "Build docs (strict)" in names
+    assert "Install docs dependencies" in names
+    assert "Docs dependency audit" in names
+    assert "Build docs site" in names
     assert "Check markdown links" in names
     assert "Build package" in names
     assert "Check built artifacts" in names
@@ -48,7 +50,7 @@ def test_build_fast_gate_commands_contains_quick_ci_steps() -> None:
     assert "Legacy bridge tests" in names
     assert "Planner boundary tests" in names
     assert "Parity suite policy check" in names
-    assert "Build docs (strict)" not in names
+    assert "Build docs site" not in names
     assert "Build package" not in names
 
 

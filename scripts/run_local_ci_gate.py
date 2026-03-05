@@ -90,10 +90,16 @@ def build_gate_commands() -> tuple[GateCommand, ...]:
                 "--extra",
                 "training",
                 "--extra",
-                "docs",
-                "--extra",
                 "cli",
             ),
+        ),
+        GateCommand(
+            name="Install docs dependencies",
+            argv=("npm", "--prefix", "website", "ci"),
+        ),
+        GateCommand(
+            name="Docs dependency audit",
+            argv=("npm", "--prefix", "website", "audit", "--audit-level=high"),
         ),
         GateCommand(
             name="Ruff lint",
@@ -376,10 +382,7 @@ def build_gate_commands() -> tuple[GateCommand, ...]:
                 "tests/test_integration/test_legacy_bridge_v02.py",
             ),
         ),
-        GateCommand(
-            name="Build docs (strict)",
-            argv=("uv", "run", "--extra", "docs", "mkdocs", "build", "--strict"),
-        ),
+        GateCommand(name="Build docs site", argv=("npm", "--prefix", "website", "run", "build")),
         _lychee_command(),
         GateCommand(
             name="Critical hardening tests",

@@ -2,6 +2,12 @@
 
 Minimum criteria before tagging a public release.
 
+Canonical local validation command:
+
+```bash
+uv run python scripts/run_release_dry_run.py --tag vX.Y.Z --profile full
+```
+
 ## CI and Quality Gates
 
 - [ ] Lint passes: `uvx ruff check src/ tests/ examples/ benchmarks/ scripts/`
@@ -27,11 +33,14 @@ Minimum criteria before tagging a public release.
   - `uv run python scripts/check_critical_coverage.py --report coverage.xml`
 - [ ] Parity harness command path is validated:
   - `uv run pytest -q tests/test_parity/`
+- [ ] Release parity fixtures are regenerated from committed sources:
+  - `uv run python scripts/generate_release_parity_fixtures.py`
 - [ ] Fixed parity artifacts pass release gate:
   - `uv run python scripts/validate_parity_artifacts.py --run reports/parity/runs/dreamer_atari100k.json --run reports/parity/runs/tdmpc2_dmcontrol39.json --aggregate reports/parity/aggregate.json --lock reports/parity/upstream_lock.json --required-suite dreamer_atari100k --required-suite tdmpc2_dmcontrol39 --max-missing-pairs 0`
 - [ ] Parity suite policy coverage passes:
   - `uv run python scripts/check_parity_suite_coverage.py --policy reports/parity/suite_policy.json --lock reports/parity/upstream_lock.json --aggregate reports/parity/aggregate.json --enforce-pass`
-- [ ] Docs build passes in strict mode: `cd website && npm run build`
+- [ ] Docs dependency audit passes: `cd website && npm audit --audit-level=high`
+- [ ] Docs build passes: `cd website && npm run build`
 - [ ] Docs domain TLS gate passes:
   - `uv run python scripts/check_docs_domain_tls.py --host worldflux.ai --url https://worldflux.ai/ --expected-san worldflux.ai`
 - [ ] Security checks pass:
@@ -43,6 +52,7 @@ Minimum criteria before tagging a public release.
 ## Packaging and Metadata
 
 - [ ] Build succeeds: `uv run --with build python -m build`
+- [ ] Release dry-run passes end-to-end: `uv run python scripts/run_release_dry_run.py --tag vX.Y.Z --profile full`
 - [ ] `CHANGELOG.md` includes release-ready notes for the tag
 - [ ] Version and tag are aligned (`pyproject.toml` version matches release tag)
 - [ ] Release metadata validation passes:
@@ -56,6 +66,7 @@ Minimum criteria before tagging a public release.
 ## Recovery Runbook
 
 - Missing pairs failure:
+  - Regenerate committed release-gate fixtures with `scripts/generate_release_parity_fixtures.py`.
   - Inspect run artifacts under `reports/parity/runs/`.
   - Regenerate candidate/oracle exports for missing task-seed rows.
   - Re-run `scripts/validate_parity_artifacts.py` with `--max-missing-pairs 0`.
