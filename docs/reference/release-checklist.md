@@ -33,7 +33,7 @@ uv run python scripts/run_release_dry_run.py --tag vX.Y.Z --profile full
   - `uv run python scripts/check_critical_coverage.py --report coverage.xml`
 - [ ] Parity harness command path is validated:
   - `uv run pytest -q tests/test_parity/`
-- [ ] Release parity fixtures are regenerated from committed sources:
+- [ ] Release parity fixtures are regenerated from repository sources into local ignored outputs:
   - `uv run python scripts/generate_release_parity_fixtures.py`
 - [ ] Fixed parity artifacts pass release gate:
   - `uv run python scripts/validate_parity_artifacts.py --run reports/parity/runs/dreamer_atari100k.json --run reports/parity/runs/tdmpc2_dmcontrol39.json --aggregate reports/parity/aggregate.json --lock reports/parity/upstream_lock.json --required-suite dreamer_atari100k --required-suite tdmpc2_dmcontrol39 --max-missing-pairs 0`
@@ -66,7 +66,7 @@ uv run python scripts/run_release_dry_run.py --tag vX.Y.Z --profile full
 ## Recovery Runbook
 
 - Missing pairs failure:
-  - Regenerate committed release-gate fixtures with `scripts/generate_release_parity_fixtures.py`.
+  - Regenerate local release-gate fixtures with `scripts/generate_release_parity_fixtures.py`.
   - Inspect run artifacts under `reports/parity/runs/`.
   - Regenerate candidate/oracle exports for missing task-seed rows.
   - Re-run `scripts/validate_parity_artifacts.py` with `--max-missing-pairs 0`.

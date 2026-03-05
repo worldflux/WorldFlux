@@ -96,10 +96,15 @@ wandb/
 data/
 
 # Generated reports
+reports/parity/aggregate.json
+reports/parity/fixtures/*.json
 reports/parity/local_dryrun_check/
+reports/parity/runs/
 reports/parity/suite-policy-validation.json
 reports/parity/validation-summary.json
 reports/public-contract/update-result.json
+reports/release/verification-report.json
+reports/release/verification-report.md
 
 # Local workspace
 local/
