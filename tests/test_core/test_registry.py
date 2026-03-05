@@ -59,7 +59,7 @@ class TestWorldModelRegistryAliases:
 
     def test_invalid_format_raises(self):
         """Invalid format without colon raises ValueError."""
-        with pytest.raises(ValueError, match="Invalid model identifier"):
+        with pytest.raises(ValueError, match="Unknown model"):
             WorldModelRegistry.from_pretrained("invalid_format")
 
 
