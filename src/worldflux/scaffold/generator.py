@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import shutil
+import tempfile
 from pathlib import Path
 from typing import Any, cast
 
@@ -165,6 +167,58 @@ def _validate_target_directory(target: Path, force: bool) -> None:
             )
 
 
+def _render_project_files(context: dict[str, Any]) -> dict[str, str]:
+    return {
+        "worldflux.toml": render_worldflux_toml(context),
+        "train.py": render_train_py(context),
+        "inference.py": render_inference_py(context),
+        "dataset.py": render_dataset_py(context),
+        "local_dashboard.py": render_local_dashboard_py(context),
+        "dashboard/index.html": render_dashboard_index_html(context),
+        "README.md": render_readme_md(context),
+    }
+
+
+def _write_project_tree(root: Path, files: dict[str, str], *, force: bool) -> list[Path]:
+    written_files: list[Path] = []
+    for relative_path, content in files.items():
+        destination = root / relative_path
+        if destination.exists() and destination.is_dir():
+            raise IsADirectoryError(f"Cannot overwrite directory with file: {destination}")
+        if destination.exists() and not force:
+            raise FileExistsError(f"File already exists: {destination}. Use --force to overwrite.")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(content, encoding="utf-8")
+        written_files.append(destination)
+    return written_files
+
+
+def _rename_tree(src: Path, dst: Path) -> None:
+    src.rename(dst)
+
+
+def _commit_generated_tree(staging: Path, target: Path) -> None:
+    backup: Path | None = None
+    try:
+        if target.exists():
+            backup = Path(
+                tempfile.mkdtemp(prefix=f".{target.name}.backup.", dir=str(target.parent))
+            )
+            backup.rmdir()
+            _rename_tree(target, backup)
+
+        _rename_tree(staging, target)
+    except Exception:
+        if backup is not None and backup.exists() and not target.exists():
+            _rename_tree(backup, target)
+        raise
+    finally:
+        if staging.exists():
+            shutil.rmtree(staging, ignore_errors=True)
+        if backup is not None and backup.exists():
+            shutil.rmtree(backup, ignore_errors=True)
+
+
 def generate_project(path: str | Path, context: dict[str, Any], force: bool = False) -> list[Path]:
     """
     Generate a new WorldFlux project at ``path``.
@@ -182,27 +236,16 @@ def generate_project(path: str | Path, context: dict[str, Any], force: bool = Fa
 
     target = Path(path).expanduser()
     _validate_target_directory(target, force=force)
-    target.mkdir(parents=True, exist_ok=True)
+    target.parent.mkdir(parents=True, exist_ok=True)
 
-    files: dict[str, str] = {
-        "worldflux.toml": render_worldflux_toml(context_copy),
-        "train.py": render_train_py(context_copy),
-        "inference.py": render_inference_py(context_copy),
-        "dataset.py": render_dataset_py(context_copy),
-        "local_dashboard.py": render_local_dashboard_py(context_copy),
-        "dashboard/index.html": render_dashboard_index_html(context_copy),
-        "README.md": render_readme_md(context_copy),
-    }
+    staging = Path(tempfile.mkdtemp(prefix=f".{target.name}.staging.", dir=str(target.parent)))
+    try:
+        files = _render_project_files(context_copy)
+        written_files = _write_project_tree(staging, files, force=True)
+        _commit_generated_tree(staging, target)
+    except Exception:
+        if staging.exists():
+            shutil.rmtree(staging, ignore_errors=True)
+        raise
 
-    written_files: list[Path] = []
-    for relative_path, content in files.items():
-        destination = target / relative_path
-        if destination.exists() and destination.is_dir():
-            raise IsADirectoryError(f"Cannot overwrite directory with file: {destination}")
-        if destination.exists() and not force:
-            raise FileExistsError(f"File already exists: {destination}. Use --force to overwrite.")
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_text(content, encoding="utf-8")
-        written_files.append(destination)
-
-    return written_files
+    return [target / path.relative_to(staging) for path in written_files]

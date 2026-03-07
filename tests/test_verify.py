@@ -220,7 +220,8 @@ class TestVerifyCLI:
 
         result = runner.invoke(app, ["verify", "--target", "m.pt", "--mode", "proof"])
         assert result.exit_code == 0
-        assert "PASS" in result.output
+        assert "Proof-mode parity checks satisfied" in result.output
+        assert "evidence bundle" in result.output
 
     def test_verify_writes_evidence_bundle_for_proof_mode(
         self,
@@ -530,7 +531,7 @@ class TestAutoModeDefaultsToQuick:
             result = runner.invoke(app, ["verify", "--target", "./outputs"])
         # Should NOT hit proof mode error, should succeed with quick mode
         assert result.exit_code == 0
-        assert "Quick Mode" in result.output or "PASS" in result.output
+        assert "Synthetic Smoke" in result.output or "PASS" in result.output
 
     def test_env_var_proof_triggers_proof_mode(
         self, runner: CliRunner, monkeypatch: pytest.MonkeyPatch

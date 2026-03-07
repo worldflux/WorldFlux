@@ -1,7 +1,7 @@
 """Verify protocol specification and versioning.
 
 Defines the protocol version, result types, and metadata for the
-WorldFlux verification system.  Both ``quick`` and ``proof`` modes
+WorldFlux verification system. Both synthetic smoke (``quick``) and proof modes
 emit results conforming to this protocol.
 """
 
@@ -15,11 +15,11 @@ PROTOCOL_VERSION = "1.0"
 
 @dataclass(frozen=True)
 class QuickVerifyResult:
-    """Result of a quick (lightweight) verification run.
+    """Result of a synthetic smoke (``quick``) verification run.
 
     This is the primary result type for ``worldflux verify`` when used
     by pip-install users who verify a checkpoint against bundled
-    baseline statistics.
+    baseline statistics on a synthetic workload.
 
     Attributes
     ----------
