@@ -165,4 +165,4 @@ def _resolve_worldflux_version() -> str:
 
         return version("worldflux")
     except (PackageNotFoundError, ImportError, ValueError):
-        return "0.1.0.dev0"
+        return "0.1.1.dev0"

@@ -15,7 +15,10 @@ from ._rich_output import key_value_panel
 @models_app.command("list")
 def models_list(
     maturity: str | None = typer.Option(
-        None, "--maturity", "-m", help="Filter: reference, experimental, skeleton."
+        None,
+        "--maturity",
+        "-m",
+        help="Filter: reference, reference-family, experimental, skeleton.",
     ),
     verbose: bool = typer.Option(False, "--verbose", "-v"),
     format: str = typer.Option("table", "--format", "-f", help="table or json."),
@@ -25,6 +28,7 @@ def models_list(
     [dim]Examples:[/dim]
       worldflux models list
       worldflux models list --maturity reference
+      worldflux models list --maturity reference-family
       worldflux models list --format json
     """
     from worldflux.factory import list_models
@@ -58,6 +62,11 @@ def models_list(
         table.add_row(model_id, desc, params, mat_styled)
 
     console.print(table)
+    if any(str(info.get("maturity")) == "reference" for info in catalog.values()):
+        console.print(
+            "\n[wf.muted]reference-family is an internal maturity tier; public proof "
+            "claims require published evidence bundles.[/wf.muted]"
+        )
     if not verbose:
         console.print("\n[wf.muted]Tip: worldflux models info <id> for details.[/wf.muted]")
 
@@ -113,6 +122,11 @@ def models_info(
             data[_pretty_label(key)] = value
 
     console.print(key_value_panel(data, title=f"Model: {model_id}", border="wf.border"))
+    if str(info.get("maturity")) == "reference":
+        console.print(
+            "[wf.muted]reference-family is an internal maturity tier; it is not by "
+            "itself a public proof claim.[/wf.muted]"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -142,7 +156,7 @@ def _pretty_label(key: str) -> str:
 
 def _style_maturity(maturity: str) -> str:
     if maturity == "reference":
-        return "[wf.pass]reference[/wf.pass]"
+        return "[wf.pass]reference-family[/wf.pass]"
     if maturity == "experimental":
         return "[wf.caution]experimental[/wf.caution]"
     if maturity == "skeleton":

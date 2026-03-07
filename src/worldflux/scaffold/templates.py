@@ -748,7 +748,7 @@ def render_readme_md(context: dict[str, Any]) -> str:
 
         ```bash
         # Demo mode (instant synthetic results for presentations; not proof)
-        worldflux verify --target ./outputs/checkpoint_best.pt --demo
+        worldflux verify --target ./outputs/checkpoint_best.pt --demo --mode proof
 
         # Real verification (requires parity suite)
         worldflux verify --target ./outputs/checkpoint_best.pt

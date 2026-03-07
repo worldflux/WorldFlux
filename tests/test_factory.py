@@ -47,9 +47,11 @@ class TestListModels:
 
     def test_list_models_with_maturity_filter(self):
         ref_models = list_models(maturity="reference")
+        ref_family_models = list_models(maturity="reference-family")
         exp_models = list_models(maturity="experimental")
         skeleton_models = list_models(maturity="skeleton")
         assert "dreamerv3:size12m" in ref_models
+        assert ref_family_models == ref_models
         assert "jepa:base" in exp_models
         assert "vjepa2:base" in exp_models
         assert "dit:base" in skeleton_models

@@ -1385,3 +1385,34 @@ class TestVerifyFormatOptions:
         output = result.output
         assert '"passed": true' in output or '"passed":true' in output
         assert '"synthetic_provenance"' in output
+
+
+def test_models_list_human_output_uses_reference_family_label() -> None:
+    result = runner.invoke(cli.app, ["models", "list"])
+    assert result.exit_code == 0
+    assert "reference-family" in result.output
+    assert "published evidence bundles" in result.output
+
+
+def test_models_list_json_preserves_reference_machine_value() -> None:
+    result = runner.invoke(cli.app, ["models", "list", "--format", "json"])
+    assert result.exit_code == 0
+    assert '"maturity": "reference"' in result.output
+
+
+def test_models_list_accepts_reference_family_alias() -> None:
+    result = runner.invoke(
+        cli.app,
+        ["models", "list", "--maturity", "reference-family", "--format", "json"],
+    )
+    assert result.exit_code == 0
+    assert "dreamerv3:size12m" in result.output
+    assert "No models match" not in result.output
+
+
+def test_models_info_reference_note_is_conservative() -> None:
+    result = runner.invoke(cli.app, ["models", "info", "dreamerv3:size12m"])
+    assert result.exit_code == 0
+    assert "reference-family" in result.output
+    assert "not by itself a public" in result.output
+    assert "proof claim" in result.output

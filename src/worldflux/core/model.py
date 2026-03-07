@@ -1042,9 +1042,9 @@ class WorldModel(nn.Module, ABC):
 
             return version("worldflux")
         except PackageNotFoundError:
-            return "0.1.0.dev0"
+            return "0.1.1.dev0"
         except (ImportError, ValueError):
-            return "0.1.0.dev0"
+            return "0.1.1.dev0"
 
     def contract_fingerprint(self) -> str:
         """Return a stable fingerprint for this model's declared IO contract."""

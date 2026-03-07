@@ -56,7 +56,7 @@ worldflux train --steps 2 --device cpu
 set +e
 worldflux verify --target ./outputs --mode quick --episodes 2 --format json --output verify-quick.json
 quick_status=$?
-worldflux verify --target ./outputs --demo --format json --output verify-demo.json
+worldflux verify --target ./outputs --demo --mode proof --format json --output verify-demo.json
 demo_status=$?
 set -e
 
