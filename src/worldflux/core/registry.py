@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import inspect
 import json
 import os
@@ -194,6 +195,20 @@ class WorldModelRegistry:
     _component_registry: dict[str, tuple[ComponentSpec, type]] = {}
     _plugin_manifests: dict[str, PluginManifest] = {}
     _plugins_loaded: bool = False
+    _builtin_models_loaded: bool = False
+    _builtin_model_modules: tuple[str, ...] = (
+        "worldflux.models.dreamer.world_model",
+        "worldflux.models.tdmpc2.world_model",
+        "worldflux.models.jepa.world_model",
+        "worldflux.models.vjepa2.world_model",
+        "worldflux.models.token.world_model",
+        "worldflux.models.diffusion.world_model",
+        "worldflux.models.dit.world_model",
+        "worldflux.models.ssm.world_model",
+        "worldflux.models.renderer3d.world_model",
+        "worldflux.models.physics.world_model",
+        "worldflux.models.gan.world_model",
+    )
     _component_slots: dict[str, tuple[str, str]] = {
         "observation_encoder": ("observation_encoder", "observation_encoder"),
         "action_conditioner": ("action_conditioner", "action_conditioner"),
@@ -318,7 +333,10 @@ class WorldModelRegistry:
             try:
                 current = version("worldflux")
             except PackageNotFoundError:
-                current = "0.1.0.dev0"
+                # Source checkouts do not have installed package metadata.
+                # Use the current release line base version so plugin specifiers
+                # like ">=0.1.1,<0.2.0" continue to work during local development.
+                current = "0.1.1"
 
             try:
                 spec = SpecifierSet(specifier)
@@ -393,11 +411,7 @@ class WorldModelRegistry:
             return cls.from_pretrained(local_snapshot, **model_kwargs)
 
         cls.load_entrypoint_plugins()
-        if not cls._model_registry:
-            try:
-                import worldflux.models  # noqa: F401
-            except ImportError:
-                pass
+        cls._load_builtin_models()
         if os.path.exists(name_or_path):
             config = ConfigRegistry.from_pretrained(name_or_path, **model_kwargs)
             if config.model_type not in cls._model_registry:
@@ -445,11 +459,7 @@ class WorldModelRegistry:
     @classmethod
     def list_models(cls) -> dict[str, type]:
         cls.load_entrypoint_plugins()
-        if not cls._model_registry:
-            try:
-                import worldflux.models  # noqa: F401
-            except ImportError:
-                pass
+        cls._load_builtin_models()
         return dict(cls._model_registry)
 
     @classmethod
@@ -543,6 +553,16 @@ class WorldModelRegistry:
         cls._load_entrypoint_group("worldflux.models")
         cls._load_entrypoint_group("worldflux.components")
         cls._plugins_loaded = True
+
+    @classmethod
+    def _load_builtin_models(cls) -> None:
+        """Import bundled model families on demand instead of at module import time."""
+        if cls._builtin_models_loaded:
+            return
+
+        for module_name in cls._builtin_model_modules:
+            importlib.import_module(module_name)
+        cls._builtin_models_loaded = True
 
     @staticmethod
     def _instantiate_component(component_class: type, model: WorldModel) -> Any:

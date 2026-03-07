@@ -1,265 +1,175 @@
-"""WorldFlux CLI package."""
+"""Lazy CLI exports and command bootstrap for WorldFlux."""
 
 from __future__ import annotations
 
-# Standard library re-exports (tests reference cli.sys, cli.shutil, etc.)
 import importlib  # noqa: F401
 import shutil  # noqa: F401
 import subprocess  # noqa: F401
 import sys  # noqa: F401
+from importlib import import_module
+from typing import Any
 
-from rich.prompt import Confirm as Confirm  # noqa: F401
-from rich.prompt import IntPrompt as IntPrompt  # noqa: F401
-from rich.prompt import Prompt as Prompt  # noqa: F401
+from rich.prompt import Confirm as Confirm
+from rich.prompt import IntPrompt as IntPrompt
+from rich.prompt import Prompt as Prompt
 
-from worldflux.bootstrap_env import (
-    ensure_init_dependencies as ensure_init_dependencies,  # noqa: F401
-)
-from worldflux.parity import (
-    CampaignRunOptions as CampaignRunOptions,  # noqa: F401
-)
-from worldflux.parity import (
-    aggregate_runs as aggregate_runs,  # noqa: F401
-)
-from worldflux.parity import (
-    export_campaign_source as export_campaign_source,  # noqa: F401
-)
-from worldflux.parity import (
-    load_campaign_spec as load_campaign_spec,  # noqa: F401
-)
-from worldflux.parity import (
-    parse_seed_csv as parse_seed_csv,  # noqa: F401
-)
-from worldflux.parity import (
-    render_campaign_summary as render_campaign_summary,  # noqa: F401
-)
-from worldflux.parity import (
-    render_markdown_report as render_markdown_report,  # noqa: F401
-)
-from worldflux.parity import (
-    run_campaign as run_campaign,  # noqa: F401
-)
-from worldflux.parity import (
-    run_suite as run_suite,  # noqa: F401
-)
-from worldflux.parity import (
-    save_badge as save_badge,  # noqa: F401
-)
-from worldflux.parity.errors import ParityError as ParityError  # noqa: F401
-from worldflux.scaffold import generate_project as generate_project  # noqa: F401
-from worldflux.verify import ParityVerifier as ParityVerifier  # noqa: F401
-from worldflux.verify import VerifyResult as VerifyResult  # noqa: F401
-
-# Command modules are registered by _register_commands() below in desired
-# help-panel order.  Individual modules are NOT imported at the top level
-# because ruff isort would re-sort them alphabetically, destroying the
-# ordering that controls Typer's --help output.
-from ._app import (
-    ASCII_LOGO as ASCII_LOGO,  # noqa: F401
-)
-from ._app import (
-    BATCH_SIZE_PRESETS as BATCH_SIZE_PRESETS,  # noqa: F401
-)
-from ._app import (
-    BRAND_NAME as BRAND_NAME,  # noqa: F401
-)
-from ._app import (
-    BRAND_TAGLINE as BRAND_TAGLINE,  # noqa: F401
-)
-from ._app import (
-    DEFAULT_BATCH_SIZE as DEFAULT_BATCH_SIZE,  # noqa: F401
-)
-from ._app import (
-    DEFAULT_TOTAL_STEPS as DEFAULT_TOTAL_STEPS,  # noqa: F401
-)
-from ._app import (
-    ENVIRONMENT_OPTIONS as ENVIRONMENT_OPTIONS,  # noqa: F401
-)
-from ._app import (
-    MAX_PANEL_WIDTH as MAX_PANEL_WIDTH,  # noqa: F401
-)
-from ._app import (
-    MODEL_CHOICE_IDS as MODEL_CHOICE_IDS,  # noqa: F401
-)
-from ._app import (
-    MODEL_UI_CARDS as MODEL_UI_CARDS,  # noqa: F401
-)
-from ._app import (
-    OBS_ACTION_GUIDE_URL as OBS_ACTION_GUIDE_URL,  # noqa: F401
-)
-from ._app import (
-    TOTAL_STEPS_PRESETS as TOTAL_STEPS_PRESETS,  # noqa: F401
-)
-from ._app import (
-    WIZARD_STEPS as WIZARD_STEPS,  # noqa: F401
-)
-from ._app import (
-    WIZARD_TOTAL as WIZARD_TOTAL,  # noqa: F401
-)
-from ._app import (
-    app as app,  # noqa: F401
-)
-from ._app import (
-    console as console,  # noqa: F401
-)
-from ._app import (
-    models_app as models_app,  # noqa: F401
-)
-from ._app import (
-    parity_app as parity_app,  # noqa: F401
-)
-from ._app import (
-    parity_campaign_app as parity_campaign_app,  # noqa: F401
-)
-from ._init_cmd import (
-    _confirm_generation as _confirm_generation,  # noqa: F401
-)
-from ._init_cmd import (
-    _confirm_optional_dependency_install as _confirm_optional_dependency_install,  # noqa: F401
-)
-from ._init_cmd import (
-    _format_environment_choice as _format_environment_choice,  # noqa: F401
-)
-from ._init_cmd import (
-    _format_model_choice_label as _format_model_choice_label,  # noqa: F401
-)
-from ._init_cmd import (
-    _handle_optional_atari_dependency_install as _handle_optional_atari_dependency_install,  # noqa: F401
-)
-from ._init_cmd import (
-    _install_packages_with_pip as _install_packages_with_pip,  # noqa: F401
-)
-from ._init_cmd import (
-    _numbered_select as _numbered_select,  # noqa: F401
-)
-from ._init_cmd import (
-    _print_configuration_summary as _print_configuration_summary,  # noqa: F401
-)
-from ._init_cmd import (
-    _print_environment_options as _print_environment_options,  # noqa: F401
-)
-from ._init_cmd import (
-    _print_logo as _print_logo,  # noqa: F401
-)
-from ._init_cmd import (
-    _print_model_choices as _print_model_choices,  # noqa: F401
-)
-from ._init_cmd import (
-    _print_model_recommendation as _print_model_recommendation,  # noqa: F401
-)
-from ._init_cmd import (
-    _prompt_user_configuration as _prompt_user_configuration,  # noqa: F401
-)
-from ._init_cmd import (
-    _prompt_with_inquirer as _prompt_with_inquirer,  # noqa: F401
-)
-from ._init_cmd import (
-    _prompt_with_rich as _prompt_with_rich,  # noqa: F401
-)
-from ._init_cmd import (
-    _select_model_with_inquirer as _select_model_with_inquirer,  # noqa: F401
-)
-from ._init_cmd import (
-    _select_model_with_rich as _select_model_with_rich,  # noqa: F401
-)
-from ._parity import (
-    _resolve_campaign_seeds as _resolve_campaign_seeds,  # noqa: F401
-)
-from ._parity import (
-    _run_parity_proof_script as _run_parity_proof_script,  # noqa: F401
-)
-from ._parity import (
-    parity_campaign_run as parity_campaign_run,  # noqa: F401
-)
-from ._rich_output import (
-    _bounded_width as _bounded_width,  # noqa: F401
-)
-from ._rich_output import (
-    grouped_summary_panel as grouped_summary_panel,  # noqa: F401
-)
-from ._rich_output import (
-    key_value_panel as key_value_panel,  # noqa: F401
-)
-from ._rich_output import (
-    metric_table as metric_table,  # noqa: F401
-)
-from ._rich_output import (
-    result_banner as result_banner,  # noqa: F401
-)
-from ._rich_output import (
-    section_header as section_header,  # noqa: F401
-)
-from ._rich_output import (
-    status_table as status_table,  # noqa: F401
-)
-from ._rich_output import (
-    step_progress as step_progress,  # noqa: F401
-)
-from ._theme import (
-    PALETTE as PALETTE,  # noqa: F401
-)
-from ._theme import (
-    WF_THEME as WF_THEME,  # noqa: F401
-)
-from ._utils import (
-    _hash_file as _hash_file,  # noqa: F401
-)
-from ._utils import (
-    _is_interactive_terminal as _is_interactive_terminal,  # noqa: F401
-)
-from ._utils import (
-    _is_preset_environment as _is_preset_environment,  # noqa: F401
-)
-from ._utils import (
-    _missing_atari_dependency_packages as _missing_atari_dependency_packages,  # noqa: F401
-)
-from ._utils import (
-    _model_choice_order as _model_choice_order,  # noqa: F401
-)
-from ._utils import (
-    _model_type_from_model_id as _model_type_from_model_id,  # noqa: F401
-)
-from ._utils import (
-    _parse_action_dim as _parse_action_dim,  # noqa: F401
-)
-from ._utils import (
-    _parse_obs_shape as _parse_obs_shape,  # noqa: F401
-)
-from ._utils import (
-    _parse_positive_int as _parse_positive_int,  # noqa: F401
-)
-from ._utils import (
-    _resolve_model as _resolve_model,  # noqa: F401
-)
-from ._utils import (
-    _resolve_python_launcher as _resolve_python_launcher,  # noqa: F401
-)
+_COMMANDS_REGISTERED = False
+_APP_EXPORTS = {
+    "ASCII_LOGO",
+    "BATCH_SIZE_PRESETS",
+    "BRAND_NAME",
+    "BRAND_TAGLINE",
+    "DEFAULT_BATCH_SIZE",
+    "DEFAULT_TOTAL_STEPS",
+    "ENVIRONMENT_OPTIONS",
+    "MAX_PANEL_WIDTH",
+    "MODEL_CHOICE_IDS",
+    "MODEL_UI_CARDS",
+    "OBS_ACTION_GUIDE_URL",
+    "TOTAL_STEPS_PRESETS",
+    "WIZARD_STEPS",
+    "WIZARD_TOTAL",
+    "app",
+    "console",
+    "models_app",
+    "parity_app",
+    "parity_campaign_app",
+}
+_COMMAND_APP_EXPORTS = {"app", "models_app", "parity_app", "parity_campaign_app"}
+_EXPORT_GROUPS: dict[str, tuple[str, ...]] = {
+    "worldflux.bootstrap_env": ("ensure_init_dependencies",),
+    "worldflux.parity": (
+        "CampaignRunOptions",
+        "aggregate_runs",
+        "export_campaign_source",
+        "load_campaign_spec",
+        "parse_seed_csv",
+        "render_campaign_summary",
+        "render_markdown_report",
+        "run_campaign",
+        "run_suite",
+        "save_badge",
+    ),
+    "worldflux.parity.errors": ("ParityError",),
+    "worldflux.scaffold": ("generate_project",),
+    "worldflux.verify": ("ParityVerifier", "VerifyResult"),
+    "worldflux.cli._init_cmd": (
+        "_confirm_generation",
+        "_confirm_optional_dependency_install",
+        "_format_environment_choice",
+        "_format_model_choice_label",
+        "_handle_optional_atari_dependency_install",
+        "_install_packages_with_pip",
+        "_numbered_select",
+        "_print_configuration_summary",
+        "_print_environment_options",
+        "_print_logo",
+        "_print_model_choices",
+        "_print_model_recommendation",
+        "_prompt_user_configuration",
+        "_prompt_with_inquirer",
+        "_prompt_with_rich",
+        "_select_model_with_inquirer",
+        "_select_model_with_rich",
+    ),
+    "worldflux.cli._parity": (
+        "_resolve_campaign_seeds",
+        "_run_parity_proof_script",
+        "parity_campaign_run",
+    ),
+    "worldflux.cli._rich_output": (
+        "_bounded_width",
+        "grouped_summary_panel",
+        "key_value_panel",
+        "metric_table",
+        "result_banner",
+        "section_header",
+        "status_table",
+        "step_progress",
+    ),
+    "worldflux.cli._theme": ("PALETTE", "WF_THEME"),
+    "worldflux.cli._utils": (
+        "_hash_file",
+        "_is_interactive_terminal",
+        "_is_preset_environment",
+        "_missing_atari_dependency_packages",
+        "_model_choice_order",
+        "_model_type_from_model_id",
+        "_parse_action_dim",
+        "_parse_obs_shape",
+        "_parse_positive_int",
+        "_resolve_model",
+        "_resolve_python_launcher",
+    ),
+}
+_EXPORTS: dict[str, str] = {
+    name: module_path for module_path, names in _EXPORT_GROUPS.items() for name in names
+}
 
 
-def _register_commands() -> None:
-    """Register command modules in desired help-panel order.
-
-    Imports are intentionally inside this function and isort is disabled
-    so that ruff cannot reorder them.  The import order determines the
-    panel order shown by ``worldflux --help``.
-    """
-    # isort: off
-    from . import _init_cmd  # noqa: F401  Getting Started
-    from . import _train  # noqa: F401  Training
-
-    app.add_typer(models_app, name="models", rich_help_panel="Model Catalog")
-    from . import _models  # noqa: F401
-
-    from . import _eval  # noqa: F401  Quality & Evaluation
-
-    app.add_typer(parity_app, name="parity", rich_help_panel="Quality & Evaluation")
-    from . import _parity  # noqa: F401
-    from . import _report  # noqa: F401
-    from . import _verify  # noqa: F401
-
-    from . import _doctor  # noqa: F401  Utilities
-    from . import _cloud  # noqa: F401  Cloud
-    # isort: on
+def _load_app_module() -> Any:
+    return import_module("worldflux.cli._app")
 
 
-_register_commands()
+def _ensure_commands_registered() -> Any:
+    global _COMMANDS_REGISTERED
+
+    app_module = _load_app_module()
+    if _COMMANDS_REGISTERED:
+        return app_module
+
+    import_module("worldflux.cli._init_cmd")
+    import_module("worldflux.cli._train")
+    app_module.app.add_typer(app_module.models_app, name="models", rich_help_panel="Model Catalog")
+    import_module("worldflux.cli._models")
+    import_module("worldflux.cli._eval")
+    app_module.app.add_typer(
+        app_module.parity_app,
+        name="parity",
+        rich_help_panel="Quality & Evaluation",
+    )
+    import_module("worldflux.cli._parity")
+    import_module("worldflux.cli._report")
+    import_module("worldflux.cli._verify")
+    import_module("worldflux.cli._doctor")
+    import_module("worldflux.cli._cloud")
+
+    _COMMANDS_REGISTERED = True
+    return app_module
+
+
+def _load_export(name: str) -> Any:
+    if name in _APP_EXPORTS:
+        app_module = (
+            _ensure_commands_registered() if name in _COMMAND_APP_EXPORTS else _load_app_module()
+        )
+        value = getattr(app_module, name)
+    else:
+        module = import_module(_EXPORTS[name])
+        value = getattr(module, name)
+    globals()[name] = value
+    return value
+
+
+def __getattr__(name: str) -> Any:
+    if name in _APP_EXPORTS or name in _EXPORTS:
+        return _load_export(name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__() -> list[str]:
+    return sorted(
+        {
+            "Confirm",
+            "IntPrompt",
+            "Prompt",
+            "importlib",
+            "shutil",
+            "subprocess",
+            "sys",
+            *(_APP_EXPORTS | set(_EXPORTS)),
+        }
+    )
+
+
+__all__ = sorted(set(_APP_EXPORTS) | set(_EXPORTS))

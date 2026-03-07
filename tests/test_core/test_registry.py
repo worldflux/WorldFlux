@@ -1,6 +1,8 @@
 """Tests for registry and alias resolution."""
 
+import builtins
 import json
+from importlib import metadata as importlib_metadata
 from pathlib import Path
 
 import pytest
@@ -334,3 +336,29 @@ class TestPluginDiscovery:
             WorldModelRegistry.load_entrypoint_plugins(force=True)
 
         WorldModelRegistry.unregister_plugin_manifest("extplugin_bad")
+
+    def test_worldflux_version_matches_uses_current_dev_fallback(self, monkeypatch):
+        def _raise_not_found(_dist_name: str) -> str:
+            raise importlib_metadata.PackageNotFoundError
+
+        monkeypatch.setattr(
+            "worldflux.core.registry.importlib_metadata.version",
+            _raise_not_found,
+        )
+
+        assert WorldModelRegistry._worldflux_version_matches(">=0.1.1,<0.2.0") is True
+
+    def test_worldflux_version_matches_without_packaging_uses_conservative_default(
+        self, monkeypatch
+    ) -> None:
+        real_import = builtins.__import__
+
+        def _fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+            if name.startswith("packaging"):
+                raise ImportError("packaging missing")
+            return real_import(name, globals, locals, fromlist, level)
+
+        monkeypatch.setattr(builtins, "__import__", _fake_import)
+
+        assert WorldModelRegistry._worldflux_version_matches(">=0.1.0,<0.2.0") is True
+        assert WorldModelRegistry._worldflux_version_matches(">=0.1.1,<0.2.0") is False

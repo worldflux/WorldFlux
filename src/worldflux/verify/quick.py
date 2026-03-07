@@ -1,4 +1,4 @@
-"""Lightweight quick verification for pip-install users.
+"""Synthetic smoke verification for pip-install users.
 
 Provides model verification without requiring a source checkout or
 ``scripts/parity/``.  Loads a trained model, runs evaluation episodes,
@@ -43,7 +43,7 @@ class QualityCheckResult:
     details: dict[str, Any] = field(default_factory=dict)
 
 
-# Bundled baseline statistics: pre-computed reference distributions.
+# Bundled baseline statistics for the synthetic smoke workload.
 # Each entry maps env -> {mean, std, n, margin_ratio}.
 # These are used as the reference for non-inferiority testing.
 _BUILTIN_BASELINES: dict[str, dict[str, Any]] = {
@@ -143,7 +143,7 @@ def quick_verify(
     device: str = "cpu",
     baseline_path: Path | None = None,
 ) -> QuickVerifyResult:
-    """Run quick verification of a trained model checkpoint.
+    """Run synthetic smoke verification of a trained model checkpoint.
 
     Parameters
     ----------
@@ -237,7 +237,7 @@ def quick_verify(
         elapsed_seconds=round(elapsed, 3),
         protocol_version=PROTOCOL_VERSION,
         stats=stats,
-        verdict_reason=ni_result.verdict_reason or "",
+        verdict_reason=ni_result.verdict_reason or "synthetic smoke workload only",
     )
 
 
@@ -248,7 +248,7 @@ def _load_model_from_target(target_path: Path, *, device: str) -> torch.nn.Modul
     1. Directory with ``config.json`` + ``model.pt`` (save_pretrained format)
     2. Single ``.pt`` file (Trainer checkpoint with ``model_state_dict``)
     """
-    from worldflux import create_world_model
+    from worldflux.factory import create_world_model
 
     if target_path.is_dir():
         # save_pretrained directory layout
@@ -295,7 +295,7 @@ def _load_model_from_target(target_path: Path, *, device: str) -> torch.nn.Modul
 
 def _load_from_trainer_checkpoint(checkpoint_path: Path, *, device: str) -> torch.nn.Module:
     """Load model from a Trainer-format checkpoint (``.pt`` file)."""
-    from worldflux import create_world_model
+    from worldflux.factory import create_world_model
 
     checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)
 

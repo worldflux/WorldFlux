@@ -2711,11 +2711,12 @@ wheels = [
 
 [[package]]
 name = "worldflux"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "." }
 dependencies = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "packaging" },
     { name = "rich" },
     { name = "tomli", marker = "python_full_version < '3.11'" },
     { name = "torch" },
@@ -2792,6 +2793,7 @@ requires-dist = [
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.0.0,<2.0.0" },
     { name = "numpy", specifier = ">=1.24.0,<3.0.0" },
     { name = "opencv-python", marker = "extra == 'atari'", specifier = ">=4.0.0,<5.0.0" },
+    { name = "packaging", specifier = ">=24.0,<27.0" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=3.0.0,<5.0.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0.0,<9.0.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.0.0,<8.0.0" },

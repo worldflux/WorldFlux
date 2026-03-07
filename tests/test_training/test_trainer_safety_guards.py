@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import tempfile
+import warnings
 from pathlib import Path
 
 import pytest
@@ -184,7 +185,7 @@ def test_load_checkpoint_restores_global_step(tmp_path: Path) -> None:
         checkpoint_path.unlink(missing_ok=True)
 
 
-def test_checkpoint_roundtrip_preserves_scheduler_and_scaler_state(tmp_path: Path) -> None:
+def test_checkpoint_roundtrip_preserves_scheduler_state_without_cpu_scaler(tmp_path: Path) -> None:
     config = TrainingConfig(
         total_steps=3,
         batch_size=2,
@@ -203,10 +204,30 @@ def test_checkpoint_roundtrip_preserves_scheduler_and_scaler_state(tmp_path: Pat
     # checkpoints produced by the same trusted codebase.
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     assert "scheduler_state_dict" in checkpoint
-    assert "scaler_state_dict" in checkpoint
+    assert "scaler_state_dict" not in checkpoint
 
     restored = Trainer(_MiniModel(), config, callbacks=[])
     restored.load_checkpoint(str(checkpoint_path))
+
+
+def test_cpu_mixed_precision_does_not_emit_grad_scaler_warning(tmp_path: Path) -> None:
+    config = TrainingConfig(
+        total_steps=1,
+        batch_size=2,
+        sequence_length=1,
+        output_dir=str(tmp_path),
+        device="cpu",
+        mixed_precision=True,
+    )
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        trainer = Trainer(_MiniModel(), config, callbacks=[])
+
+    assert trainer.scaler is None
+    assert not any(
+        "GradScaler is enabled, but CUDA is not available" in str(w.message) for w in caught
+    )
 
 
 def test_runtime_profile_handles_uninitialized_and_active_windows(
