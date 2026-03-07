@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -128,11 +130,7 @@ class TDMPC2WorldModel(WorldModel):
         )
 
         # Compute observation dimension
-        obs_dim = (
-            config.obs_shape[0]
-            if len(config.obs_shape) == 1
-            else int(torch.prod(torch.tensor(config.obs_shape)).item())
-        )
+        obs_dim = config.obs_shape[0] if len(config.obs_shape) == 1 else math.prod(config.obs_shape)
 
         # Encoder
         self._encoder = MLPEncoder(

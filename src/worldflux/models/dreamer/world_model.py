@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import math
 
 import torch
 import torch.nn.functional as F
@@ -138,9 +139,7 @@ class DreamerV3WorldModel(WorldModel):
             )
         else:
             obs_dim = (
-                config.obs_shape[0]
-                if len(config.obs_shape) == 1
-                else int(torch.prod(torch.tensor(config.obs_shape)).item())
+                config.obs_shape[0] if len(config.obs_shape) == 1 else math.prod(config.obs_shape)
             )
             self.encoder = MLPEncoder(
                 input_dim=obs_dim,
