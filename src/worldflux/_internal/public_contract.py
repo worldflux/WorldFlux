@@ -7,8 +7,8 @@ from dataclasses import dataclass
 from typing import Any
 
 import worldflux
-from worldflux import create_world_model, get_config, get_model_info, list_models
 from worldflux.core.model import WorldModel
+from worldflux.factory import create_world_model, get_config, get_model_info, list_models
 
 
 @dataclass(frozen=True)

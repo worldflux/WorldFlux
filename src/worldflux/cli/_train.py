@@ -58,7 +58,7 @@ def train(
       worldflux train --steps 50000 --device cuda
       worldflux train --cloud --gpu a100
     """
-    from worldflux import create_world_model
+    from worldflux.factory import create_world_model
     from worldflux.training import Trainer, TrainingConfig
     from worldflux.training.data import create_random_buffer
 

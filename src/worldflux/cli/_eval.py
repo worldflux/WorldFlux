@@ -54,7 +54,7 @@ def eval_cmd(
                 raise typer.Exit(code=1) from None
             model_id = str(target)
         else:
-            from worldflux import create_world_model
+            from worldflux.factory import create_world_model
 
             try:
                 model = create_world_model(model_or_path, device=device)
