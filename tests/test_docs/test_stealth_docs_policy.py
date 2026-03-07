@@ -27,7 +27,7 @@ def test_public_docs_include_benchmark_and_comparison_guides():
     assert "(reference/unified-comparison.md)" in index
     assert "DreamerV3" in benchmarks
     assert "TD-MPC2" in benchmarks
-    assert "same ReplayBuffer source" in comparison
+    assert "same random ReplayBuffer source" in comparison
 
 
 def test_cpu_success_and_wasr_docs_exist_and_are_actionable():

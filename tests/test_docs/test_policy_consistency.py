@@ -89,3 +89,24 @@ def test_pyproject_uses_default_cli_dependencies_and_optional_inquirer():
     assert any(dep.startswith("typer") for dep in dependencies)
     assert any(dep.startswith("rich") for dep in dependencies)
     assert cli_extra == ["inquirerpy>=0.3.4"]
+
+
+def test_public_surfaces_use_conservative_claim_language():
+    readme = _read("README.md")
+    index = _read("docs/index.md")
+    cpu = _read("docs/getting-started/cpu-success.md")
+    comparison = _read("docs/reference/unified-comparison.md")
+    parity = _read("docs/reference/parity.md")
+
+    assert "Infinite Imagination" not in readme
+    assert "Infinite Imagination" not in index
+    assert "parity-verified" not in readme
+    assert "docs/assets/dogrun.gif" not in readme
+    assert "Reference-family" in readme
+    assert "Reference-family" in index
+    assert "random replay" in cpu.lower()
+    assert "smoke test" in cpu.lower()
+    assert "random `ReplayBuffer` source" in comparison
+    assert "contract demonstration" in comparison
+    assert "published evidence bundle" in parity
+    assert "not a public proof claim" in parity

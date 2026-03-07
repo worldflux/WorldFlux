@@ -1,6 +1,11 @@
 # Unified Training Comparison
 
-This demo shows that DreamerV3 and TD-MPC2 can run through the same high-level training flow.
+This smoke demo shows that DreamerV3 and TD-MPC2 can run through the same
+high-level training flow.
+
+It uses the same random `ReplayBuffer` source for both families, so treat it as
+a contract demonstration rather than a benchmark or a real-environment
+performance comparison.
 
 ## Run
 
@@ -11,7 +16,7 @@ uv run python examples/compare_unified_training.py --quick
 
 ## What It Demonstrates
 
-- same ReplayBuffer source for both families
+- same random ReplayBuffer source for both families
 - same `TrainingConfig` contract
 - same artifact generation flow
 - same visualization helper (`write_reward_heatmap_ppm`)

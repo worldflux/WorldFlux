@@ -6,7 +6,7 @@
 
 **Unified Interface for World Models in Reinforcement Learning**
 
-*One API. Multiple Architectures. Infinite Imagination.*
+*One API. Multiple Architectures. Clear Contracts.*
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/worldflux/WorldFlux/blob/main/examples/worldflux_quickstart.ipynb)
 [![Hugging Face Spaces](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Spaces-blue)](https://huggingface.co/spaces/WorldFlux/demo)
@@ -22,7 +22,7 @@
 
 </div>
 
-> **Alpha (v0.1.0)** — Under active development. API may change between minor versions.
+> **Alpha (v0.1.1)** — Under active development. API may change between minor versions.
 
 ---
 
@@ -30,7 +30,10 @@ WorldFlux provides a unified Python interface for world models used in reinforce
 
 ## Why WorldFlux?
 
-World models let RL agents **imagine before acting** — predicting future states, rewards, and outcomes without touching the real environment. This makes them 10-100x more sample efficient than model-free approaches ([Hafner et al., 2023](https://arxiv.org/abs/2301.04104); [Hansen et al., 2024](https://arxiv.org/abs/2310.16828)).
+World models let RL agents **imagine before acting** by predicting future states,
+rewards, and outcomes without touching the real environment. Upstream literature
+reports strong sample-efficiency gains for world-model methods in many settings
+([Hafner et al., 2023](https://arxiv.org/abs/2301.04104); [Hansen et al., 2024](https://arxiv.org/abs/2310.16828)).
 
 **The problem**: every research team reimplements the same core components from scratch. DreamerV3, TD-MPC2, JEPA — different codebases, different APIs, incompatible training loops. Want to swap an encoder while keeping DreamerV3's dynamics? Rewrite everything.
 
@@ -44,13 +47,10 @@ trajectory = model.rollout(state, actions)  # imagine 15 steps ahead
 ```
 
 - **Swap components independently** with the 5-layer pluggable architecture
-- **Reference families parity-verified** against official implementations via [statistical equivalence testing](https://worldflux.ai/reference/parity/) — not just "it trains"
+- **Reference-family implementations** with proof-mode parity workflows against
+  upstream baselines; public proof claims require published evidence bundles
 - **Training infrastructure** with replay buffers, checkpointing, and callbacks
 - **One API** — `encode()`, `transition()`, `decode()`, `rollout()` — works across all model families
-
-## Demo
-
-![Demo: DreamerV3 dog-run](docs/assets/dogrun.gif)
 
 ## Features
 
@@ -144,6 +144,10 @@ uv sync --extra dev
 uv run python examples/quickstart_cpu_success.py --quick
 ```
 
+This official smoke path uses a random replay buffer and a CI-sized model to
+validate installation and core contracts on CPU. It is not a benchmark or a
+real-environment reproduction path.
+
 ### Create a Model
 
 ```python
@@ -216,14 +220,19 @@ trained_model.save_pretrained("./my_model")
 
 | Family | Presets | Status |
 |--------|---------|--------|
-| DreamerV3 | `size12m`, `size25m`, `size50m`, `size100m`, `size200m` | Reference |
-| TD-MPC2 | `5m`, `19m`, `48m`, `317m` | Reference |
+| DreamerV3 | `size12m`, `size25m`, `size50m`, `size100m`, `size200m` | Reference-family |
+| TD-MPC2 | `5m`, `19m`, `48m`, `317m` | Reference-family |
 | JEPA | `base` | Experimental |
 | V-JEPA2 | `ci`, `tiny`, `base` | Experimental |
 | Token | `base` | Experimental |
 | Diffusion | `base` | Experimental |
 
-> **Reference** models have [parity proofs](https://worldflux.ai/reference/parity/) against official implementations. **Experimental** models implement the full API but are not parity-verified and may return `None` for some predictions (e.g. rewards).
+> **Reference-family** models map to maintained upstream families and internal
+> proof-mode parity workflows. Public proof claims require published evidence
+> bundles; local fixtures and internal runs are not enough on their own.
+> **Experimental** models implement the full API but do not carry the same
+> parity workflow coverage and may return `None` for some predictions
+> (e.g. rewards).
 
 This table lists commonly used presets. For the full catalog (including CI, experimental, and
 skeleton families), run:
@@ -270,8 +279,8 @@ from worldflux.training.callbacks import (
 
 See the `examples/` directory:
 
-- `quickstart_cpu_success.py` - Official CPU-first success path
-- `compare_unified_training.py` - Same trainer/data contract for DreamerV3 and TD-MPC2
+- `quickstart_cpu_success.py` - Official CPU-first smoke path using a random replay buffer
+- `compare_unified_training.py` - Shared-contract smoke comparison for DreamerV3 and TD-MPC2
 - `worldflux_quickstart.ipynb` - Interactive Colab notebook
 - `train_dreamer.py` - Training example
 - `train_tdmpc2.py` - Training example

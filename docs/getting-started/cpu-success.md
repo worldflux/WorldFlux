@@ -1,6 +1,11 @@
 # CPU Success Path
 
-This is the shortest official path to a successful WorldFlux run on CPU-only machines.
+This is the shortest official path to a successful WorldFlux run on CPU-only
+machines.
+
+It is an installation and contract smoke test. The script uses a random replay
+buffer and a CI-sized model on CPU; it is not a benchmark or a
+real-environment reproduction path.
 
 ## Prerequisites
 
