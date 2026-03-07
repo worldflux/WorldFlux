@@ -196,6 +196,49 @@ jobs:
       - name: Check dependencies for vulnerabilities
         run: uv run --with pip-audit pip-audit
 
+  import-time:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.11"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
+        with:
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Check import latency budgets
+        run: |
+          uv run python scripts/check_import_time.py \
+            --label worldflux \
+            --statement "import worldflux" \
+            --max-seconds 0.75
+          uv run python scripts/check_import_time.py \
+            --label "worldflux.cli module" \
+            --statement "import worldflux.cli" \
+            --max-seconds 0.50
+          uv run python scripts/check_import_time.py \
+            --label "worldflux.cli app" \
+            --statement "from worldflux.cli import app" \
+            --max-seconds 3.00
+
+  docker-build-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Build Docker image
+        run: docker build --tag worldflux-smoke .
+
   api-v2:
     runs-on: ubuntu-latest
     steps:

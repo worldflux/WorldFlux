@@ -1,4 +1,4 @@
-.PHONY: help install dev test lint typecheck format docs docs-serve clean security quickstart bench pre-commit-install pre-commit-run
+.PHONY: help install dev test lint typecheck format docs docs-serve clean security quickstart bench import-time docker-smoke pre-commit-install pre-commit-run
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -36,6 +36,14 @@ typecheck: ## Run type checker
 security: ## Run security checks
 	uv run bandit -r src/worldflux/ -ll
 	uv run pip-audit
+
+import-time: ## Check import latency budgets
+	uv run python scripts/check_import_time.py --label worldflux --statement "import worldflux" --max-seconds 0.75
+	uv run python scripts/check_import_time.py --label "worldflux.cli module" --statement "import worldflux.cli" --max-seconds 0.50
+	uv run python scripts/check_import_time.py --label "worldflux.cli app" --statement "from worldflux.cli import app" --max-seconds 3.00
+
+docker-smoke: ## Build Docker image smoke test
+	docker build --tag worldflux-smoke .
 
 docs: ## Build documentation
 	cd website && npm run build
