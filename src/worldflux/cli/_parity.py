@@ -50,6 +50,71 @@ def _resolve_campaign_seeds(
     return _resolve_campaign_seeds_impl(spec_default, seeds_option)
 
 
+def _run_proof_report_pipeline(
+    manifest: Path,
+    runs_path: Path,
+    report_root: Path,
+) -> tuple[Path, Path, Path, Path]:
+    """Run the proof-report pipeline (coverage → equivalence → markdown).
+
+    Returns:
+        Tuple of (coverage_report, validity_report, equivalence_report, markdown_report) paths.
+    """
+    import worldflux.cli as _cli
+
+    coverage_report = report_root / "coverage_report.json"
+    validity_report = report_root / "validity_report.json"
+    equivalence_report = report_root / "equivalence_report.json"
+    markdown_report = report_root / "equivalence_report.md"
+
+    seed_plan = runs_path.parent / "seed_plan.json"
+    run_context = runs_path.parent / "run_context.json"
+
+    coverage_args = [
+        "--manifest",
+        str(manifest),
+        "--runs",
+        str(runs_path),
+        "--output",
+        str(coverage_report),
+        "--max-missing-pairs",
+        "0",
+    ]
+    if seed_plan.exists():
+        coverage_args.extend(["--seed-plan", str(seed_plan)])
+    if run_context.exists():
+        coverage_args.extend(["--run-context", str(run_context)])
+    _cli._run_parity_proof_script("validate_matrix_completeness.py", coverage_args)
+
+    _cli._run_parity_proof_script(
+        "stats_equivalence.py",
+        [
+            "--input",
+            str(runs_path),
+            "--output",
+            str(equivalence_report),
+            "--manifest",
+            str(manifest),
+            "--strict-completeness",
+            "--strict-validity",
+            "--proof-mode",
+            "--validity-report",
+            str(validity_report),
+        ],
+    )
+    _cli._run_parity_proof_script(
+        "report_markdown.py",
+        [
+            "--input",
+            str(equivalence_report),
+            "--output",
+            str(markdown_report),
+        ],
+    )
+
+    return coverage_report, validity_report, equivalence_report, markdown_report
+
+
 # ---------------------------------------------------------------------------
 # parity run / aggregate / report
 # ---------------------------------------------------------------------------
@@ -320,61 +385,14 @@ def parity_proof_report(
     ),
 ) -> None:
     """Generate proof-grade completeness + equivalence + markdown reports."""
-    import worldflux.cli as _cli  # support monkeypatch on cli namespace
-
     resolved_runs = runs.resolve()
     run_root = resolved_runs.parent
     report_root = output_dir.resolve() if output_dir is not None else run_root
     report_root.mkdir(parents=True, exist_ok=True)
 
-    coverage_report = report_root / "coverage_report.json"
-    validity_report = report_root / "validity_report.json"
-    equivalence_report = report_root / "equivalence_report.json"
-    markdown_report = report_root / "equivalence_report.md"
-
-    seed_plan = run_root / "seed_plan.json"
-    run_context = run_root / "run_context.json"
     try:
-        coverage_args = [
-            "--manifest",
-            str(manifest),
-            "--runs",
-            str(resolved_runs),
-            "--output",
-            str(coverage_report),
-            "--max-missing-pairs",
-            "0",
-        ]
-        if seed_plan.exists():
-            coverage_args.extend(["--seed-plan", str(seed_plan)])
-        if run_context.exists():
-            coverage_args.extend(["--run-context", str(run_context)])
-        _cli._run_parity_proof_script("validate_matrix_completeness.py", coverage_args)
-
-        _cli._run_parity_proof_script(
-            "stats_equivalence.py",
-            [
-                "--input",
-                str(resolved_runs),
-                "--output",
-                str(equivalence_report),
-                "--manifest",
-                str(manifest),
-                "--strict-completeness",
-                "--strict-validity",
-                "--proof-mode",
-                "--validity-report",
-                str(validity_report),
-            ],
-        )
-        _cli._run_parity_proof_script(
-            "report_markdown.py",
-            [
-                "--input",
-                str(equivalence_report),
-                "--output",
-                str(markdown_report),
-            ],
+        _, _, equivalence_report, markdown_report = _run_proof_report_pipeline(
+            manifest, resolved_runs, report_root
         )
     except ParityError as exc:
         console.print(f"[wf.fail]Parity proof-report failed:[/wf.fail] {exc}")
@@ -469,55 +487,9 @@ def parity_proof_combined(
     report_root = resolved_output_dir
     report_root.mkdir(parents=True, exist_ok=True)
 
-    coverage_report = report_root / "coverage_report.json"
-    validity_report = report_root / "validity_report.json"
-    equivalence_report = report_root / "equivalence_report.json"
-    markdown_report = report_root / "equivalence_report.md"
-
-    seed_plan = resolved_output_dir / "seed_plan.json"
-    run_context = resolved_output_dir / "run_context.json"
-
     try:
-        coverage_args = [
-            "--manifest",
-            str(manifest),
-            "--runs",
-            str(runs_path),
-            "--output",
-            str(coverage_report),
-            "--max-missing-pairs",
-            "0",
-        ]
-        if seed_plan.exists():
-            coverage_args.extend(["--seed-plan", str(seed_plan)])
-        if run_context.exists():
-            coverage_args.extend(["--run-context", str(run_context)])
-        _cli._run_parity_proof_script("validate_matrix_completeness.py", coverage_args)
-
-        _cli._run_parity_proof_script(
-            "stats_equivalence.py",
-            [
-                "--input",
-                str(runs_path),
-                "--output",
-                str(equivalence_report),
-                "--manifest",
-                str(manifest),
-                "--strict-completeness",
-                "--strict-validity",
-                "--proof-mode",
-                "--validity-report",
-                str(validity_report),
-            ],
-        )
-        _cli._run_parity_proof_script(
-            "report_markdown.py",
-            [
-                "--input",
-                str(equivalence_report),
-                "--output",
-                str(markdown_report),
-            ],
+        _, _, equivalence_report, markdown_report = _run_proof_report_pipeline(
+            manifest, runs_path, report_root
         )
     except ParityError as exc:
         console.print(f"[wf.fail]Verify proof-report failed:[/wf.fail] {exc}")
