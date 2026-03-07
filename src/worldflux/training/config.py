@@ -80,6 +80,9 @@ class TrainingConfig:
     # Quality check after training
     auto_quality_check: bool = True
 
+    # torch.compile support (PyTorch 2.0+)
+    compile_model: bool = False
+
     # Reserved for future trainer-level model patching. Currently unsupported by Trainer.
     model_overrides: dict[str, Any] = field(default_factory=dict)
 

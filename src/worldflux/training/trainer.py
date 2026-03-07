@@ -34,7 +34,7 @@ from .callbacks import Callback, CallbackList, CheckpointCallback, LoggingCallba
 from .config import TrainingConfig
 
 if TYPE_CHECKING:
-    pass
+    from worldflux.core.model import WorldModel
 
 logger = logging.getLogger(__name__)
 
@@ -105,7 +105,7 @@ class Trainer:
 
     def __init__(
         self,
-        model: nn.Module,
+        model: WorldModel | nn.Module,
         config: TrainingConfig | None = None,
         callbacks: list[Callback] | None = None,
         optimizer: Optimizer | None = None,
@@ -116,7 +116,15 @@ class Trainer:
         self.device = torch.device(self.config.resolve_device())
 
         # Move model to device
-        self.model = model.to(self.device)
+        self.model: WorldModel | nn.Module = model.to(self.device)
+
+        # Apply torch.compile if requested (PyTorch 2.0+)
+        if self.config.compile_model:
+            if hasattr(torch, "compile"):
+                self.model = torch.compile(self.model)  # type: ignore[assignment]
+                logger.info("Applied torch.compile to model")
+            else:
+                logger.warning("compile_model=True but torch.compile not available (PyTorch <2.0)")
 
         if self.config.model_overrides:
             raise ConfigurationError(
@@ -230,6 +238,27 @@ class Trainer:
                     raise TrainingError(f"Batch violates model I/O contract: {e}") from e
         return batch
 
+    def _finalize_batch(
+        self, batch: Batch | dict[str, Any] | Any, data: BatchProvider | Any, source: str
+    ) -> Batch:
+        """Normalize, validate, and return a Batch ready for training."""
+        if isinstance(batch, dict):
+            batch = Batch.from_dict(batch)
+        if not isinstance(batch, Batch):
+            raise TrainingError(f"{source} must return Batch or dict, got {type(batch).__name__}")
+        batch = batch.to(self.device)
+        batch = self._apply_contract_to_batch(batch, data)
+        try:
+            sequence_spec = (
+                self.io_contract.effective_sequence_field_spec
+                if self.io_contract is not None
+                else None
+            )
+            batch.validate(strict_time=True, sequence_field_spec=sequence_spec)
+        except (ShapeMismatchError, ValidationError, BufferError) as e:
+            raise TrainingError(f"Invalid batch for training: {e}") from e
+        return batch
+
     def _next_batch(self, data: BatchProvider | Any) -> Batch:
         """Fetch the next batch from a provider or iterator."""
         if hasattr(data, "sample"):
@@ -239,24 +268,7 @@ class Trainer:
                 device=self.device,
             )
             batch = self._sample_from_provider(cast(BatchProvider | BatchProviderV2, data), request)
-            if isinstance(batch, dict):
-                batch = Batch.from_dict(batch)
-            if not isinstance(batch, Batch):
-                raise TrainingError(
-                    f"BatchProvider.sample() must return Batch or dict, got {type(batch).__name__}"
-                )
-            batch = batch.to(self.device)
-            batch = self._apply_contract_to_batch(batch, data)
-            try:
-                sequence_spec = (
-                    self.io_contract.effective_sequence_field_spec
-                    if self.io_contract is not None
-                    else None
-                )
-                batch.validate(strict_time=True, sequence_field_spec=sequence_spec)
-            except (ShapeMismatchError, ValidationError, BufferError) as e:
-                raise TrainingError(f"Invalid batch for training: {e}") from e
-            return batch
+            return self._finalize_batch(batch, data, "BatchProvider.sample()")
 
         if self._data_iter is None:
             iterable = cast(Iterable[Any], data)
@@ -270,24 +282,7 @@ class Trainer:
             self._data_iter = iter(iterable)
             batch = next(self._data_iter)
 
-        if isinstance(batch, dict):
-            batch = Batch.from_dict(batch)
-        if not isinstance(batch, Batch):
-            raise TrainingError(
-                f"BatchProvider must yield Batch or dict, got {type(batch).__name__}"
-            )
-        batch = batch.to(self.device)
-        batch = self._apply_contract_to_batch(batch, data)
-        try:
-            sequence_spec = (
-                self.io_contract.effective_sequence_field_spec
-                if self.io_contract is not None
-                else None
-            )
-            batch.validate(strict_time=True, sequence_field_spec=sequence_spec)
-        except (ShapeMismatchError, ValidationError, BufferError) as e:
-            raise TrainingError(f"Invalid batch for training: {e}") from e
-        return batch
+        return self._finalize_batch(batch, data, "BatchProvider")
 
     @staticmethod
     def _sample_from_provider(
@@ -555,6 +550,53 @@ class Trainer:
                         "Consider reducing learning rate or enabling gradient clipping."
                     )
 
+    def _forward_backward(self, batch: Batch, accum_steps: int) -> Any:
+        """Run forward pass, check losses, and backward pass. Returns LossOutput."""
+        use_amp = self.config.mixed_precision and self.scaler is not None
+
+        if use_amp:
+            with torch.amp.autocast(device_type=self.device.type):
+                loss_out = self.model.loss(batch)  # type: ignore[attr-defined, operator]
+                loss = loss_out.loss / accum_steps
+        else:
+            loss_out = self.model.loss(batch)  # type: ignore[attr-defined, operator]
+            loss = loss_out.loss / accum_steps
+
+        # Check for NaN/Inf in losses before backward
+        self._check_for_nan_inf(
+            {"loss": loss_out.loss, **loss_out.components}, self.state.global_step
+        )
+
+        if use_amp:
+            self.scaler.scale(loss).backward()  # type: ignore[union-attr]
+        else:
+            loss.backward()
+
+        return loss_out
+
+    def _optimizer_step(self) -> None:
+        """Unscale gradients, check them, clip, and step the optimizer."""
+        use_amp = self.config.mixed_precision and self.scaler is not None
+
+        if use_amp:
+            if self.config.grad_clip > 0:
+                self.scaler.unscale_(self.optimizer)  # type: ignore[union-attr]
+                self._check_gradients(self.state.global_step)
+                torch.nn.utils.clip_grad_norm_(
+                    self.model.parameters(),
+                    self.config.grad_clip,
+                )
+            self.scaler.step(self.optimizer)  # type: ignore[union-attr]
+            self.scaler.update()  # type: ignore[union-attr]
+        else:
+            self._check_gradients(self.state.global_step)
+            if self.config.grad_clip > 0:
+                torch.nn.utils.clip_grad_norm_(
+                    self.model.parameters(),
+                    self.config.grad_clip,
+                )
+            self.optimizer.step()
+
     def _train_step(self, data: BatchProvider | Any) -> dict[str, float]:
         """
         Execute a single training step with gradient accumulation support.
@@ -576,56 +618,11 @@ class Trainer:
         if self._accumulation_step == 0:
             self.optimizer.zero_grad()
 
-        if self.config.mixed_precision and self.scaler is not None:
-            with torch.amp.autocast(device_type=self.device.type):
-                loss_out = self.model.loss(batch)  # type: ignore[attr-defined, operator]
-                # Scale loss by accumulation steps for proper averaging
-                loss = loss_out.loss / accum_steps
+        loss_out = self._forward_backward(batch, accum_steps)
 
-            # Check for NaN/Inf in losses before backward
-            self._check_for_nan_inf(
-                {"loss": loss_out.loss, **loss_out.components}, self.state.global_step
-            )
-
-            self.scaler.scale(loss).backward()  # type: ignore[union-attr]
-
-            # Only step optimizer when accumulation is complete
-            if not is_accumulating:
-                if self.config.grad_clip > 0:
-                    self.scaler.unscale_(self.optimizer)
-                    # Check gradients after unscaling
-                    self._check_gradients(self.state.global_step)
-                    torch.nn.utils.clip_grad_norm_(
-                        self.model.parameters(),
-                        self.config.grad_clip,
-                    )
-
-                self.scaler.step(self.optimizer)
-                self.scaler.update()
-        else:
-            loss_out = self.model.loss(batch)  # type: ignore[attr-defined, operator]
-            # Scale loss by accumulation steps for proper averaging
-            loss = loss_out.loss / accum_steps
-
-            # Check for NaN/Inf in losses before backward
-            self._check_for_nan_inf(
-                {"loss": loss_out.loss, **loss_out.components}, self.state.global_step
-            )
-
-            loss.backward()
-
-            # Only step optimizer when accumulation is complete
-            if not is_accumulating:
-                # Check gradients after backward
-                self._check_gradients(self.state.global_step)
-
-                if self.config.grad_clip > 0:
-                    torch.nn.utils.clip_grad_norm_(
-                        self.model.parameters(),
-                        self.config.grad_clip,
-                    )
-
-                self.optimizer.step()
+        # Only step optimizer when accumulation is complete
+        if not is_accumulating:
+            self._optimizer_step()
 
         # Update accumulation counter
         self._accumulation_step = (self._accumulation_step + 1) % accum_steps

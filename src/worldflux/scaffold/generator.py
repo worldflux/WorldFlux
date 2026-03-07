@@ -35,6 +35,9 @@ def _validate_context_with_pydantic(context: dict[str, Any]) -> dict[str, Any] |
     try:
         from pydantic import BaseModel, StrictInt, StrictStr, ValidationError
     except ModuleNotFoundError:
+        import logging as _logging
+
+        _logging.getLogger(__name__).debug("pydantic not available, skipping schema validation")
         return None
 
     schema_model: type[BaseModel]
@@ -141,8 +144,8 @@ def _validate_context(context: dict[str, Any]) -> None:
     context["hidden_dim"] = hidden_dim
 
     device = str(context["device"]).strip().lower()
-    if device not in {"cpu", "cuda"}:
-        raise ValueError(f"device must be 'cpu' or 'cuda', got {device!r}")
+    if device not in {"cpu", "cuda", "mps"}:
+        raise ValueError(f"device must be 'cpu', 'cuda', or 'mps', got {device!r}")
     context["device"] = device
 
     training_total_steps = int(context.get("training_total_steps", DEFAULT_TOTAL_STEPS))
@@ -208,7 +211,7 @@ def _commit_generated_tree(staging: Path, target: Path) -> None:
             _rename_tree(target, backup)
 
         _rename_tree(staging, target)
-    except Exception:
+    except (OSError, shutil.Error, ValueError, FileExistsError, IsADirectoryError):
         if backup is not None and backup.exists() and not target.exists():
             _rename_tree(backup, target)
         raise
@@ -243,7 +246,7 @@ def generate_project(path: str | Path, context: dict[str, Any], force: bool = Fa
         files = _render_project_files(context_copy)
         written_files = _write_project_tree(staging, files, force=True)
         _commit_generated_tree(staging, target)
-    except Exception:
+    except (OSError, shutil.Error, ValueError, FileExistsError, IsADirectoryError):
         if staging.exists():
             shutil.rmtree(staging, ignore_errors=True)
         raise
