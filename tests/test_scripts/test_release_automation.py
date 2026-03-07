@@ -5,6 +5,11 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - Python < 3.11
+    import tomli as tomllib
+
 
 def _load_module(script_name: str):
     script_path = Path(__file__).resolve().parents[2] / "scripts" / script_name
@@ -74,3 +79,11 @@ def test_release_checklist_gate_snippets_present_in_repo() -> None:
         assert snippet in checklist
     for snippet in mod.REQUIRED_RELEASE_SNIPPETS:
         assert snippet in release
+
+
+def test_dockerfile_oci_version_matches_pyproject() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    pyproject = tomllib.loads((repo_root / "pyproject.toml").read_text(encoding="utf-8"))
+    version = pyproject["project"]["version"]
+    dockerfile = (repo_root / "Dockerfile").read_text(encoding="utf-8")
+    assert f'org.opencontainers.image.version="{version}"' in dockerfile
