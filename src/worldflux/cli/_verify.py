@@ -43,7 +43,7 @@ def verify(
         None, "--output", "-o", help="Output file path for json/badge format."
     ),
     episodes: int = typer.Option(
-        10, "--episodes", help="Number of evaluation episodes (quick mode)."
+        10, "--episodes", help="Number of evaluation episodes (synthetic smoke mode)."
     ),
     evidence_bundle: Path | None = typer.Option(
         None,
@@ -73,8 +73,8 @@ def verify(
     # Determine verification mode
     effective_mode = mode.strip().lower()
     if effective_mode == "auto":
-        # Default to quick mode.  Use --mode proof or WORLDFLUX_VERIFY_MODE=proof
-        # (CI) to run the heavyweight proof pipeline.
+        # Default to quick mode. Use --mode proof or WORLDFLUX_VERIFY_MODE=proof
+        # to run the heavyweight proof pipeline.
         env_mode = os.getenv("WORLDFLUX_VERIFY_MODE", "").strip().lower()
         effective_mode = "proof" if env_mode == "proof" else "quick"
 
@@ -151,7 +151,7 @@ def verify(
             else:
                 console.print(f"[wf.fail]Verification unavailable:[/wf.fail] {error_msg}")
             console.print(
-                "[wf.muted]Hint: use --mode quick for lightweight local verification, "
+                "[wf.muted]Hint: use --mode quick for synthetic smoke verification, "
                 "or --demo for a synthetic demonstration.[/wf.muted]"
             )
             raise typer.Exit(code=1) from None
@@ -174,7 +174,7 @@ def verify(
             else "\u2717 SYNTHETIC DEMO: Example parity failure"
         )
     elif result.passed:
-        title = "\u2713 PASS: Mathematically Guaranteed Parity"
+        title = "\u2713 PASS: Proof-mode parity checks satisfied"
     else:
         title = "\u2717 FAIL: Parity Threshold Not Met"
     lines = [
@@ -194,6 +194,12 @@ def verify(
     console.print(result_banner(passed=result.passed, title=title, lines=lines))
     if result.demo:
         console.print("[wf.muted]Results are synthetic (--demo mode)[/wf.muted]")
+    else:
+        console.print(
+            "[wf.muted]Note: local proof-mode runs are not by themselves a public "
+            "proof claim. Publish an evidence bundle before making public parity "
+            "claims.[/wf.muted]"
+        )
     if evidence_bundle is not None:
         _write_proof_evidence_bundle(
             output_dir=evidence_bundle,
@@ -264,7 +270,7 @@ def _run_quick_verify(
     output: Path | None,
     evidence_bundle: Path | None,
 ) -> None:
-    """Execute quick verify mode for pip-install users."""
+    """Execute synthetic smoke verify mode for pip-install users."""
     from rich.status import Status
 
     from worldflux.parity import save_badge
@@ -273,19 +279,19 @@ def _run_quick_verify(
     console.print(
         key_value_panel(
             {
-                "Mode": "quick (lightweight evaluation)",
+                "Mode": "synthetic smoke (quick compatibility mode)",
                 "Target": target,
                 "Env": env,
                 "Episodes": str(episodes),
                 "Device": device,
             },
-            title="Verify - Quick Mode",
+            title="Verify - Synthetic Smoke",
             border="wf.border",
         )
     )
 
     with Status(
-        "[wf.brand]Running quick verification...[/wf.brand]",
+        "[wf.brand]Running synthetic smoke verification...[/wf.brand]",
         console=console,
         spinner="dots",
     ):
@@ -297,7 +303,7 @@ def _run_quick_verify(
                 device=device,
             )
         except (FileNotFoundError, ValueError, RuntimeError, OSError) as exc:
-            console.print(f"[wf.fail]Quick verification failed:[/wf.fail] {exc}")
+            console.print(f"[wf.fail]Synthetic smoke verification failed:[/wf.fail] {exc}")
             raise typer.Exit(code=1) from None
 
     if format == "json":
@@ -334,9 +340,9 @@ def _run_quick_verify(
 
     # Rich panel output (default)
     if qr.passed:
-        title = "\u2713 PASS: Model Meets Baseline"
+        title = "\u2713 PASS: Synthetic Smoke Baseline Met"
     else:
-        title = "\u2717 FAIL: Below Baseline Threshold"
+        title = "\u2717 FAIL: Synthetic Smoke Threshold Not Met"
 
     stats = qr.stats
     lines = [
@@ -348,6 +354,7 @@ def _run_quick_verify(
         f"[wf.label]Margin:[/wf.label]           {stats.get('margin_ratio', '-')}",
         f"[wf.label]Protocol:[/wf.label]         v{qr.protocol_version}",
         f"[wf.label]Elapsed:[/wf.label]          {qr.elapsed_seconds:.3f}s",
+        "[wf.label]Semantics:[/wf.label]        synthetic workload only; not proof-grade evidence",
     ]
     console.print(result_banner(passed=qr.passed, title=title, lines=lines))
     if evidence_bundle is not None:
@@ -404,7 +411,7 @@ def _write_quick_evidence_bundle(*, output_dir: Path, payload: dict[str, Any]) -
     local_payload.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     _write_evidence_manifest(
         output_dir=output_dir,
-        mode="quick",
+        mode="synthetic-smoke",
         request_payload={
             "target": payload.get("target"),
             "env": payload.get("env"),

@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+import worldflux.scaffold.generator as scaffold_generator
 from worldflux.scaffold.generator import generate_project
 
 
@@ -185,3 +186,29 @@ def test_generate_project_rejects_non_positive_training_batch_size(tmp_path: Pat
     context = _context(training_batch_size=0)
     with pytest.raises(ValueError, match="training_batch_size must be positive"):
         generate_project(tmp_path / "invalid-batch-size", context, force=False)
+
+
+def test_generate_project_restores_original_tree_when_swap_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = tmp_path / "transactional-project"
+    generate_project(target, _context(project_name="before"), force=False)
+    original_readme = (target / "README.md").read_text(encoding="utf-8")
+
+    real_rename = scaffold_generator._rename_tree
+
+    def _rename_with_failure(src: Path, dst: Path) -> None:
+        if src.name.startswith(f".{target.name}.staging."):
+            raise OSError("swap failed")
+        real_rename(src, dst)
+
+    monkeypatch.setattr(scaffold_generator, "_rename_tree", _rename_with_failure)
+
+    with pytest.raises(OSError, match="swap failed"):
+        generate_project(target, _context(project_name="after"), force=True)
+
+    assert (target / "README.md").read_text(encoding="utf-8") == original_readme
+    leftovers = [
+        path.name for path in tmp_path.iterdir() if path.name.startswith(f".{target.name}.")
+    ]
+    assert leftovers == []

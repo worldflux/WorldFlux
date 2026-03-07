@@ -5,7 +5,6 @@ from __future__ import annotations
 import glob as glob_module
 import json
 import subprocess
-import sys
 from pathlib import Path
 
 import typer
@@ -14,13 +13,21 @@ from rich.panel import Panel
 
 from worldflux.parity import (
     CampaignRunOptions,
-    parse_seed_csv,
     save_badge,
 )
 from worldflux.parity.errors import ParityError
 from worldflux.parity.fmt_utils import fmt_bool as _fmt_bool
 
 from ._app import console, parity_app, parity_campaign_app
+from ._parity_service import (
+    resolve_campaign_seeds as _resolve_campaign_seeds_impl,
+)
+from ._parity_service import (
+    resolve_parity_script_path as _resolve_parity_script_path_impl,
+)
+from ._parity_service import (
+    run_parity_proof_script as _run_parity_proof_script_impl,
+)
 from ._rich_output import key_value_panel
 from ._theme import PANEL_PADDING
 
@@ -30,46 +37,17 @@ from ._theme import PANEL_PADDING
 
 
 def _resolve_parity_script_path(script_name: str) -> Path:
-    candidates = (
-        Path(__file__).resolve().parents[3] / "scripts" / "parity" / script_name,
-        Path.cwd().resolve() / "scripts" / "parity" / script_name,
-    )
-    for candidate in candidates:
-        if candidate.exists():
-            return candidate
-    raise ParityError(
-        f"Unable to locate scripts/parity/{script_name}. "
-        "Run this command from a WorldFlux source checkout."
-    )
+    return _resolve_parity_script_path_impl(script_name)
 
 
 def _run_parity_proof_script(script_name: str, args: list[str]) -> str:
-    script_path = _resolve_parity_script_path(script_name)
-    completed = subprocess.run(
-        [sys.executable, str(script_path), *args],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    stdout = completed.stdout.strip()
-    stderr = completed.stderr.strip()
-    if completed.returncode != 0:
-        details = "\n".join(part for part in (stdout, stderr) if part)
-        raise ParityError(
-            f"Proof pipeline step failed ({script_name}, exit={completed.returncode}).\n{details}"
-        )
-    return stdout
+    return _run_parity_proof_script_impl(script_name, args)
 
 
 def _resolve_campaign_seeds(
     spec_default: tuple[int, ...], seeds_option: str | None
 ) -> tuple[int, ...]:
-    parsed = parse_seed_csv(seeds_option)
-    if parsed:
-        return parsed
-    if spec_default:
-        return spec_default
-    raise ParityError("No seeds provided. Pass --seeds or define campaign.default_seeds.")
+    return _resolve_campaign_seeds_impl(spec_default, seeds_option)
 
 
 # ---------------------------------------------------------------------------
