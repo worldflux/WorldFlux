@@ -59,7 +59,8 @@ If you are unsure about input/output dimensions, read:
 
 ## 5) Comparing DreamerV3 and TD-MPC2
 
-The two reference model families are designed for different observation spaces.
+The two reference-family implementations are designed for different observation
+spaces.
 Here is how to create both and compare rollout outputs on the same task:
 
 ```python
@@ -107,7 +108,8 @@ print(f"TD-MPC2    rewards shape: {traj_t.rewards.shape}")   # [10, 1]
 :::tip Which model should I pick?
 Use **DreamerV3** for image/pixel observations with its RSSM latent dynamics.
 Use **TD-MPC2** for low-dimensional vector states where fast MLP planning shines.
-See [Unified Comparison](../reference/unified-comparison.md) for detailed benchmarks.
+See [Unified Comparison](../reference/unified-comparison.md) for a
+contract-level comparison guide.
 :::
 
 ## 6) Configuration Customization

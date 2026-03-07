@@ -6,7 +6,7 @@
 
 **Unified Interface for World Models in Reinforcement Learning**
 
-*One API. Multiple Architectures. Infinite Imagination.*
+*One API. Multiple Architectures. Clear Contracts.*
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/worldflux/WorldFlux/blob/main/examples/worldflux_quickstart.ipynb)
 [![GitHub](https://img.shields.io/badge/GitHub-worldflux-blue?logo=github)](https://github.com/worldflux/WorldFlux)
@@ -31,6 +31,9 @@ uv run python examples/quickstart_cpu_success.py --quick
 ```
 
 Official CPU-success docs: [CPU Success Path](getting-started/cpu-success.md)
+
+This landing page highlights the public onboarding surface. Start with the CPU
+smoke path before treating any workflow as a benchmark or proof claim.
 
 ### API Glimpse
 
@@ -57,8 +60,8 @@ print(trajectory.rewards.shape)
 
 | Family | Presets | Status |
 |-------|---------|--------|
-| DreamerV3 | `size12m`, `size25m`, `size50m`, `size100m`, `size200m` | Reference |
-| TD-MPC2 | `5m`, `19m`, `48m`, `317m` | Reference |
+| DreamerV3 | `size12m`, `size25m`, `size50m`, `size100m`, `size200m` | Reference-family |
+| TD-MPC2 | `5m`, `19m`, `48m`, `317m` | Reference-family |
 | JEPA | `base` | Experimental |
 | Token | `base` | Experimental |
 | Diffusion | `base` | Experimental |
@@ -69,6 +72,10 @@ and skeleton families), run:
 ```bash
 worldflux models list --verbose
 ```
+
+Reference-family models map to maintained upstream families and internal
+proof-mode parity workflows. Public proof claims require published evidence
+bundles.
 
 ## Documentation
 

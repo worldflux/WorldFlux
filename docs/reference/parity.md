@@ -5,7 +5,18 @@ WorldFlux provides two parity tracks. They are intentionally different:
 - `legacy quick parity`: fast non-inferiority checks for local development.
 - `proof-grade parity`: strict official-vs-WorldFlux equivalence pipeline.
 
-Use the proof path when you need a statistical claim such as "official and WorldFlux are equivalent."
+Use the proof path when you need a controlled statistical claim inside the
+parity pipeline. A public proof claim still requires a published evidence
+bundle that third parties can inspect.
+
+## Public Claims Policy
+
+- Local proof-mode outputs are not by themselves a public proof claim.
+- Tracked fixture specifications and ignored generated runs under
+  `reports/parity/` are release-gate aids, not public evidence bundles.
+- Public proof claims require a published evidence bundle or report URL with the
+  suite, upstream commit, run context, and final verdict available to third
+  parties.
 
 ## Legacy Quick Parity
 
@@ -21,7 +32,7 @@ Legacy parity uses the `src/worldflux/parity/*` harness and non-inferiority verd
 It is not the source of truth for official equivalence proof.
 The release workflow also regenerates deterministic fixtures into local ignored
 `reports/parity/fixtures/` outputs so dry-runs stay reproducible. Those fixtures
-are not proof-grade evidence.
+are not proof-grade evidence and are not a public proof claim.
 
 ## Proof-Grade Official Equivalence Path
 
