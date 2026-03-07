@@ -1,18 +1,23 @@
-"""World model implementations."""
+"""Lazy exports for bundled world model implementations."""
 
 from __future__ import annotations
 
-from .diffusion import DiffusionWorldModel
-from .dit import DiTSkeletonWorldModel  # noqa: F401 — skeleton, non-public
-from .dreamer import DreamerV3WorldModel
-from .gan import GANSkeletonWorldModel  # noqa: F401 — skeleton, non-public
-from .jepa import JEPABaseWorldModel
-from .physics import PhysicsSkeletonWorldModel  # noqa: F401 — skeleton, non-public
-from .renderer3d import Renderer3DSkeletonWorldModel  # noqa: F401 — skeleton, non-public
-from .ssm import SSMSkeletonWorldModel  # noqa: F401 — skeleton, non-public
-from .tdmpc2 import TDMPC2WorldModel
-from .token import TokenWorldModel
-from .vjepa2 import VJEPA2WorldModel
+from importlib import import_module
+from typing import Any
+
+_EXPORTS: dict[str, str] = {
+    "DreamerV3WorldModel": "worldflux.models.dreamer",
+    "TDMPC2WorldModel": "worldflux.models.tdmpc2",
+    "JEPABaseWorldModel": "worldflux.models.jepa",
+    "VJEPA2WorldModel": "worldflux.models.vjepa2",
+    "TokenWorldModel": "worldflux.models.token",
+    "DiffusionWorldModel": "worldflux.models.diffusion",
+    "DiTSkeletonWorldModel": "worldflux.models.dit",
+    "SSMSkeletonWorldModel": "worldflux.models.ssm",
+    "Renderer3DSkeletonWorldModel": "worldflux.models.renderer3d",
+    "PhysicsSkeletonWorldModel": "worldflux.models.physics",
+    "GANSkeletonWorldModel": "worldflux.models.gan",
+}
 
 __all__ = [
     "DreamerV3WorldModel",
@@ -22,3 +27,18 @@ __all__ = [
     "TokenWorldModel",
     "DiffusionWorldModel",
 ]
+
+
+def __getattr__(name: str) -> Any:
+    module_path = _EXPORTS.get(name)
+    if module_path is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+    module = import_module(module_path)
+    value = getattr(module, name)
+    globals()[name] = value
+    return value
+
+
+def __dir__() -> list[str]:
+    return sorted(set(__all__) | set(_EXPORTS))

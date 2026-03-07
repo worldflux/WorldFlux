@@ -231,15 +231,25 @@ MODEL_CATALOG: dict[str, dict[str, Any]] = {
     },
 }
 
-# Register aliases and catalog entries on import
-for alias, target in MODEL_ALIASES.items():
-    WorldModelRegistry.register_alias(alias, target)
-for model_id, info in MODEL_CATALOG.items():
-    WorldModelRegistry.register_catalog_entry(model_id, info)
+_FACTORY_BOOTSTRAPPED = False
+
+
+def _bootstrap_factory_registry() -> None:
+    """Register bundled aliases/catalog entries only when the factory is used."""
+    global _FACTORY_BOOTSTRAPPED
+    if _FACTORY_BOOTSTRAPPED:
+        return
+
+    for alias, target in MODEL_ALIASES.items():
+        WorldModelRegistry.register_alias(alias, target)
+    for model_id, info in MODEL_CATALOG.items():
+        WorldModelRegistry.register_catalog_entry(model_id, info)
+    _FACTORY_BOOTSTRAPPED = True
 
 
 def _resolved_catalog() -> dict[str, dict[str, Any]]:
     """Return the current catalog view, including dynamically registered entries."""
+    _bootstrap_factory_registry()
     # Ensure model modules are imported so plugin registrations run.
     WorldModelRegistry.list_models()
     catalog = dict(MODEL_CATALOG)
@@ -311,6 +321,7 @@ def create_world_model(
     """
     import torch
 
+    _bootstrap_factory_registry()
     if api_version not in {"v0.2", "v3"}:
         raise ValueError(f"Unsupported api_version: {api_version}. Expected 'v0.2' or 'v3'.")
     if api_version == "v0.2":
@@ -369,7 +380,8 @@ def list_models(
 
     Args:
         verbose: If True, return detailed model information
-        maturity: Optional maturity filter ("reference", "experimental", "skeleton")
+        maturity: Optional maturity filter ("reference", "reference-family",
+            "experimental", "skeleton")
 
     Returns:
         List of model names, or dict with detailed info if verbose=True
@@ -392,7 +404,9 @@ def list_models(
     """
     catalog = _resolved_catalog()
     if maturity is not None:
-        maturity = maturity.lower()
+        maturity = maturity.lower().replace("_", "-")
+        if maturity == "reference-family":
+            maturity = ModelMaturity.REFERENCE.value
         catalog = {k: v for k, v in catalog.items() if v.get("maturity") == maturity}
     else:
         # Default: exclude skeleton models (use maturity="skeleton" to see them)
@@ -417,6 +431,7 @@ def get_model_info(model: str) -> dict[str, Any]:
     Raises:
         ValueError: If model is not found
     """
+    _bootstrap_factory_registry()
     resolved = WorldModelRegistry.resolve_alias(model)
 
     catalog = _resolved_catalog()
@@ -461,6 +476,7 @@ def get_config(
         config.num_q_networks = 10  # Custom Q ensemble size
         model = DreamerV3WorldModel(config)  # or use registry
     """
+    _bootstrap_factory_registry()
     resolved = WorldModelRegistry.resolve_alias(model)
 
     if ":" not in resolved:

@@ -26,86 +26,98 @@ Aliases:
 
 from __future__ import annotations
 
-from .core import (
-    ACTION_COMPONENTS_KEY,
-    PLANNER_HORIZON_KEY,
-    PLANNER_SEQUENCE_KEY,
-    ActionConditioner,
-    ActionPayload,
-    ActionSequence,
-    ActionSpec,
-    AsyncDecoder,
-    AsyncDynamicsModel,
-    AsyncObservationEncoder,
-    AsyncRolloutExecutor,
-    AutoConfig,
-    AutoWorldModel,
-    Batch,
-    BatchProvider,
-    BatchProviderV2,
-    BatchRequest,
-    Capability,
-    CategoricalLatentSpace,
-    ComponentSpec,
-    ConditionPayload,
-    ConditionSpec,
-    Decoder,
-    DiffusionWorldModelConfig,
-    DreamerV3Config,
-    DynamicsModel,
-    DynamicsType,
-    GaussianLatentSpace,
-    JEPABaseConfig,
-    LatentSpace,
-    LatentType,
-    LossOutput,
-    ModalityKind,
-    ModalitySpec,
-    ModelIOContract,
-    ModelMaturity,
-    ModelOutput,
-    ObservationSpec,
-    PredictionSpec,
-    RolloutExecutor,
-    SequenceFieldSpec,
-    SequenceLayout,
-    SequenceProvider,
-    SimNormLatentSpace,
-    State,
-    StateSpec,
-    TDMPC2Config,
-    TokenProvider,
-    TokenSpec,
-    TokenWorldModelConfig,
-    Trajectory,
-    TransitionProvider,
-    VideoProvider,
-    VJEPA2Config,
-    WorldModel,
-    WorldModelConfig,
-    WorldModelInput,
-    WorldModelOutput,
-    WorldModelRegistry,
-    normalize_planned_action,
-)
-from .factory import (
-    MODEL_ALIASES,
-    MODEL_CATALOG,
-    create_world_model,
-    get_config,
-    get_model_info,
-    list_models,
-)
-from .models import (
-    DiffusionWorldModel,
-    DreamerV3WorldModel,
-    JEPABaseWorldModel,
-    TDMPC2WorldModel,
-    TokenWorldModel,
-    VJEPA2WorldModel,
-)
-from .planners import Planner, PlannerObjective, RewardObjective
-from .utils import set_seed
+from importlib import import_module
+from typing import Any
+
+_EXPORT_GROUPS: dict[str, tuple[str, ...]] = {
+    "worldflux.factory": (
+        "MODEL_ALIASES",
+        "MODEL_CATALOG",
+        "create_world_model",
+        "get_config",
+        "get_model_info",
+        "list_models",
+    ),
+    "worldflux.core.batch": (
+        "Batch",
+        "BatchProvider",
+        "BatchProviderV2",
+        "BatchRequest",
+        "SequenceProvider",
+        "TokenProvider",
+        "TransitionProvider",
+        "VideoProvider",
+    ),
+    "worldflux.core.output": ("LossOutput", "ModelOutput", "WorldModelOutput"),
+    "worldflux.core.payloads": (
+        "ACTION_COMPONENTS_KEY",
+        "PLANNER_HORIZON_KEY",
+        "PLANNER_SEQUENCE_KEY",
+        "ActionPayload",
+        "ActionSequence",
+        "ConditionPayload",
+        "WorldModelInput",
+        "normalize_planned_action",
+    ),
+    "worldflux.core.interfaces": (
+        "ActionConditioner",
+        "AsyncDecoder",
+        "AsyncDynamicsModel",
+        "AsyncObservationEncoder",
+        "AsyncRolloutExecutor",
+        "ComponentSpec",
+        "Decoder",
+        "DynamicsModel",
+        "RolloutExecutor",
+    ),
+    "worldflux.planners": ("Planner", "PlannerObjective", "RewardObjective"),
+    "worldflux.core.spec": (
+        "ActionSpec",
+        "Capability",
+        "ConditionSpec",
+        "ModalityKind",
+        "ModalitySpec",
+        "ModelIOContract",
+        "ModelMaturity",
+        "ObservationSpec",
+        "PredictionSpec",
+        "SequenceFieldSpec",
+        "SequenceLayout",
+        "StateSpec",
+        "TokenSpec",
+    ),
+    "worldflux.core.config": (
+        "DiffusionWorldModelConfig",
+        "DreamerV3Config",
+        "DynamicsType",
+        "JEPABaseConfig",
+        "LatentType",
+        "TDMPC2Config",
+        "TokenWorldModelConfig",
+        "VJEPA2Config",
+        "WorldModelConfig",
+    ),
+    "worldflux.core.model": ("WorldModel",),
+    "worldflux.core.registry": ("AutoConfig", "AutoWorldModel", "WorldModelRegistry"),
+    "worldflux.core.latent_space": (
+        "CategoricalLatentSpace",
+        "GaussianLatentSpace",
+        "LatentSpace",
+        "SimNormLatentSpace",
+    ),
+    "worldflux.core.state": ("State",),
+    "worldflux.core.trajectory": ("Trajectory",),
+    "worldflux.models.dreamer": ("DreamerV3WorldModel",),
+    "worldflux.models.tdmpc2": ("TDMPC2WorldModel",),
+    "worldflux.models.jepa": ("JEPABaseWorldModel",),
+    "worldflux.models.vjepa2": ("VJEPA2WorldModel",),
+    "worldflux.models.token": ("TokenWorldModel",),
+    "worldflux.models.diffusion": ("DiffusionWorldModel",),
+    "worldflux.utils": ("set_seed",),
+}
+_EXPORTS: dict[str, str] = {
+    name: module_path for module_path, names in _EXPORT_GROUPS.items() for name in names
+}
 
 # Deprecated symbols: (source_module, fully_qualified_path)
 _DEPRECATED_IMPORTS: dict[str, tuple[str, str]] = {
@@ -153,14 +165,22 @@ _DEPRECATED_IMPORTS: dict[str, tuple[str, str]] = {
 }
 
 
-# Lazy import for training module (optional dependency) + deprecation shim
+def _load_export(name: str) -> Any:
+    module_path = _EXPORTS[name]
+    module = import_module(module_path)
+    value = getattr(module, name)
+    globals()[name] = value
+    return value
+
+
 def __getattr__(name: str) -> object:
     if name == "training":
-        from . import training
-
-        return training
+        module = import_module("worldflux.training")
+        globals()[name] = module
+        return module
+    if name in _EXPORTS:
+        return _load_export(name)
     if name in _DEPRECATED_IMPORTS:
-        import importlib
         import warnings
 
         mod_path, full_path = _DEPRECATED_IMPORTS[name]
@@ -170,13 +190,13 @@ def __getattr__(name: str) -> object:
             DeprecationWarning,
             stacklevel=2,
         )
-        mod = importlib.import_module(mod_path)
-        return getattr(mod, name)
+        module = import_module(mod_path)
+        return getattr(module, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def __dir__() -> list[str]:
-    return list(__all__) + list(_DEPRECATED_IMPORTS)
+    return sorted(set(__all__) | set(_DEPRECATED_IMPORTS) | {"training"})
 
 
 try:
@@ -184,7 +204,7 @@ try:
 
     __version__ = version("worldflux")
 except PackageNotFoundError:
-    __version__ = "0.1.0.dev0"
+    __version__ = "0.1.1.dev0"
 
 __all__ = [
     # Simple API (recommended)

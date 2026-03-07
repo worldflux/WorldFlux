@@ -162,7 +162,14 @@ class Trainer:
         self._accumulation_step = 0
 
         # Mixed precision
-        self.scaler = torch.amp.GradScaler() if self.config.mixed_precision else None
+        self.scaler: torch.amp.GradScaler | None = None
+        if self.config.mixed_precision and self.device.type == "cuda":
+            self.scaler = torch.amp.GradScaler("cuda")
+        elif self.config.mixed_precision:
+            logger.info(
+                "mixed_precision=True requested on non-CUDA device %s; GradScaler disabled.",
+                self.device.type,
+            )
 
         # Create output directory
         os.makedirs(self.config.output_dir, exist_ok=True)
