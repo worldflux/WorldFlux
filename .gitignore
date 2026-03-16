@@ -107,7 +107,7 @@ reports/release/verification-report.json
 reports/release/verification-report.md
 
 # Local workspace
-local/
+node_modules/
 
 # OS files
 .DS_Store
@@ -126,3 +126,4 @@ site/
 website/build/
 website/.docusaurus/
 website/node_modules/
+website/static/teaser/node_modules
