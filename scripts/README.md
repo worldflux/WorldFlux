@@ -14,7 +14,6 @@ Developer and CI utility scripts for WorldFlux.
 | `check_release_metadata.py` | Validate release tag/version/changelog consistency | `uv run python scripts/check_release_metadata.py` |
 | `classify_public_contract_diff.py` | Classify public contract snapshot diff as none/additive/breaking | `uv run python scripts/classify_public_contract_diff.py` |
 | `compute_wasr.py` | Compute simple WASR metrics from local JSONL telemetry | `uv run python scripts/compute_wasr.py` |
-| `create_demo_gif.py` | Create demo GIFs for WorldFlux documentation | `uv run python scripts/create_demo_gif.py` |
 | `estimate_quality_gate_runtime.py` | Estimate runtime for quality-gate measurements using existing seed run results | `uv run python scripts/estimate_quality_gate_runtime.py` |
 | `export_public_contract_snapshot.py` | Export current public contract snapshot to JSON | `uv run python scripts/export_public_contract_snapshot.py` |
 | `generate_verification_report.py` | Generate machine + markdown release verification report artifacts | `uv run python scripts/generate_verification_report.py` |
@@ -52,12 +51,3 @@ Parity proof infrastructure for verifying WorldFlux model equivalence against re
 | `fetch_oracles.sh` | Fetch oracle reference data |
 | `setup_cloud_iam.sh` | Set up IAM roles for cloud parity infrastructure |
 | `launch_cloud_orchestrator.sh` | Launch the cloud-based parity orchestrator |
-
-### `demo/`
-
-Demo recording scripts for documentation and social media.
-
-| Script | Description |
-|--------|-------------|
-| `record_demo.sh` | 90-second terminal demo recording via asciinema |
-| `record_short.sh` | 30-second compact demo for GitHub README embed and social media |
