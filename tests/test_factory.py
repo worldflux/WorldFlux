@@ -8,10 +8,12 @@ import torch
 from worldflux import (
     MODEL_ALIASES,
     MODEL_CATALOG,
+    OfficialBackendHandle,
     create_world_model,
     get_config,
     get_model_info,
     list_models,
+    resolve_backend_execution,
 )
 from worldflux.core.registry import WorldModelRegistry
 from worldflux.models.dreamer import DreamerV3WorldModel
@@ -31,6 +33,8 @@ class TestListModels:
         assert "dreamerv3:official_xl" in models
         assert "tdmpc2:ci" in models
         assert "tdmpc2:5m" in models
+        assert "tdmpc2:proof_5m" in models
+        assert "tdmpc2:5m_legacy" in models
         assert "jepa:base" in models
         assert "vjepa2:base" in models
         # Skeleton models excluded by default
@@ -87,6 +91,12 @@ class TestGetModelInfo:
         assert tdmpc_info["model_id"] == "tdmpc2:ci"
         assert tdmpc_info["type"] == "tdmpc2"
 
+    def test_get_model_info_tdmpc_proof_surface(self):
+        info = get_model_info("tdmpc2:proof_5m")
+        assert info["model_id"] == "tdmpc2:proof_5m"
+        assert info["canonical_display_name"] == "TD-MPC2 Proof 5M"
+        assert info["parity_role"] == "proof_canonical"
+
     def test_get_model_info_unknown(self):
         """Unknown model raises ValueError."""
         with pytest.raises(ValueError, match="Unknown model"):
@@ -115,6 +125,12 @@ class TestGetConfig:
         config = get_config("tdmpc2:5m")
         assert config.model_type == "tdmpc2"
         assert config.latent_dim == 256
+
+    def test_get_config_tdmpc_proof_5m(self):
+        config = get_config("tdmpc2:proof_5m")
+        assert config.model_type == "tdmpc2"
+        assert config.latent_dim == 256
+        assert config.model_name == "5m"
 
     def test_get_config_dreamer_official_xl(self):
         config = get_config("dreamerv3:official_xl")
@@ -222,6 +238,46 @@ class TestCreateWorldModel:
         assert model.config.model_type == "tdmpc2"
         assert getattr(model, "_wf_api_version", None) == "v3"
 
+    def test_create_with_non_native_backend_returns_backend_handle(self):
+        handle = create_world_model(
+            "dreamerv3:official_xl",
+            backend="official_dreamerv3_jax_subprocess",
+            device="cpu",
+        )
+        assert isinstance(handle, OfficialBackendHandle)
+        assert handle.backend == "official_dreamerv3_jax_subprocess"
+        assert handle.model_id == "dreamerv3:official_xl"
+        assert handle.metadata["execution_kind"] == "backend_handle"
+        assert handle.metadata["requested_device"] == "cpu"
+        assert handle.metadata["api_version"] == "v3"
+
+    def test_create_with_non_native_backend_rejects_unknown_model(self):
+        with pytest.raises(ValueError, match="unknown|invalid|unsupported|Unknown"):
+            create_world_model(
+                "dreamerv3:not_a_real_preset",
+                backend="official_dreamerv3_jax_subprocess",
+                device="cpu",
+            )
+
+
+class TestBackendBridge:
+    def test_resolve_backend_execution_native_torch(self):
+        resolved = resolve_backend_execution("dreamerv3:size12m", "native_torch")
+        assert resolved == "native_torch"
+
+    def test_resolve_backend_execution_official_backend_returns_handle(self):
+        resolved = resolve_backend_execution(
+            "dreamerv3:official_xl", "official_dreamerv3_jax_subprocess"
+        )
+        assert isinstance(resolved, OfficialBackendHandle)
+        assert resolved.adapter_id == "official_dreamerv3_jax_subprocess"
+
+    def test_native_model_carries_backend_handle_metadata(self):
+        model = create_world_model("dreamer:ci", obs_shape=(3, 64, 64), action_dim=2)
+        backend_handle = getattr(model, "_wf_backend_handle", None)
+        assert isinstance(backend_handle, OfficialBackendHandle)
+        assert backend_handle.backend == "native_torch"
+
     def test_create_with_api_version_v02_warns(self):
         with pytest.warns(DeprecationWarning, match="api_version='v0.2'"):
             model = create_world_model(
@@ -265,6 +321,8 @@ class TestModelAliases:
         """TD-MPC2 aliases are correct."""
         assert MODEL_ALIASES["tdmpc"] == "tdmpc2:5m"
         assert MODEL_ALIASES["tdmpc-small"] == "tdmpc2:5m"
+        assert MODEL_ALIASES["tdmpc-proof"] == "tdmpc2:proof_5m"
+        assert MODEL_ALIASES["tdmpc-legacy"] == "tdmpc2:5m_legacy"
         assert MODEL_ALIASES["tdmpc-medium"] == "tdmpc2:48m"
         assert MODEL_ALIASES["tdmpc-large"] == "tdmpc2:317m"
 

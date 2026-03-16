@@ -2,6 +2,19 @@
 
 from __future__ import annotations
 
+from .backend_adapters import (
+    BackendAdapter,
+    BackendAdapterRegistry,
+    DreamerOfficialJAXSubprocessAdapter,
+    TDMPC2OfficialTorchSubprocessAdapter,
+    get_backend_adapter_registry,
+)
+from .backend_contract import (
+    ArtifactManifest,
+    BackendRunSpec,
+    discover_artifacts,
+    stable_recipe_hash,
+)
 from .badge import generate_badge_svg, save_badge
 from .campaign import (
     CampaignRunOptions,
@@ -41,4 +54,13 @@ __all__ = [
     "compare_against_paper",
     "generate_badge_svg",
     "save_badge",
+    "ArtifactManifest",
+    "BackendAdapter",
+    "BackendAdapterRegistry",
+    "BackendRunSpec",
+    "DreamerOfficialJAXSubprocessAdapter",
+    "TDMPC2OfficialTorchSubprocessAdapter",
+    "discover_artifacts",
+    "get_backend_adapter_registry",
+    "stable_recipe_hash",
 ]

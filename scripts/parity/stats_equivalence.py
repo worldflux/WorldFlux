@@ -120,6 +120,12 @@ def _parse_args() -> argparse.Namespace:
         help="Require both frequentist and Bayesian pass for parity_pass_final. "
         "Defaults to true when --proof-mode and Bayesian are enabled.",
     )
+    parser.add_argument(
+        "--component-report",
+        type=Path,
+        default=None,
+        help="Optional component match report JSON. Proof mode requires it when the suite says so.",
+    )
     return parser.parse_args()
 
 
@@ -152,6 +158,17 @@ def _load_manifest_payload(path: Path) -> dict[str, Any]:
     if not isinstance(loaded, dict):
         raise RuntimeError("Manifest root must be object.")
     return loaded
+
+
+def _load_optional_json(path: Path) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    loaded = json.loads(path.read_text(encoding="utf-8"))
+    return loaded if isinstance(loaded, dict) else None
+
+
+def _default_component_report_path(*, input_path: Path) -> Path:
+    return input_path.parent / "component_match_report.json"
 
 
 def _resolve_bayesian_config(
@@ -285,6 +302,71 @@ def _derive_task_configs(
         )
 
     return out
+
+
+def _summarize_provenance(entries: list[dict[str, Any]]) -> dict[str, Any]:
+    by_system: dict[str, dict[str, Any]] = {}
+    for system in ("official", "worldflux"):
+        system_entries = [entry for entry in entries if str(entry.get("system", "")) == system]
+        commits = sorted(
+            {
+                str(entry.get("source_commit", "")).strip()
+                for entry in system_entries
+                if str(entry.get("source_commit", "")).strip()
+            }
+        )
+        artifact_paths = sorted(
+            {
+                str(entry.get("source_artifact_path", "")).strip()
+                for entry in system_entries
+                if str(entry.get("source_artifact_path", "")).strip()
+            }
+        )
+        backend_kinds = sorted(
+            {
+                str(entry.get("backend_kind", "")).strip()
+                for entry in system_entries
+                if str(entry.get("backend_kind", "")).strip()
+            }
+        )
+        adapter_ids = sorted(
+            {
+                str(entry.get("adapter_id", "")).strip()
+                for entry in system_entries
+                if str(entry.get("adapter_id", "")).strip()
+            }
+        )
+        recipe_hashes = sorted(
+            {
+                str(entry.get("recipe_hash", "")).strip()
+                for entry in system_entries
+                if str(entry.get("recipe_hash", "")).strip()
+            }
+        )
+        artifact_manifests = [
+            entry.get("artifact_manifest")
+            for entry in system_entries
+            if isinstance(entry.get("artifact_manifest"), dict)
+        ]
+        by_system[system] = {
+            "record_count": len(system_entries),
+            "source_commits": commits,
+            "artifact_paths": artifact_paths,
+            "backend_kinds": backend_kinds,
+            "adapter_ids": adapter_ids,
+            "recipe_hashes": recipe_hashes,
+            "artifact_manifest_count": len(artifact_manifests),
+            "all_have_artifact_manifest": len(artifact_manifests) == len(system_entries),
+            "single_commit": len(commits) == 1,
+            "single_artifact_path": len(artifact_paths) == 1,
+            "single_backend_kind": len(backend_kinds) == 1,
+            "single_adapter_id": len(adapter_ids) == 1,
+            "single_recipe_hash": len(recipe_hashes) == 1,
+            "single_backend_kind_value": backend_kinds[0] if len(backend_kinds) == 1 else None,
+            "single_adapter_id_value": adapter_ids[0] if len(adapter_ids) == 1 else None,
+            "single_recipe_hash_value": recipe_hashes[0] if len(recipe_hashes) == 1 else None,
+        }
+    return by_system
 
 
 def _collect_pairs(
@@ -607,16 +689,40 @@ def main() -> int:
     suite_contract: SuiteContract | None = None
     suite_requirements: dict[str, Any] = {}
     manifest_payload: dict[str, Any] | None = None
+    proof_mode = bool(args.proof_mode or args.strict_validity)
     if args.manifest is not None:
         manifest_payload = _load_manifest_payload(args.manifest)
         suite_contract = load_suite_contract(manifest_payload)
+        if proof_mode and suite_contract.schema_version != "parity.suite.v2":
+            raise SystemExit("proof mode requires a parity.suite.v2 manifest")
         suite_requirements = dict(suite_contract.validity_requirements)
-        for metric in (suite_contract.primary_metric, *suite_contract.secondary_metrics):
-            if metric not in metrics:
-                metrics.append(metric)
+        if proof_mode:
+            metrics = [suite_contract.primary_metric, *suite_contract.secondary_metrics]
+            args.primary_metric = suite_contract.primary_metric
+            args.alpha = suite_contract.alpha
+            args.equivalence_margin = suite_contract.equivalence_margin
+            args.noninferiority_margin = suite_contract.noninferiority_margin
+        else:
+            for metric in (suite_contract.primary_metric, *suite_contract.secondary_metrics):
+                if metric not in metrics:
+                    metrics.append(metric)
     bayesian_cfg = _resolve_bayesian_config(args=args, manifest_payload=manifest_payload)
+    component_report_required = bool(
+        proof_mode
+        and isinstance(manifest_payload, dict)
+        and isinstance(manifest_payload.get("defaults"), dict)
+        and bool(manifest_payload["defaults"].get("component_report_required", False))
+    )
+    component_report_path = (
+        args.component_report.resolve()
+        if args.component_report is not None
+        else _default_component_report_path(input_path=args.input.resolve())
+    )
 
     entries = _load_jsonl(args.input)
+    min_pairs = int(args.min_pairs)
+    if proof_mode and suite_contract is not None:
+        min_pairs = max(min_pairs, int(suite_contract.seed_policy.min_seeds))
     task_configs = _derive_task_configs(
         entries=entries,
         suite=suite_contract,
@@ -631,10 +737,23 @@ def main() -> int:
     completeness = _completeness_summary(entries, metrics=metrics, systems=systems)
     validity = evaluate_validity(
         entries,
-        proof_mode=bool(args.proof_mode or args.strict_validity),
+        proof_mode=proof_mode,
         required_policy_mode=args.policy_mode_required,
         requirements=suite_requirements,
     )
+    component_report = _load_optional_json(component_report_path)
+    component_summary = {
+        "required": component_report_required,
+        "path": str(component_report_path),
+        "present": component_report is not None,
+        "pass": False,
+    }
+    if component_report is not None:
+        component_summary["pass"] = bool(component_report.get("all_pass", False))
+        component_summary["family"] = component_report.get("family")
+        component_summary["result_count"] = len(component_report.get("results", []))
+    elif component_report_required:
+        component_summary["reason"] = "missing_component_report"
     if args.validity_report is not None:
         args.validity_report.parent.mkdir(parents=True, exist_ok=True)
         args.validity_report.write_text(
@@ -645,7 +764,9 @@ def main() -> int:
     strict_failure = bool(
         (args.strict_completeness and completeness["missing_pairs"] > 0)
         or (args.strict_validity and not bool(validity.get("pass", False)))
+        or (component_report_required and not bool(component_summary.get("pass", False)))
     )
+    provenance = _summarize_provenance(entries)
     if strict_failure:
         output: dict[str, Any] = {
             "schema_version": "parity.v1",
@@ -658,13 +779,14 @@ def main() -> int:
                 "equivalence_margin": args.equivalence_margin,
                 "noninferiority_margin": args.noninferiority_margin,
                 "eps": args.eps,
-                "min_pairs": args.min_pairs,
+                "min_pairs": min_pairs,
                 "systems": systems,
                 "strict_completeness": bool(args.strict_completeness),
                 "strict_validity": bool(args.strict_validity),
-                "proof_mode": bool(args.proof_mode or args.strict_validity),
+                "proof_mode": proof_mode,
                 "policy_mode_required": args.policy_mode_required,
                 "manifest": str(args.manifest) if args.manifest else None,
+                "component_report": str(component_report_path),
                 "bayesian": {
                     "enabled": bayesian_cfg.enabled,
                     "draws": bayesian_cfg.draws,
@@ -680,6 +802,8 @@ def main() -> int:
             },
             "completeness": completeness,
             "validity": validity,
+            "component_match": component_summary,
+            "provenance": provenance,
             "bayesian": {
                 "enabled": bayesian_cfg.enabled,
                 "tasks_total": 0,
@@ -705,6 +829,7 @@ def main() -> int:
                 "strict_mode_failed": True,
                 "missing_pairs": int(completeness["missing_pairs"]),
                 "validity_pass": bool(validity.get("pass", False)),
+                "component_match_pass": bool(component_summary.get("pass", False)),
             },
         }
         args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -744,7 +869,7 @@ def main() -> int:
                 noninferiority_margin=task_cfg.noninferiority_margin,
                 effect_transform=task_cfg.effect_transform,
                 higher_is_better=task_cfg.higher_is_better,
-                min_pairs=args.min_pairs,
+                min_pairs=min_pairs,
             )
 
     discovered_tasks = {
@@ -860,7 +985,7 @@ def main() -> int:
                     probability_threshold_noninferiority=(
                         bayesian_cfg.probability_threshold_noninferiority
                     ),
-                    min_pairs=args.min_pairs,
+                    min_pairs=min_pairs,
                 )
                 report["bayesian"] = bayesian_report
                 metric_bayesian_pass = bool(
@@ -929,13 +1054,14 @@ def main() -> int:
             "equivalence_margin": args.equivalence_margin,
             "noninferiority_margin": args.noninferiority_margin,
             "eps": args.eps,
-            "min_pairs": args.min_pairs,
+            "min_pairs": min_pairs,
             "systems": systems,
             "strict_completeness": bool(args.strict_completeness),
             "strict_validity": bool(args.strict_validity),
-            "proof_mode": bool(args.proof_mode or args.strict_validity),
+            "proof_mode": proof_mode,
             "policy_mode_required": args.policy_mode_required,
             "manifest": str(args.manifest) if args.manifest else None,
+            "component_report": str(component_report_path),
             "bayesian": {
                 "enabled": bayesian_cfg.enabled,
                 "draws": bayesian_cfg.draws,
@@ -951,6 +1077,8 @@ def main() -> int:
         },
         "completeness": completeness,
         "validity": validity,
+        "component_match": component_summary,
+        "provenance": provenance,
         "bayesian": {
             "enabled": bayesian_cfg.enabled,
             "tasks_total": len(task_reports),
@@ -979,8 +1107,12 @@ def main() -> int:
             "strict_mode_failed": False,
             "missing_pairs": int(completeness["missing_pairs"]),
             "validity_pass": bool(validity.get("pass", False)),
+            "component_match_pass": bool(component_summary.get("pass", False)),
         },
     }
+    output["global"]["parity_pass_final"] = bool(output["global"]["parity_pass_final"]) and (
+        not component_report_required or bool(component_summary.get("pass", False))
+    )
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(output, indent=2, sort_keys=True) + "\n", encoding="utf-8")

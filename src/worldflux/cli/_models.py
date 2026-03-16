@@ -53,13 +53,15 @@ def models_list(
     table.add_column("Description", max_width=42, no_wrap=True, overflow="ellipsis")
     table.add_column("Params", justify="right", style="wf.muted", no_wrap=True)
     table.add_column("Maturity", no_wrap=True)
+    table.add_column("Parity Role", no_wrap=True)
 
     for model_id, info in catalog.items():
         desc = _get(info, "description", "-")
         params = _get(info, "params", "-")
         mat = _get(info, "maturity", "-")
         mat_styled = _style_maturity(mat)
-        table.add_row(model_id, desc, params, mat_styled)
+        parity_role = _style_parity_role(_get(info, "parity_role", "-"))
+        table.add_row(model_id, desc, params, mat_styled, parity_role)
 
     console.print(table)
     if any(str(info.get("maturity")) == "reference" for info in catalog.values()):
@@ -99,11 +101,21 @@ def models_info(
     data: dict[str, Any] = {"Model ID": model_id}
     if "alias" in info:
         data["Alias"] = f"{info['alias']} -> {model_id}"
-    for key in ("description", "params", "type", "maturity", "obs_shape", "action_dim"):
+    for key in (
+        "description",
+        "params",
+        "type",
+        "maturity",
+        "parity_role",
+        "obs_shape",
+        "action_dim",
+    ):
         if key in info:
             val = info[key]
             if key == "maturity":
                 val = _style_maturity(str(val))
+            elif key == "parity_role":
+                val = _style_parity_role(str(val))
             data[_pretty_label(key)] = val
 
     # Show any remaining keys
@@ -114,6 +126,7 @@ def models_info(
         "params",
         "type",
         "maturity",
+        "parity_role",
         "obs_shape",
         "action_dim",
     }
@@ -144,6 +157,7 @@ _FIELD_LABELS: dict[str, str] = {
     "params": "Parameters",
     "type": "Type",
     "maturity": "Maturity",
+    "parity_role": "Parity Role",
     "obs_shape": "Observation Shape",
     "action_dim": "Action Dim",
     "default_obs": "Default Obs",
@@ -162,3 +176,13 @@ def _style_maturity(maturity: str) -> str:
     if maturity == "skeleton":
         return "[wf.muted]skeleton[/wf.muted]"
     return maturity
+
+
+def _style_parity_role(parity_role: str) -> str:
+    if parity_role == "proof_canonical":
+        return "[wf.pass]proof-canonical[/wf.pass]"
+    if parity_role == "ci_only":
+        return "[wf.caution]ci-only (not proof)[/wf.caution]"
+    if parity_role == "reference_family":
+        return "[wf.muted]reference-family[/wf.muted]"
+    return parity_role

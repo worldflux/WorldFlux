@@ -1,0 +1,64 @@
+{
+  "schema_version": "parity.manifest.v1",
+  "defaults": {
+    "alpha": 0.05,
+    "equivalence_margin": 0.05,
+    "noninferiority_margin": 0.05,
+    "eps": 1e-08
+  },
+  "seed_policy": {
+    "mode": "fixed",
+    "values": [0],
+    "pilot_seeds": 1,
+    "min_seeds": 1,
+    "max_seeds": 1,
+    "power_target": 0.8
+  },
+  "tasks": [
+    {
+      "task_id": "atari100k_pong",
+      "family": "dreamerv3",
+      "required_metrics": ["final_return_mean", "auc_return"],
+      "validity_requirements": {
+        "policy_mode": "official_reference",
+        "environment_backend": "gymnasium",
+        "forbidden_shortcuts": []
+      },
+      "official": {
+        "adapter": "official_dreamerv3",
+        "cwd": "../../..",
+        "timeout_sec": 86400,
+        "env": {},
+        "command": [
+          "python3",
+          "scripts/parity/wrappers/official_dreamerv3.py",
+          "--repo-root",
+          "../dreamerv3-official",
+          "--task-id",
+          "{task_id}",
+          "--seed",
+          "{seed}",
+          "--steps",
+          "110000",
+          "--device",
+          "{device}",
+          "--run-dir",
+          "{run_root}/executions/{task_id}/seed_{seed}/official",
+          "--metrics-out",
+          "{metrics_out}"
+        ]
+      },
+      "worldflux": {
+        "adapter": "worldflux_dreamerv3_native",
+        "cwd": "../../..",
+        "timeout_sec": 60,
+        "env": {},
+        "command": [
+          "python3",
+          "-c",
+          "print('worldflux skipped for official bootstrap')"
+        ]
+      }
+    }
+  ]
+}

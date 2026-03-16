@@ -11,6 +11,12 @@ from typing import Any
 
 from common import run_command
 
+RUNTIME_ROOT = Path(__file__).resolve().parents[1]
+if str(RUNTIME_ROOT) not in sys.path:
+    sys.path.insert(0, str(RUNTIME_ROOT))
+
+from runtime.dreamer_official_recipe import OFFICIAL_DREAMER_ATARI100K_RECIPE  # noqa: E402
+
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -23,7 +29,9 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--metrics-out", type=Path, required=True)
     parser.add_argument("--eval-window", type=int, default=10)
     parser.add_argument("--eval-interval", type=int, default=5_000)
-    parser.add_argument("--eval-episodes", type=int, default=4)
+    parser.add_argument(
+        "--eval-episodes", type=int, default=OFFICIAL_DREAMER_ATARI100K_RECIPE.eval_eps
+    )
     parser.add_argument(
         "--policy-mode",
         type=str,
@@ -33,15 +41,16 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--dreamer-policy-impl",
         type=str,
-        default="auto",
+        default="actor",
         choices=["auto", "actor", "shooting"],
     )
-    parser.add_argument("--dreamer-replay-ratio", type=float, default=128.0)
+    parser.add_argument("--dreamer-train-ratio", type=float, default=256.0)
+    parser.add_argument("--dreamer-replay-ratio", type=float, default=0.0)
     parser.add_argument("--dreamer-train-chunk-size", type=int, default=64)
     parser.add_argument(
         "--dreamer-model-profile",
         type=str,
-        default="wf25m",
+        default="official_xl",
         choices=["ci", "wf12m", "wf25m", "wf50m", "wf200m", "official_like", "official_xl"],
     )
     parser.add_argument(
@@ -52,7 +61,7 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--dreamer-lr", type=float, default=4e-5)
     parser.add_argument("--timeout-sec", type=int, default=0)
-    parser.add_argument("--python-executable", type=str, default="python3")
+    parser.add_argument("--python-executable", type=str, default=sys.executable)
     parser.add_argument("--train-command", type=str, default="")
     parser.add_argument("--mock", action="store_true")
     return parser.parse_args()
@@ -83,6 +92,7 @@ def main() -> int:
         "policy_mode": args.policy_mode,
         "dreamer_policy_impl": args.dreamer_policy_impl,
         "dreamer_replay_ratio": args.dreamer_replay_ratio,
+        "dreamer_train_ratio": args.dreamer_train_ratio,
         "dreamer_train_chunk_size": args.dreamer_train_chunk_size,
         "dreamer_model_profile": args.dreamer_model_profile,
         "dreamer_diagnostic": args.dreamer_diagnostic,
@@ -120,6 +130,8 @@ def main() -> int:
             str(args.policy_mode),
             "--dreamer-policy-impl",
             str(args.dreamer_policy_impl),
+            "--dreamer-train-ratio",
+            str(args.dreamer_train_ratio),
             "--dreamer-replay-ratio",
             str(args.dreamer_replay_ratio),
             "--dreamer-train-chunk-size",

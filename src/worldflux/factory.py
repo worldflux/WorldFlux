@@ -25,8 +25,14 @@ Example:
 from __future__ import annotations
 
 import warnings
-from typing import Any
+from typing import Any, cast
 
+from .core.backend_bridge import (
+    NATIVE_TORCH_BACKEND,
+    normalize_backend_hint,
+    resolve_backend_execution,
+)
+from .core.backend_handle import OfficialBackendHandle
 from .core.config import WorldModelConfig
 from .core.model import WorldModel
 from .core.registry import ConfigRegistry, WorldModelRegistry
@@ -47,6 +53,9 @@ MODEL_ALIASES: dict[str, str] = {
     "tdmpc2-ci": "tdmpc2:ci",
     "tdmpc2": "tdmpc2:5m",
     "tdmpc-small": "tdmpc2:5m",
+    "tdmpc-proof": "tdmpc2:proof_5m",
+    "tdmpc2:proof": "tdmpc2:proof_5m",
+    "tdmpc-legacy": "tdmpc2:5m_legacy",
     "tdmpc-medium": "tdmpc2:48m",
     "tdmpc-large": "tdmpc2:317m",
     # JEPA aliases
@@ -69,11 +78,12 @@ MODEL_ALIASES: dict[str, str] = {
 # Available model presets with descriptions
 MODEL_CATALOG: dict[str, dict[str, Any]] = {
     "dreamer:ci": {
-        "description": "Dreamer CI preset - small profile for quick validation and scaffolds",
+        "description": "Dreamer CI preset - small profile for quick validation and scaffolds (not proof-eligible)",
         "params": "~0.1M",
         "type": "dreamer",
         "default_obs": "image",
         "maturity": ModelMaturity.REFERENCE.value,
+        "parity_role": "ci_only",
     },
     "dreamerv3:size12m": {
         "description": "DreamerV3 12M params - Good for simple environments",
@@ -81,6 +91,7 @@ MODEL_CATALOG: dict[str, dict[str, Any]] = {
         "type": "dreamer",
         "default_obs": "image",
         "maturity": ModelMaturity.REFERENCE.value,
+        "parity_role": "reference_family",
     },
     "dreamerv3:size25m": {
         "description": "DreamerV3 25M params - Balanced performance",
@@ -88,6 +99,7 @@ MODEL_CATALOG: dict[str, dict[str, Any]] = {
         "type": "dreamer",
         "default_obs": "image",
         "maturity": ModelMaturity.REFERENCE.value,
+        "parity_role": "reference_family",
     },
     "dreamerv3:size50m": {
         "description": "DreamerV3 50M params - Strong performance",
@@ -95,6 +107,7 @@ MODEL_CATALOG: dict[str, dict[str, Any]] = {
         "type": "dreamer",
         "default_obs": "image",
         "maturity": ModelMaturity.REFERENCE.value,
+        "parity_role": "reference_family",
     },
     "dreamerv3:size100m": {
         "description": "DreamerV3 100M params - High capacity",
@@ -102,6 +115,7 @@ MODEL_CATALOG: dict[str, dict[str, Any]] = {
         "type": "dreamer",
         "default_obs": "image",
         "maturity": ModelMaturity.REFERENCE.value,
+        "parity_role": "reference_family",
     },
     "dreamerv3:size200m": {
         "description": "DreamerV3 200M params - Maximum capacity",
@@ -109,6 +123,7 @@ MODEL_CATALOG: dict[str, dict[str, Any]] = {
         "type": "dreamer",
         "default_obs": "image",
         "maturity": ModelMaturity.REFERENCE.value,
+        "parity_role": "reference_family",
     },
     "dreamerv3:official_xl": {
         "description": "DreamerV3 official XL - Matches danijar/dreamerv3 default architecture",
@@ -116,20 +131,42 @@ MODEL_CATALOG: dict[str, dict[str, Any]] = {
         "type": "dreamer",
         "default_obs": "image",
         "maturity": ModelMaturity.REFERENCE.value,
+        "parity_role": "proof_canonical",
     },
     "tdmpc2:5m": {
-        "description": "TD-MPC2 5M params - Fast planning",
+        "description": "TD-MPC2 5M params - Compatibility preset",
         "params": "~5M",
         "type": "tdmpc2",
         "default_obs": "vector",
         "maturity": ModelMaturity.REFERENCE.value,
+        "canonical_display_name": "TD-MPC2 5M Compatibility",
+        "parity_role": "reference_family",
+    },
+    "tdmpc2:proof_5m": {
+        "description": "TD-MPC2 proof canonical 5M params - official compare target",
+        "params": "~5M",
+        "type": "tdmpc2",
+        "default_obs": "vector",
+        "maturity": ModelMaturity.REFERENCE.value,
+        "canonical_display_name": "TD-MPC2 Proof 5M",
+        "parity_role": "proof_canonical",
+    },
+    "tdmpc2:5m_legacy": {
+        "description": "TD-MPC2 legacy 5M params - retained for compatibility",
+        "params": "~5M",
+        "type": "tdmpc2",
+        "default_obs": "vector",
+        "maturity": ModelMaturity.REFERENCE.value,
+        "canonical_display_name": "TD-MPC2 5M Legacy",
+        "parity_role": "reference_family",
     },
     "tdmpc2:ci": {
-        "description": "TD-MPC2 CI preset - small profile for quick validation and scaffolds",
+        "description": "TD-MPC2 CI preset - small profile for quick validation and scaffolds (not proof-eligible)",
         "params": "~0.1M",
         "type": "tdmpc2",
         "default_obs": "vector",
         "maturity": ModelMaturity.REFERENCE.value,
+        "parity_role": "ci_only",
     },
     "tdmpc2:19m": {
         "description": "TD-MPC2 19M params - Balanced",
@@ -137,6 +174,7 @@ MODEL_CATALOG: dict[str, dict[str, Any]] = {
         "type": "tdmpc2",
         "default_obs": "vector",
         "maturity": ModelMaturity.REFERENCE.value,
+        "parity_role": "reference_family",
     },
     "tdmpc2:48m": {
         "description": "TD-MPC2 48M params - Strong performance",
@@ -144,6 +182,7 @@ MODEL_CATALOG: dict[str, dict[str, Any]] = {
         "type": "tdmpc2",
         "default_obs": "vector",
         "maturity": ModelMaturity.REFERENCE.value,
+        "parity_role": "reference_family",
     },
     "tdmpc2:317m": {
         "description": "TD-MPC2 317M params - Maximum capacity",
@@ -151,6 +190,7 @@ MODEL_CATALOG: dict[str, dict[str, Any]] = {
         "type": "tdmpc2",
         "default_obs": "vector",
         "maturity": ModelMaturity.REFERENCE.value,
+        "parity_role": "reference_family",
     },
     "jepa:base": {
         "description": "JEPA base model - Representation prediction",
@@ -342,6 +382,7 @@ def create_world_model(
 
     # Resolve aliases
     resolved_model = WorldModelRegistry.resolve_alias(model)
+    backend_name = normalize_backend_hint(str(kwargs.pop("backend", NATIVE_TORCH_BACKEND)))
 
     # Build kwargs
     config_kwargs: dict[str, Any] = dict(kwargs)
@@ -358,6 +399,19 @@ def create_world_model(
     if action_spec is not None:
         config_kwargs["action_spec"] = action_spec
 
+    backend_execution = resolve_backend_execution(resolved_model, backend_name)
+
+    if isinstance(backend_execution, OfficialBackendHandle):
+        ConfigRegistry.from_pretrained(resolved_model, **config_kwargs)
+        return cast(
+            WorldModel,
+            backend_execution.with_metadata(
+                execution_kind="backend_handle",
+                requested_device=str(device),
+                api_version=api_version,
+            ),
+        )
+
     # Create model
     world_model = WorldModelRegistry.from_pretrained(resolved_model, **config_kwargs)
     if component_overrides:
@@ -367,6 +421,20 @@ def create_world_model(
     if hasattr(world_model, "to"):
         world_model = world_model.to(torch.device(device))
     setattr(world_model, "_wf_api_version", api_version)
+    setattr(
+        world_model,
+        "_wf_backend_handle",
+        OfficialBackendHandle(
+            backend=backend_name,
+            model_id=resolved_model,
+            metadata={
+                "execution_kind": "native_model",
+                "device": str(device),
+                "api_version": api_version,
+            },
+        ),
+    )
+    setattr(world_model, "_wf_backend", NATIVE_TORCH_BACKEND)
 
     return world_model
 

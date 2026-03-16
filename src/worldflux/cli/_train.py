@@ -12,6 +12,20 @@ from ._app import app, console
 from ._rich_output import key_value_panel, result_banner
 
 
+def _env_to_task_filter(env: str) -> str:
+    value = str(env).strip().lower()
+    if not value:
+        return ""
+    if value.startswith("atari/"):
+        game = value.split("/", 1)[1].strip().replace("-", "_")
+        return f"atari100k_{game}" if game else ""
+    if value.startswith("dmcontrol/"):
+        return value.split("/", 1)[1].strip().replace("/", "-")
+    if value.startswith("mujoco/"):
+        return value.split("/", 1)[1].strip().replace("_", "-")
+    return value
+
+
 @app.command(rich_help_panel="Training")
 def train(
     config: Path = typer.Option(
@@ -58,6 +72,7 @@ def train(
       worldflux train --steps 50000 --device cuda
       worldflux train --cloud --gpu a100
     """
+    from worldflux.core.backend_handle import OfficialBackendHandle
     from worldflux.factory import create_world_model
     from worldflux.training import Trainer, TrainingConfig
     from worldflux.training.data import create_random_buffer
@@ -154,6 +169,8 @@ def train(
                 "Steps": f"{effective_steps:,}",
                 "Batch size": str(cfg.training.batch_size),
                 "Device": effective_device,
+                "Backend": cfg.training.backend,
+                "Profile": cfg.training.backend_profile or "-",
                 "Output": effective_output_dir,
             },
             title="WorldFlux Train",
@@ -168,6 +185,7 @@ def train(
             action_dim=cfg.architecture.action_dim,
             hidden_dim=cfg.architecture.hidden_dim,
             device=effective_device,
+            backend=cfg.training.backend,
         )
     except (ValueError, RuntimeError) as exc:
         console.print(f"[wf.fail]Model creation failed:[/wf.fail] {exc}")
@@ -180,7 +198,61 @@ def train(
         learning_rate=cfg.training.learning_rate,
         device=effective_device,
         output_dir=effective_output_dir,
+        backend=cfg.training.backend,
+        backend_profile=cfg.training.backend_profile,
     )
+
+    if isinstance(model, OfficialBackendHandle):
+        backend_model = model.with_metadata(
+            env=cfg.verify.env,
+            task_filter=_env_to_task_filter(cfg.verify.env),
+            profile=cfg.training.backend_profile,
+        )
+        trainer = Trainer(backend_model, training_config)
+        try:
+            handle = trainer.submit(resume_from=resume_from)
+        except (RuntimeError, ValueError) as exc:
+            console.print(f"[wf.fail]Delegated training submission failed:[/wf.fail] {exc}")
+            raise typer.Exit(code=1) from None
+
+        execution_result = handle.metadata.get("execution_result")
+        if isinstance(execution_result, dict):
+            status = str(execution_result.get("status", "failed"))
+            panel = {
+                "Backend": handle.backend,
+                "Profile": cfg.training.backend_profile or "-",
+                "Run ID": handle.job_id,
+                "Status": status,
+                "Reason": execution_result.get("reason_code", "-"),
+                "Summary": execution_result.get("summary_path", "-"),
+                "Next": execution_result.get("next_action", "-"),
+            }
+            console.print(
+                key_value_panel(
+                    panel,
+                    title="Delegated Training Result",
+                    border="wf.border.success" if status == "succeeded" else "wf.border.info",
+                )
+            )
+            if status == "blocked":
+                raise typer.Exit(code=2)
+            if status == "incomplete":
+                raise typer.Exit(code=3)
+            if status != "succeeded":
+                raise typer.Exit(code=1)
+        else:
+            console.print(
+                key_value_panel(
+                    {
+                        "Backend": handle.backend,
+                        "Profile": cfg.training.backend_profile or "-",
+                        "Run ID": handle.job_id,
+                    },
+                    title="Delegated Training Submitted",
+                    border="wf.border.success",
+                )
+            )
+        return
 
     # Create data source
     console.print("[wf.info]Preparing training data...[/wf.info]")

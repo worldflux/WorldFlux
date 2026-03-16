@@ -112,7 +112,7 @@ export PYTHONUNBUFFERED=1
 stdbuf -oL -eL python3 scripts/parity/aws_distributed_orchestrator.py \
     --region "${REGION}" \
     --manifest scripts/parity/manifests/official_vs_worldflux_v1.yaml \
-    --full-manifest scripts/parity/manifests/official_vs_worldflux_full_v1.yaml \
+    --full-manifest scripts/parity/manifests/official_vs_worldflux_full_v2.yaml \
     --run-id "${RUN_TAG}" \
     --s3-prefix "${S3_PREFIX}" \
     --phase-plan two_stage_proof \

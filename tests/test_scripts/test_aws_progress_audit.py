@@ -295,11 +295,11 @@ def test_run_audit_happy_path_with_mocked_aws(monkeypatch) -> None:
     assert report.latest.latest_phase_progress is not None
 
     rendered = mod._render_report(report)
-    assert "[1] 対象Run情報" in rendered
-    assert "[2] official 進捗" in rendered
-    assert "[3] worldflux 進捗" in rendered
-    assert "[4] 直近更新時刻（S3 LastModified, UTC）" in rendered
-    assert "[5] 停滞警告" in rendered
+    assert "[1] Target Run" in rendered
+    assert "[2] official Progress" in rendered
+    assert "[3] worldflux Progress" in rendered
+    assert "[4] Latest Update Times (S3 LastModified, UTC)" in rendered
+    assert "[5] Stall Warnings" in rendered
 
 
 def test_run_audit_continues_on_corrupt_json_artifact(monkeypatch) -> None:

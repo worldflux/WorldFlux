@@ -37,11 +37,18 @@ batch_size = 8
 sequence_length = 25
 learning_rate = 1e-3
 device = "cpu"
+backend = "native_torch"
+backend_profile = "local"
 output_dir = "./test-outputs"
 
 [verify]
 baseline = "official/dreamerv3"
 env = "atari/pong"
+backend = "native_torch"
+backend_profile = "official_xl"
+mode = "proof"
+proof_claim = "compare"
+allow_official_only = true
 
 [cloud]
 gpu_type = "a10g"
@@ -83,6 +90,8 @@ class TestLoadConfig:
         assert cfg.training.sequence_length == 25
         assert cfg.training.learning_rate == 1e-3
         assert cfg.training.device == "cpu"
+        assert cfg.training.backend == "native_torch"
+        assert cfg.training.backend_profile == "local"
         assert cfg.training.output_dir == "./test-outputs"
 
     def test_verify_parsed(self, sample_toml: Path) -> None:
@@ -90,6 +99,11 @@ class TestLoadConfig:
         assert isinstance(cfg.verify, VerifySectionConfig)
         assert cfg.verify.baseline == "official/dreamerv3"
         assert cfg.verify.env == "atari/pong"
+        assert cfg.verify.backend == "native_torch"
+        assert cfg.verify.backend_profile == "official_xl"
+        assert cfg.verify.mode == "proof"
+        assert cfg.verify.proof_claim == "compare"
+        assert cfg.verify.allow_official_only is True
 
     def test_raw_dict_preserved(self, sample_toml: Path) -> None:
         cfg = load_config(sample_toml)

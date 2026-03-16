@@ -64,6 +64,8 @@ class TrainingConfig:
     device: str = "auto"
     seed: int = 42
     mixed_precision: bool = False
+    backend: str = "native_torch"
+    backend_profile: str = ""
 
     # Data loading
     num_workers: int = 0
@@ -145,6 +147,8 @@ class TrainingConfig:
             raise ConfigurationError(
                 f"gradient_accumulation_steps must be >= 1, got {self.gradient_accumulation_steps}"
             )
+        if not str(self.backend).strip():
+            raise ConfigurationError("backend must not be empty")
 
     def to_dict(self) -> dict[str, Any]:
         """Convert config to dictionary."""
@@ -220,5 +224,6 @@ class TrainingConfig:
             f"seq_len={self.sequence_length}, "
             f"instant_mode={self.instant_mode}, "
             f"lr={self.learning_rate}, "
-            f"device={self.device!r})"
+            f"device={self.device!r}, "
+            f"backend={self.backend!r})"
         )

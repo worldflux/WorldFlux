@@ -67,6 +67,8 @@ def test_equivalence_report_json_has_stable_top_level_keys(tmp_path: Path) -> No
         "config",
         "completeness",
         "validity",
+        "component_match",
+        "provenance",
         "bayesian",
         "holm",
         "tasks",

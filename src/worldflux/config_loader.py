@@ -34,6 +34,8 @@ class TrainingSectionConfig:
     sequence_length: int = 50
     learning_rate: float = 3e-4
     device: str = "cpu"
+    backend: str = "native_torch"
+    backend_profile: str = ""
     output_dir: str = "./outputs"
 
 
@@ -43,6 +45,11 @@ class VerifySectionConfig:
 
     baseline: str = "official/dreamerv3"
     env: str = "atari/pong"
+    backend: str = "native_torch"
+    backend_profile: str = ""
+    mode: str = "auto"
+    proof_claim: str = "compare"
+    allow_official_only: bool = False
 
 
 @dataclass(frozen=True)
@@ -152,6 +159,8 @@ def load_config(path: str | Path = "worldflux.toml") -> ProjectConfig:
         sequence_length=int(train_raw.get("sequence_length", 50)),
         learning_rate=float(train_raw.get("learning_rate", 3e-4)),
         device=str(train_raw.get("device", "cpu")),
+        backend=str(train_raw.get("backend", "native_torch")),
+        backend_profile=str(train_raw.get("backend_profile", "")),
         output_dir=str(train_raw.get("output_dir", "./outputs")),
     )
 
@@ -161,6 +170,11 @@ def load_config(path: str | Path = "worldflux.toml") -> ProjectConfig:
     verify = VerifySectionConfig(
         baseline=str(verify_raw.get("baseline", "official/dreamerv3")),
         env=str(verify_raw.get("env", "atari/pong")),
+        backend=str(verify_raw.get("backend", "native_torch")),
+        backend_profile=str(verify_raw.get("backend_profile", "")),
+        mode=str(verify_raw.get("mode", "auto")),
+        proof_claim=str(verify_raw.get("proof_claim", "compare")),
+        allow_official_only=bool(verify_raw.get("allow_official_only", False)),
     )
 
     cloud_raw = raw.get("cloud", {})

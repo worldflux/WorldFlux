@@ -98,6 +98,8 @@ _EXPORT_GROUPS: dict[str, tuple[str, ...]] = {
         "WorldModelConfig",
     ),
     "worldflux.core.model": ("WorldModel",),
+    "worldflux.core.backend_handle": ("OfficialBackendHandle",),
+    "worldflux.core.backend_bridge": ("resolve_backend_execution",),
     "worldflux.core.registry": ("AutoConfig", "AutoWorldModel", "WorldModelRegistry"),
     "worldflux.core.latent_space": (
         "CategoricalLatentSpace",
@@ -178,6 +180,10 @@ def __getattr__(name: str) -> object:
         module = import_module("worldflux.training")
         globals()[name] = module
         return module
+    if name == "execution":
+        module = import_module("worldflux.execution")
+        globals()[name] = module
+        return module
     if name in _EXPORTS:
         return _load_export(name)
     if name in _DEPRECATED_IMPORTS:
@@ -196,7 +202,7 @@ def __getattr__(name: str) -> object:
 
 
 def __dir__() -> list[str]:
-    return sorted(set(__all__) | set(_DEPRECATED_IMPORTS) | {"training"})
+    return sorted(set(__all__) | set(_DEPRECATED_IMPORTS) | {"execution", "training"})
 
 
 try:
@@ -214,6 +220,7 @@ __all__ = [
     "get_config",
     "MODEL_ALIASES",
     "MODEL_CATALOG",
+    "execution",
     # Core
     "State",
     "Trajectory",
@@ -272,6 +279,8 @@ __all__ = [
     "TokenWorldModelConfig",
     "DiffusionWorldModelConfig",
     "WorldModel",
+    "OfficialBackendHandle",
+    "resolve_backend_execution",
     "WorldModelRegistry",
     "AutoWorldModel",
     "AutoConfig",

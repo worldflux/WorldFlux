@@ -66,11 +66,14 @@ class SourceReference:
 @dataclass(frozen=True)
 class CommandContract:
     adapter: str
+    backend_kind: str | None
+    adapter_id: str | None
     cwd: str
     command: list[str]
     env: dict[str, str]
     timeout_sec: int | None
     source: SourceReference | None
+    artifact_requirements: dict[str, Any]
 
 
 @dataclass(frozen=True)
@@ -229,6 +232,8 @@ def _parse_command_contract(
     supported_adapters: set[str] | None,
     require_source: bool,
     allow_legacy_string_command: bool,
+    require_backend_kind: bool,
+    require_artifact_requirements: bool,
 ) -> CommandContract:
     obj = _require_object(raw, name=name)
 
@@ -238,6 +243,20 @@ def _parse_command_contract(
             f"Unsupported adapter '{adapter}' in {name}.adapter. Supported: {sorted(supported_adapters)}"
         )
 
+    backend_kind_raw = obj.get("backend_kind")
+    adapter_id_raw = obj.get("adapter_id")
+    if require_backend_kind and backend_kind_raw is None:
+        raise RuntimeError(f"{name}.backend_kind is required for schema '{SCHEMA_V2}'.")
+    backend_kind = (
+        _require_string(backend_kind_raw, name=f"{name}.backend_kind")
+        if backend_kind_raw is not None
+        else None
+    )
+    adapter_id = (
+        _require_string(adapter_id_raw, name=f"{name}.adapter_id")
+        if adapter_id_raw is not None
+        else adapter
+    )
     cwd = _require_string(obj.get("cwd", "."), name=f"{name}.cwd")
     command_raw = _coerce_command(obj.get("command"), name=f"{name}.command")
     if isinstance(command_raw, list):
@@ -267,14 +286,22 @@ def _parse_command_contract(
             raise RuntimeError(f"{name}.timeout_sec must be a positive integer when provided.")
 
     source = _parse_source(obj.get("source"), name=f"{name}.source", required=require_source)
+    if require_artifact_requirements and "artifact_requirements" not in obj:
+        raise RuntimeError(f"{name}.artifact_requirements is required for schema '{SCHEMA_V2}'.")
+    artifact_requirements = _require_object(
+        obj.get("artifact_requirements", {}), name=f"{name}.artifact_requirements"
+    )
 
     return CommandContract(
         adapter=adapter,
+        backend_kind=backend_kind,
+        adapter_id=adapter_id,
         cwd=cwd,
         command=command,
         env=dict(env_raw),
         timeout_sec=timeout,
         source=source,
+        artifact_requirements=dict(artifact_requirements),
     )
 
 
@@ -397,6 +424,8 @@ def _parse_task_contract(
         supported_adapters=supported_adapters,
         require_source=require_source,
         allow_legacy_string_command=allow_legacy_string_command,
+        require_backend_kind=require_source,
+        require_artifact_requirements=require_source,
     )
     worldflux = _parse_command_contract(
         obj.get("worldflux"),
@@ -404,6 +433,8 @@ def _parse_task_contract(
         supported_adapters=supported_adapters,
         require_source=require_source,
         allow_legacy_string_command=allow_legacy_string_command,
+        require_backend_kind=require_source,
+        require_artifact_requirements=require_source,
     )
 
     return TaskContract(
@@ -626,10 +657,13 @@ def to_legacy_manifest_dict(contract: SuiteContract) -> dict[str, Any]:
                 "validity_requirements": task.validity_requirements,
                 "official": {
                     "adapter": task.official.adapter,
+                    "backend_kind": task.official.backend_kind,
+                    "adapter_id": task.official.adapter_id,
                     "cwd": task.official.cwd,
                     "command": task.official.command,
                     "env": task.official.env,
                     "timeout_sec": task.official.timeout_sec,
+                    "artifact_requirements": task.official.artifact_requirements,
                     "source": (
                         {
                             "commit": task.official.source.commit,
@@ -641,10 +675,13 @@ def to_legacy_manifest_dict(contract: SuiteContract) -> dict[str, Any]:
                 },
                 "worldflux": {
                     "adapter": task.worldflux.adapter,
+                    "backend_kind": task.worldflux.backend_kind,
+                    "adapter_id": task.worldflux.adapter_id,
                     "cwd": task.worldflux.cwd,
                     "command": task.worldflux.command,
                     "env": task.worldflux.env,
                     "timeout_sec": task.worldflux.timeout_sec,
+                    "artifact_requirements": task.worldflux.artifact_requirements,
                     "source": (
                         {
                             "commit": task.worldflux.source.commit,

@@ -557,6 +557,8 @@ class TDMPC2Config(WorldModelConfig):
 
     Size Presets:
         - 5m:   5M params - latent=256, hidden=256
+        - proof_5m: proof canonical 5M params - latent=256, hidden=256
+        - 5m_legacy: compatibility 5M params - latent=256, hidden=256
         - 19m:  19M params - latent=512, hidden=512
         - 48m:  48M params - latent=512, hidden=1024
         - 317m: 317M params - latent=1024, hidden=2048
@@ -706,7 +708,7 @@ class TDMPC2Config(WorldModelConfig):
         Create configuration from a size preset.
 
         Args:
-            size: Size preset name (5m, 19m, 48m, 317m).
+            size: Size preset name (ci, 5m, proof_5m, 5m_legacy, 19m, 48m, 317m).
             **kwargs: Override any preset parameters.
 
         Returns:
@@ -718,6 +720,8 @@ class TDMPC2Config(WorldModelConfig):
         presets: dict[str, dict[str, Any]] = {
             "ci": {"latent_dim": 32, "hidden_dim": 32, "num_q_networks": 2},
             "5m": {"latent_dim": 256, "hidden_dim": 256},
+            "proof_5m": {"latent_dim": 256, "hidden_dim": 256},
+            "5m_legacy": {"latent_dim": 256, "hidden_dim": 256},
             "19m": {"latent_dim": 512, "hidden_dim": 512},
             "48m": {"latent_dim": 512, "hidden_dim": 1024},
             "317m": {"latent_dim": 1024, "hidden_dim": 2048},
@@ -727,7 +731,8 @@ class TDMPC2Config(WorldModelConfig):
 
         preset = presets[size]
         preset.update(kwargs)
-        return cls(model_name=size, **preset)
+        model_name = "5m" if size in {"proof_5m", "5m_legacy"} else size
+        return cls(model_name=model_name, **preset)
 
 
 @dataclass

@@ -47,6 +47,7 @@
     "ModelMaturity",
     "ModelOutput",
     "ObservationSpec",
+    "OfficialBackendHandle",
     "PLANNER_HORIZON_KEY",
     "PLANNER_SEQUENCE_KEY",
     "Planner",
@@ -77,10 +78,12 @@
     "WorldModelOutput",
     "WorldModelRegistry",
     "create_world_model",
+    "execution",
     "get_config",
     "get_model_info",
     "list_models",
     "normalize_planned_action",
+    "resolve_backend_execution",
     "set_seed"
   ],
   "worldmodel_signatures": {

@@ -179,6 +179,20 @@ class TestVerifyCLI:
         result = runner.invoke(app, ["verify"])
         assert result.exit_code != 0
 
+    def test_missing_explicit_config_path_errors(
+        self, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(ParityVerifier, "run", classmethod(lambda cls, **kw: pytest.fail()))
+
+        from worldflux.cli import app
+
+        result = runner.invoke(
+            app,
+            ["verify", "--config", "does-not-exist.toml", "--target", "m.pt"],
+        )
+        assert result.exit_code == 1
+        assert "Configuration error" in result.output
+
     def test_real_mode_unavailable(
         self, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -223,6 +237,110 @@ class TestVerifyCLI:
         assert "Proof-mode parity checks satisfied" in result.output
         assert "evidence bundle" in result.output
 
+    def test_verify_json_uses_execution_result_payload(
+        self,
+        runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        fake_result = VerifyResult(
+            passed=False,
+            target="m.pt",
+            baseline="official/dreamerv3",
+            env="atari/pong",
+            demo=False,
+            elapsed_seconds=1.0,
+            stats={
+                "execution_result": {
+                    "status": "blocked",
+                    "reason_code": "backend_unsupported",
+                    "message": "blocked for test",
+                    "backend": "official_dreamerv3_jax_subprocess",
+                    "family": "dreamer",
+                    "mode": "proof_compare",
+                    "proof_phase": "compare",
+                    "profile": "official_xl",
+                    "run_id": "run_1",
+                    "manifest_path": None,
+                    "summary_path": None,
+                    "equivalence_report_json": None,
+                    "equivalence_report_md": None,
+                    "evidence_bundle": None,
+                    "artifact_manifest": None,
+                    "metrics": {},
+                    "next_action": "fix config",
+                }
+            },
+            verdict_reason="blocked",
+        )
+        monkeypatch.setattr(ParityVerifier, "run", classmethod(lambda cls, **kw: fake_result))
+
+        output_path = tmp_path / "verify.json"
+        from worldflux.cli import app
+
+        result = runner.invoke(
+            app,
+            [
+                "verify",
+                "--target",
+                "m.pt",
+                "--mode",
+                "proof",
+                "--format",
+                "json",
+                "--output",
+                str(output_path),
+            ],
+        )
+        assert result.exit_code == 2
+        payload = json.loads(output_path.read_text(encoding="utf-8"))
+        assert payload["status"] == "blocked"
+        assert payload["reason_code"] == "backend_unsupported"
+
+    def test_verify_rich_uses_execution_result_exit_code_mapping(
+        self,
+        runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        fake_result = VerifyResult(
+            passed=False,
+            target="m.pt",
+            baseline="official/dreamerv3",
+            env="atari/pong",
+            demo=False,
+            elapsed_seconds=1.0,
+            stats={
+                "execution_result": {
+                    "status": "incomplete",
+                    "reason_code": "minimum_proof_not_reached",
+                    "message": "need 20 seeds",
+                    "backend": "official_dreamerv3_jax_subprocess",
+                    "family": "dreamer",
+                    "mode": "proof_compare",
+                    "proof_phase": "compare",
+                    "profile": "official_xl",
+                    "run_id": "run_2",
+                    "manifest_path": None,
+                    "summary_path": None,
+                    "equivalence_report_json": None,
+                    "equivalence_report_md": None,
+                    "evidence_bundle": None,
+                    "artifact_manifest": None,
+                    "metrics": {},
+                    "next_action": "re-run with 20 seeds",
+                }
+            },
+            verdict_reason="incomplete",
+        )
+        monkeypatch.setattr(ParityVerifier, "run", classmethod(lambda cls, **kw: fake_result))
+
+        from worldflux.cli import app
+
+        result = runner.invoke(app, ["verify", "--target", "m.pt", "--mode", "proof"])
+        assert result.exit_code == 3
+        assert "INCOMPLETE" in result.output
+        assert "minimum_proof_not_reached" in result.output
+
     def test_verify_writes_evidence_bundle_for_proof_mode(
         self,
         runner: CliRunner,
@@ -248,6 +366,9 @@ class TestVerifyCLI:
                 "equivalence_report_json": str(eq_json),
                 "equivalence_report_md": str(eq_md),
                 "device": "cpu",
+                "execution_backend": "official_dreamerv3_jax_subprocess",
+                "execution_profile": "official_xl",
+                "execution_phase": "compare",
             },
             verdict_reason="ok",
         )
@@ -274,6 +395,9 @@ class TestVerifyCLI:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         assert manifest["mode"] == "proof"
         assert len(manifest["artifacts"]) >= 1
+        assert manifest["request"]["backend"] == "official_dreamerv3_jax_subprocess"
+        assert manifest["request"]["backend_profile"] == "official_xl"
+        assert manifest["request"]["proof_phase"] == "compare"
 
     def test_verify_cloud_mode_json_success(
         self,
@@ -321,6 +445,232 @@ class TestVerifyCLI:
         payload = json.loads(output_path.read_text(encoding="utf-8"))
         assert payload["passed"] is True
         assert payload["status"] == "completed"
+
+    def test_verify_reads_backend_defaults_from_config(
+        self,
+        runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        captured: dict[str, object] = {}
+
+        def _fake_run(cls, **kw):
+            captured.update(kw)
+            return VerifyResult(
+                passed=False,
+                target=str(kw["target"]),
+                baseline=str(kw["baseline"]),
+                env=str(kw["env"]),
+                demo=False,
+                elapsed_seconds=0.1,
+                stats={
+                    "execution_result": {
+                        "status": "blocked",
+                        "reason_code": "backend_unsupported",
+                        "message": "blocked",
+                        "backend": str(kw["backend"]),
+                        "family": "dreamer",
+                        "mode": "proof_bootstrap",
+                        "run_id": "cfg_run",
+                        "manifest_path": None,
+                        "summary_path": None,
+                        "equivalence_report_json": None,
+                        "equivalence_report_md": None,
+                        "evidence_bundle": None,
+                        "artifact_manifest": None,
+                        "metrics": {},
+                        "next_action": "fix config",
+                    }
+                },
+                verdict_reason="blocked",
+            )
+
+        monkeypatch.setattr(ParityVerifier, "run", classmethod(_fake_run))
+
+        config_path = tmp_path / "worldflux.toml"
+        config_path.write_text(
+            """\
+project_name = "verify-config"
+
+[verify]
+baseline = "official/dreamerv3"
+env = "atari/pong"
+backend = "official_dreamerv3_jax_subprocess"
+backend_profile = "official_xl"
+mode = "proof"
+proof_claim = "compare"
+allow_official_only = true
+""",
+            encoding="utf-8",
+        )
+
+        from worldflux.cli import app
+
+        result = runner.invoke(
+            app,
+            ["verify", "--config", str(config_path), "--target", "m.pt"],
+        )
+        assert result.exit_code == 2
+        assert captured["backend"] == "official_dreamerv3_jax_subprocess"
+        assert captured["backend_profile"] == "official_xl"
+        assert captured["allow_official_only"] is True
+        assert captured["proof_claim"] == "compare"
+
+    def test_verify_cli_overrides_config_backend_defaults(
+        self,
+        runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        captured: dict[str, object] = {}
+
+        def _fake_run(cls, **kw):
+            captured.update(kw)
+            return VerifyResult(
+                passed=False,
+                target=str(kw["target"]),
+                baseline=str(kw["baseline"]),
+                env=str(kw["env"]),
+                demo=False,
+                elapsed_seconds=0.1,
+                stats={
+                    "execution_result": {
+                        "status": "blocked",
+                        "reason_code": "backend_unsupported",
+                        "message": "blocked",
+                        "backend": str(kw["backend"]),
+                        "family": "dreamer",
+                        "mode": "proof_compare",
+                        "run_id": "cfg_override_run",
+                        "manifest_path": None,
+                        "summary_path": None,
+                        "equivalence_report_json": None,
+                        "equivalence_report_md": None,
+                        "evidence_bundle": None,
+                        "artifact_manifest": None,
+                        "metrics": {},
+                        "next_action": "fix config",
+                    }
+                },
+                verdict_reason="blocked",
+            )
+
+        monkeypatch.setattr(ParityVerifier, "run", classmethod(_fake_run))
+
+        config_path = tmp_path / "worldflux.toml"
+        config_path.write_text(
+            """\
+project_name = "verify-config"
+
+[verify]
+backend = "official_dreamerv3_jax_subprocess"
+backend_profile = "official_xl"
+allow_official_only = true
+""",
+            encoding="utf-8",
+        )
+
+        from worldflux.cli import app
+
+        result = runner.invoke(
+            app,
+            [
+                "verify",
+                "--config",
+                str(config_path),
+                "--target",
+                "m.pt",
+                "--backend",
+                "native_torch",
+                "--backend-profile",
+                "override_profile",
+                "--no-allow-official-only",
+                "--proof-claim",
+                "compare",
+                "--mode",
+                "proof",
+            ],
+        )
+        assert result.exit_code == 2
+        assert captured["backend"] == "native_torch"
+        assert captured["backend_profile"] == "override_profile"
+        assert captured["allow_official_only"] is False
+
+    def test_verify_cli_preserves_explicit_default_baseline_and_env(
+        self,
+        runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        captured: dict[str, object] = {}
+
+        def _fake_run(cls, **kw):
+            captured.update(kw)
+            return VerifyResult(
+                passed=False,
+                target=str(kw["target"]),
+                baseline=str(kw["baseline"]),
+                env=str(kw["env"]),
+                demo=False,
+                elapsed_seconds=0.1,
+                stats={
+                    "execution_result": {
+                        "status": "blocked",
+                        "reason_code": "backend_unsupported",
+                        "message": "blocked",
+                        "backend": str(kw["backend"]),
+                        "family": "dreamer",
+                        "mode": "proof_compare",
+                        "run_id": "cfg_explicit_defaults",
+                        "manifest_path": None,
+                        "summary_path": None,
+                        "equivalence_report_json": None,
+                        "equivalence_report_md": None,
+                        "evidence_bundle": None,
+                        "artifact_manifest": None,
+                        "metrics": {},
+                        "next_action": "fix config",
+                    }
+                },
+                verdict_reason="blocked",
+            )
+
+        monkeypatch.setattr(ParityVerifier, "run", classmethod(_fake_run))
+
+        config_path = tmp_path / "worldflux.toml"
+        config_path.write_text(
+            """\
+project_name = "verify-config"
+
+[verify]
+baseline = "official/tdmpc2"
+env = "dmcontrol/walker-run"
+backend = "official_dreamerv3_jax_subprocess"
+mode = "proof"
+proof_claim = "compare"
+""",
+            encoding="utf-8",
+        )
+
+        from worldflux.cli import app
+
+        result = runner.invoke(
+            app,
+            [
+                "verify",
+                "--config",
+                str(config_path),
+                "--target",
+                "m.pt",
+                "--baseline",
+                "official/dreamerv3",
+                "--env",
+                "atari/pong",
+            ],
+        )
+        assert result.exit_code == 2
+        assert captured["baseline"] == "official/dreamerv3"
+        assert captured["env"] == "atari/pong"
 
 
 # ---------------------------------------------------------------------------
@@ -498,21 +848,58 @@ class TestAutoQualityCheck:
 
 
 # ---------------------------------------------------------------------------
-# Auto mode defaults to quick
+# Auto mode resolution
 # ---------------------------------------------------------------------------
 
 
-class TestAutoModeDefaultsToQuick:
+class TestAutoModeResolution:
     @pytest.fixture()
     def runner(self) -> CliRunner:
         return CliRunner()
 
-    def test_auto_selects_quick_without_env_var(
+    def test_auto_selects_proof_when_proof_claim_defaults_to_compare(
         self, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """auto mode should select quick (not proof) by default."""
         monkeypatch.delenv("WORLDFLUX_VERIFY_MODE", raising=False)
-        # We patch quick_verify to avoid actual model loading
+        from worldflux.cli import app
+
+        fake_result = VerifyResult(
+            passed=False,
+            target="./outputs",
+            baseline="official/dreamerv3",
+            env="atari/pong",
+            demo=False,
+            elapsed_seconds=0.1,
+            stats={
+                "execution_result": {
+                    "status": "blocked",
+                    "reason_code": "backend_unsupported",
+                    "message": "blocked",
+                    "backend": "native_torch",
+                    "family": "dreamer",
+                    "mode": "proof_compare",
+                    "run_id": "auto_run",
+                    "manifest_path": None,
+                    "summary_path": None,
+                    "equivalence_report_json": None,
+                    "equivalence_report_md": None,
+                    "evidence_bundle": None,
+                    "artifact_manifest": None,
+                    "metrics": {},
+                    "next_action": "fix config",
+                }
+            },
+            verdict_reason="blocked",
+        )
+        monkeypatch.setattr(ParityVerifier, "run", classmethod(lambda cls, **kw: fake_result))
+        result = runner.invoke(app, ["verify", "--target", "./outputs"])
+        assert result.exit_code == 2
+        assert "BLOCKED" in result.output
+
+    def test_auto_selects_quick_when_proof_claim_is_non_proof(
+        self, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("WORLDFLUX_VERIFY_MODE", raising=False)
         from unittest.mock import patch
 
         from worldflux.cli import app
@@ -528,8 +915,10 @@ class TestAutoModeDefaultsToQuick:
             elapsed_seconds=0.1,
         )
         with patch("worldflux.verify.quick.quick_verify", return_value=fake_qr):
-            result = runner.invoke(app, ["verify", "--target", "./outputs"])
-        # Should NOT hit proof mode error, should succeed with quick mode
+            result = runner.invoke(
+                app,
+                ["verify", "--target", "./outputs", "--proof-claim", "none"],
+            )
         assert result.exit_code == 0
         assert "Synthetic Smoke" in result.output or "PASS" in result.output
 

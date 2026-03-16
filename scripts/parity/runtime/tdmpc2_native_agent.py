@@ -10,10 +10,13 @@ import numpy as np
 import torch
 
 from worldflux import create_world_model
+from worldflux.parity import discover_artifacts, stable_recipe_hash
 from worldflux.planners import CEMPlanner
 from worldflux.training import ReplayBuffer, Trainer, TrainingConfig
 
 from .dmcontrol_env import DMControlEnvError, build_dmcontrol_env
+
+_VALID_MODEL_PROFILES = {"ci", "5m", "proof_5m", "5m_legacy", "19m", "48m", "317m"}
 
 
 @dataclass(frozen=True)
@@ -34,10 +37,20 @@ class TDMPC2NativeRunConfig:
     batch_size: int = 64
     max_episode_steps: int = 1000
     policy_mode: str = "diagnostic_random"
+    model_profile: str = "5m"
     cem_horizon: int = 5
     cem_num_samples: int = 128
     cem_num_elites: int = 16
     cem_iterations: int = 2
+
+
+def _normalize_model_profile(value: str) -> str:
+    normalized = str(value).strip().lower()
+    if normalized not in _VALID_MODEL_PROFILES:
+        raise DMControlEnvError(
+            f"model_profile must be one of {sorted(_VALID_MODEL_PROFILES)}, got {value!r}"
+        )
+    return normalized
 
 
 def _evaluate_policy(
@@ -150,7 +163,8 @@ def run_tdmpc2_native(
         max_episode_steps=config.max_episode_steps,
     )
 
-    model_id = "tdmpc2:ci"
+    model_profile = _normalize_model_profile(config.model_profile)
+    model_id = f"tdmpc2:{model_profile}"
     model = create_world_model(model_id, obs_shape=env.obs_shape, action_dim=env.action_dim)
 
     trainer = Trainer(
@@ -291,8 +305,27 @@ def run_tdmpc2_native(
     metadata: dict[str, Any] = {
         "mode": "native_real_env",
         "family": "tdmpc2",
+        "backend_kind": "native_torch",
+        "adapter_id": "worldflux_tdmpc2_native_torch",
+        "recipe_hash": stable_recipe_hash(
+            {
+                "steps": int(config.steps),
+                "model_profile": model_profile,
+                "buffer_capacity": int(config.buffer_capacity),
+                "warmup_steps": int(config.warmup_steps),
+                "train_steps_per_eval": int(config.train_steps_per_eval),
+                "sequence_length": int(config.sequence_length),
+                "batch_size": int(config.batch_size),
+                "cem_horizon": int(config.cem_horizon),
+                "cem_num_samples": int(config.cem_num_samples),
+                "cem_num_elites": int(config.cem_num_elites),
+                "cem_iterations": int(config.cem_iterations),
+            }
+        ),
         "task_id": config.task_id,
         "model_id": model_id,
+        "model_profile": model_profile,
+        "canonical_compare_profile": "proof_5m",
         "policy": "learned" if policy_mode == "parity_candidate" else "random",
         "policy_mode": config.policy_mode,
         "policy_impl": "cem_planner" if policy_mode == "parity_candidate" else "random_env_sampler",
@@ -316,7 +349,32 @@ def run_tdmpc2_native(
         "eval_interval": int(config.eval_interval),
         "eval_episodes": int(config.eval_episodes),
         "eval_window": int(config.eval_window),
+        "train_budget": {
+            "steps": int(config.steps),
+            "warmup_steps": int(config.warmup_steps),
+            "train_steps_per_eval": int(config.train_steps_per_eval),
+            "sequence_length": int(config.sequence_length),
+            "batch_size": int(config.batch_size),
+            "buffer_capacity": int(config.buffer_capacity),
+            "max_episode_steps": int(config.max_episode_steps),
+        },
+        "eval_protocol": {
+            "eval_interval": int(config.eval_interval),
+            "eval_episodes": int(config.eval_episodes),
+            "eval_window": int(config.eval_window),
+            "policy_mode": str(config.policy_mode),
+            "env_backend": str(config.env_backend),
+        },
     }
+    metadata["artifact_manifest"] = discover_artifacts(
+        run_root=config.run_dir,
+        backend_kind=str(metadata["backend_kind"]),
+        adapter_id=str(metadata["adapter_id"]),
+        recipe_hash=str(metadata["recipe_hash"]),
+        command_argv=[],
+        source_commit=None,
+        eval_protocol_hash=None,
+    ).to_dict()
 
     return curve, metadata
 

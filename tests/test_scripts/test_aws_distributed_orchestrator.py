@@ -262,6 +262,7 @@ def test_aws_distributed_orchestrator_wait_mode_with_mocked_aws(
     assert Path(summary["artifacts"]["equivalence_report"]).exists()
     assert Path(summary["artifacts"]["coverage_report"]).exists()
     assert summary["timing"]["timeout_risk"] in {"low", "medium", "high"}
+    assert summary["execution_result"]["status"] in {"succeeded", "failed", "incomplete", "running"}
 
 
 def test_aws_distributed_orchestrator_emits_rerun_manifest_on_missing_pairs(

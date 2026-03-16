@@ -336,7 +336,7 @@ def test_long_episode_flushes_replay_and_executes_updates(
         dna.DreamerNativeRunConfig(
             task_id="atari100k_pong",
             seed=11,
-            steps=256,
+            steps=1024,
             eval_interval=1000,
             eval_episodes=1,
             eval_window=2,
@@ -353,10 +353,10 @@ def test_long_episode_flushes_replay_and_executes_updates(
         )
     )
 
-    assert metadata["target_train_updates"] == 16
-    assert metadata["train_updates_executed"] == 16
+    assert metadata["target_train_updates"] == 64
+    assert metadata["train_updates_executed"] == 64
     assert _FakeTrainer.instances
-    assert _FakeTrainer.instances[0].calls[-1] == 16
+    assert _FakeTrainer.instances[0].calls[-1] == 64
 
 
 def test_build_dreamer_model_supports_official_xl_via_factory(

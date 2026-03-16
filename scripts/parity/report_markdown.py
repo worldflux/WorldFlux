@@ -113,6 +113,10 @@ def _render(report: dict[str, Any]) -> str:
         f"- Final verdict (all gates): **{_fmt_bool(global_block.get('parity_pass_final'))}**"
     )
     lines.append(f"- Validity gate: **{_fmt_bool(global_block.get('validity_pass'))}**")
+    if "component_match_pass" in global_block:
+        lines.append(
+            f"- Component match gate: **{_fmt_bool(global_block.get('component_match_pass'))}**"
+        )
     lines.append(
         f"- Missing pairs: `{global_block.get('missing_pairs', '-')}` "
         f"(strict-failed: `{global_block.get('strict_mode_failed', '-')}`)"
@@ -136,6 +140,9 @@ def _render(report: dict[str, Any]) -> str:
             f"- Task-seed pairs: `{completeness.get('task_seed_count', '-')}`, "
             f"complete task-seed pairs: `{completeness.get('complete_task_seed_pairs', '-')}`"
         )
+        config = report.get("config", {})
+        if isinstance(config, dict):
+            lines.append(f"- Required paired seeds: `{config.get('min_pairs', '-')}`")
         lines.append("")
 
     validity = report.get("validity", {})
@@ -150,6 +157,42 @@ def _render(report: dict[str, Any]) -> str:
             f"issues: `{validity.get('issue_count', '-')}`"
         )
     lines.append("")
+
+    component = report.get("component_match", {})
+    if isinstance(component, dict):
+        lines.append("## Component Match")
+        lines.append("")
+        lines.append(f"- Required: `{component.get('required', False)}`")
+        lines.append(f"- Present: `{component.get('present', False)}`")
+        lines.append(f"- Pass: **{_fmt_bool(component.get('pass'))}**")
+        lines.append(f"- Path: `{component.get('path', '-')}`")
+        if "result_count" in component:
+            lines.append(f"- Result count: `{component.get('result_count', '-')}`")
+        lines.append("")
+
+    provenance = report.get("provenance", {})
+    if isinstance(provenance, dict) and provenance:
+        lines.append("## Provenance")
+        lines.append("")
+        for system in ("official", "worldflux"):
+            block = provenance.get(system)
+            if not isinstance(block, dict):
+                continue
+            lines.append(
+                f"- {system}: commits `{len(block.get('source_commits', []))}`, "
+                f"artifact paths `{len(block.get('artifact_paths', []))}`, "
+                f"single commit `{block.get('single_commit', False)}`, "
+                f"backend kinds `{len(block.get('backend_kinds', []))}`, "
+                f"adapter ids `{len(block.get('adapter_ids', []))}`, "
+                f"artifact manifests `{block.get('artifact_manifest_count', 0)}`"
+            )
+            lines.append(
+                f"  backend `{block.get('single_backend_kind_value', '-')}`, "
+                f"adapter `{block.get('single_adapter_id_value', '-')}`, "
+                f"recipe hash `{block.get('single_recipe_hash_value', '-')}`, "
+                f"all have artifact manifest `{block.get('all_have_artifact_manifest', False)}`"
+            )
+        lines.append("")
 
     bayesian_block = report.get("bayesian", {})
     if isinstance(bayesian_block, dict):
@@ -252,8 +295,11 @@ def _render(report: dict[str, Any]) -> str:
     lines.append("- Bayesian bootstrap estimates posterior P(eq) and P(non-inferior).")
     lines.append("- Validity gate must pass in proof mode (no mock/random shortcuts).")
     lines.append(
+        "- Component match report is required for proof-grade verdicts when the suite requests it."
+    )
+    lines.append(
         "- Final pass requires frequentist pass, optional Bayesian pass (when dual-pass is enabled), "
-        "zero missing pairs, and validity pass."
+        "zero missing pairs, validity pass, and component match pass."
     )
 
     return "\n".join(lines) + "\n"

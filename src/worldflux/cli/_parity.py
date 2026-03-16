@@ -11,6 +11,7 @@ import typer
 from rich.box import ROUNDED
 from rich.panel import Panel
 
+from worldflux.execution import BackendExecutionRequest, resolve_execution_manifest
 from worldflux.parity import (
     CampaignRunOptions,
     save_badge,
@@ -48,6 +49,66 @@ def _resolve_campaign_seeds(
     spec_default: tuple[int, ...], seeds_option: str | None
 ) -> tuple[int, ...]:
     return _resolve_campaign_seeds_impl(spec_default, seeds_option)
+
+
+def _parity_scripts_root() -> Path:
+    return Path(__file__).resolve().parents[3] / "scripts" / "parity"
+
+
+def _execution_exit_code(status: str) -> int:
+    if status == "blocked":
+        return 2
+    if status == "incomplete":
+        return 3
+    return 1
+
+
+def _resolve_proof_manifest(
+    *,
+    manifest: Path | None,
+    family: str,
+    backend: str,
+    allow_official_only: bool,
+    seed_list: str,
+) -> Path:
+    if manifest is not None:
+        return manifest
+    seeds = [int(part.strip()) for part in seed_list.split(",") if part.strip()]
+    if not seeds:
+        seeds = list(range(20 if not allow_official_only else 10))
+    request = BackendExecutionRequest(
+        backend=backend,
+        family=family,
+        mode="proof_bootstrap" if allow_official_only else "proof_compare",
+        target=None,
+        baseline=None,
+        task_filter=None,
+        env=None,
+        seed_list=seeds,
+        device="cpu",
+        proof_requirements={"allow_official_only": allow_official_only},
+    )
+    resolution = resolve_execution_manifest(
+        request,
+        scripts_root=_parity_scripts_root(),
+        allow_official_only=allow_official_only,
+    )
+    if resolution.early_result is not None:
+        console.print(
+            key_value_panel(
+                {
+                    "Status": resolution.early_result.status,
+                    "Reason": resolution.early_result.reason_code,
+                    "Message": resolution.early_result.message,
+                    "Next": resolution.early_result.next_action or "-",
+                },
+                title="Proof Manifest Resolution",
+                border="wf.border.info",
+            )
+        )
+        raise typer.Exit(code=_execution_exit_code(resolution.early_result.status))
+    assert resolution.manifest_path is not None
+    return resolution.manifest_path
 
 
 def _run_proof_report_pipeline(
@@ -295,8 +356,21 @@ def parity_report(
 
 @parity_app.command("proof-run", rich_help_panel="Proof-Grade Pipeline")
 def parity_proof_run(
-    manifest: Path = typer.Argument(
-        ..., help="Proof manifest (parity.manifest.v1 or parity.suite.v2)."
+    manifest: Path | None = typer.Argument(
+        None, help="Optional proof manifest (parity.manifest.v1 or parity.suite.v2)."
+    ),
+    family: str = typer.Option(
+        "dreamer", "--family", help="Execution family when manifest is omitted."
+    ),
+    backend: str = typer.Option(
+        "official_dreamerv3_jax_subprocess",
+        "--backend",
+        help="Backend id used for manifest resolution when manifest is omitted.",
+    ),
+    allow_official_only: bool = typer.Option(
+        False,
+        "--allow-official-only/--no-allow-official-only",
+        help="Resolve Dreamer official-only bootstrap manifest when manifest is omitted.",
     ),
     run_id: str = typer.Option(
         "",
@@ -325,9 +399,17 @@ def parity_proof_run(
     """Run proof-grade parity matrix execution (official path backed by scripts/parity)."""
     import worldflux.cli as _cli  # support monkeypatch on cli namespace
 
+    resolved_manifest = _resolve_proof_manifest(
+        manifest=manifest,
+        family=family,
+        backend=backend,
+        allow_official_only=allow_official_only,
+        seed_list=seed_list,
+    )
+
     args = [
         "--manifest",
-        str(manifest),
+        str(resolved_manifest),
         "--output-dir",
         str(output_dir),
         "--device",
@@ -360,7 +442,7 @@ def parity_proof_run(
         key_value_panel(
             {
                 "Mode": "proof-grade official equivalence path",
-                "Manifest": str(manifest.resolve()),
+                "Manifest": str(resolved_manifest.resolve()),
                 "Output dir": str(output_dir.resolve()),
                 "Next": "run `worldflux parity proof-report --manifest ... --runs .../parity_runs.jsonl`",
             },
@@ -418,8 +500,21 @@ def parity_proof_report(
 
 @parity_app.command("proof", rich_help_panel="Proof-Grade Pipeline")
 def parity_proof_combined(
-    manifest: Path = typer.Argument(
-        ..., help="Proof manifest (parity.manifest.v1 or parity.suite.v2)."
+    manifest: Path | None = typer.Argument(
+        None, help="Optional proof manifest (parity.manifest.v1 or parity.suite.v2)."
+    ),
+    family: str = typer.Option(
+        "dreamer", "--family", help="Execution family when manifest is omitted."
+    ),
+    backend: str = typer.Option(
+        "official_dreamerv3_jax_subprocess",
+        "--backend",
+        help="Backend id used for manifest resolution when manifest is omitted.",
+    ),
+    allow_official_only: bool = typer.Option(
+        False,
+        "--allow-official-only/--no-allow-official-only",
+        help="Resolve Dreamer official-only bootstrap manifest when manifest is omitted.",
     ),
     device: str = typer.Option("cpu", "--device", help="Execution device."),
     output_dir: Path = typer.Option(
@@ -438,10 +533,18 @@ def parity_proof_combined(
     """Run proof-grade parity verification (proof-run + proof-report) in a single step."""
     import worldflux.cli as _cli  # support monkeypatch on cli namespace
 
+    resolved_manifest = _resolve_proof_manifest(
+        manifest=manifest,
+        family=family,
+        backend=backend,
+        allow_official_only=allow_official_only,
+        seed_list=seed_list,
+    )
+
     # --- Phase 1: proof-run ---------------------------------------------------
     run_args = [
         "--manifest",
-        str(manifest),
+        str(resolved_manifest),
         "--output-dir",
         str(output_dir),
         "--device",
@@ -466,7 +569,7 @@ def parity_proof_combined(
         key_value_panel(
             {
                 "Phase": "1/2: proof-run complete",
-                "Manifest": str(manifest.resolve()),
+                "Manifest": str(resolved_manifest.resolve()),
                 "Output dir": str(output_dir.resolve()),
             },
             title="Verify - Proof Run",
@@ -489,7 +592,7 @@ def parity_proof_combined(
 
     try:
         _, _, equivalence_report, markdown_report = _run_proof_report_pipeline(
-            manifest, runs_path, report_root
+            resolved_manifest, runs_path, report_root
         )
     except ParityError as exc:
         console.print(f"[wf.fail]Verify proof-report failed:[/wf.fail] {exc}")
@@ -504,7 +607,7 @@ def parity_proof_combined(
         key_value_panel(
             {
                 "Mode": "proof-grade official equivalence path",
-                "Manifest": str(manifest.resolve()),
+                "Manifest": str(resolved_manifest.resolve()),
                 "Device": device,
                 "Final verdict": verdict,
                 "Validity pass": _fmt_bool(global_block.get("validity_pass")),

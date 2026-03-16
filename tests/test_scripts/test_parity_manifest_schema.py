@@ -64,6 +64,7 @@ def test_parse_manifest_accepts_valid_manifest() -> None:
     assert parsed.schema_version == "parity.manifest.v1"
     assert len(parsed.tasks) == 1
     assert parsed.tasks[0].task_id == "atari100k_pong"
+    assert parsed.tasks[0].official.adapter_id == "official_dreamerv3"
 
 
 def test_parse_manifest_requires_task_id() -> None:
@@ -91,14 +92,30 @@ def test_full_manifest_includes_65_tasks() -> None:
         / "scripts"
         / "parity"
         / "manifests"
-        / "official_vs_worldflux_full_v1.yaml"
+        / "official_vs_worldflux_full_v2.yaml"
     )
     parsed = mod._parse_manifest(mod._load_manifest(full_manifest_path))
 
+    assert parsed.schema_version == "parity.suite.v2"
+    assert parsed.family == "mixed"
     assert len(parsed.tasks) == 65
     families = {task.family for task in parsed.tasks}
     assert families == {"dreamerv3", "tdmpc2"}
     assert len({task.task_id for task in parsed.tasks}) == 65
+    dreamer = next(task for task in parsed.tasks if task.family == "dreamerv3")
+    tdmpc2 = next(task for task in parsed.tasks if task.family == "tdmpc2")
+    assert dreamer.worldflux.source_commit == "{worldflux_sha}"
+    assert dreamer.official.source_commit
+    assert dreamer.official.backend_kind == "jax_subprocess"
+    assert dreamer.official.artifact_requirements["checkpoint_paths"]
+    assert "--dreamer-model-profile" in dreamer.worldflux.command
+    assert "official_xl" in dreamer.worldflux.command
+    assert "--tdmpc2-model-profile" in tdmpc2.worldflux.command
+    assert "5m" in tdmpc2.worldflux.command
+    assert tdmpc2.official.backend_kind == "torch_subprocess"
+    assert tdmpc2.official.artifact_requirements["checkpoint_paths"]
+    assert "--model-size" in tdmpc2.official.command
+    assert "5" in tdmpc2.official.command
 
 
 def test_manifest_v1_tasks_define_validity_requirements_and_policy_mode() -> None:
@@ -202,6 +219,8 @@ def test_suite_v2_rejects_string_command() -> None:
                 "task_id": "atari100k_pong",
                 "official": {
                     "adapter": "official_dreamerv3",
+                    "backend_kind": "jax_subprocess",
+                    "artifact_requirements": {"metrics_paths": ["metrics.json"]},
                     "cwd": ".",
                     "command": "python3 -c \"print('ok')\"",
                     "env": {},
@@ -209,6 +228,8 @@ def test_suite_v2_rejects_string_command() -> None:
                 },
                 "worldflux": {
                     "adapter": "worldflux_dreamerv3_native",
+                    "backend_kind": "native_torch",
+                    "artifact_requirements": {"metrics_paths": ["metrics.json"]},
                     "cwd": ".",
                     "command": ["python3", "-c", "print('ok')"],
                     "env": {},

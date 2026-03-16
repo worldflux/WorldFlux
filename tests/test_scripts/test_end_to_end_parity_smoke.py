@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -39,7 +40,7 @@ def test_parity_pipeline_smoke_generates_all_artifacts(tmp_path: Path) -> None:
                     "cwd": str(root),
                     "env": {},
                     "command": [
-                        "python3",
+                        sys.executable,
                         "scripts/parity/wrappers/official_dreamerv3.py",
                         "--task-id",
                         "{task_id}",
@@ -61,7 +62,7 @@ def test_parity_pipeline_smoke_generates_all_artifacts(tmp_path: Path) -> None:
                     "cwd": str(root),
                     "env": {},
                     "command": [
-                        "python3",
+                        sys.executable,
                         "scripts/parity/wrappers/worldflux_dreamerv3_native.py",
                         "--task-id",
                         "{task_id}",
@@ -95,7 +96,7 @@ def test_parity_pipeline_smoke_generates_all_artifacts(tmp_path: Path) -> None:
                     "cwd": str(root),
                     "env": {},
                     "command": [
-                        "python3",
+                        sys.executable,
                         "scripts/parity/wrappers/official_tdmpc2.py",
                         "--task-id",
                         "{task_id}",
@@ -117,7 +118,7 @@ def test_parity_pipeline_smoke_generates_all_artifacts(tmp_path: Path) -> None:
                     "cwd": str(root),
                     "env": {},
                     "command": [
-                        "python3",
+                        sys.executable,
                         "scripts/parity/wrappers/worldflux_tdmpc2_native.py",
                         "--task-id",
                         "{task_id}",
@@ -144,7 +145,7 @@ def test_parity_pipeline_smoke_generates_all_artifacts(tmp_path: Path) -> None:
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
     run_cmd = [
-        "python3",
+        sys.executable,
         "scripts/parity/run_parity_matrix.py",
         "--manifest",
         str(manifest_path),
@@ -165,9 +166,13 @@ def test_parity_pipeline_smoke_generates_all_artifacts(tmp_path: Path) -> None:
     ]
     assert len(lines) == 4
     assert all(line["status"] == "success" for line in lines)
+    assert all(line.get("backend_kind") for line in lines)
+    assert all(line.get("adapter_id") for line in lines)
+    assert all(line.get("recipe_hash") for line in lines)
+    assert all(isinstance(line.get("artifact_manifest"), dict) for line in lines)
 
     stats_cmd = [
-        "python3",
+        sys.executable,
         "scripts/parity/stats_equivalence.py",
         "--input",
         str(runs_jsonl),
@@ -180,7 +185,7 @@ def test_parity_pipeline_smoke_generates_all_artifacts(tmp_path: Path) -> None:
     assert stats.returncode == 0, stats.stderr
 
     md_cmd = [
-        "python3",
+        sys.executable,
         "scripts/parity/report_markdown.py",
         "--input",
         str(run_root / "equivalence_report.json"),

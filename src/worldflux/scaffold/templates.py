@@ -81,6 +81,80 @@ def _patch_dataset_template(content: str) -> str:
 def _patch_train_template(content: str) -> str:
     content = _replace_exact(
         content,
+        "from pathlib import Path\nfrom typing import Any\n",
+        "import json\nfrom pathlib import Path\nfrom typing import Any\n",
+        label="train add json import",
+    )
+    content = _replace_exact(
+        content,
+        '    device = str(training.get("device", "cpu"))\n',
+        """    device = str(training.get("device", "cpu"))
+    backend = str(training.get("backend", "native_torch")).strip() or "native_torch"
+    backend_profile = str(training.get("backend_profile", "")).strip()
+""",
+        label="train backend config",
+    )
+    content = _replace_exact(
+        content,
+        """        hidden_dim=hidden_dim,
+        device=device,
+    )
+""",
+        """        hidden_dim=hidden_dim,
+        device=device,
+        backend=backend,
+    )
+""",
+        label="train create_world_model backend",
+    )
+    content = _replace_exact(
+        content,
+        """    print(f"Initializing model: {model_id} on {device}")
+    model = create_world_model(
+        model=model_id,
+        obs_shape=obs_shape,
+        action_dim=action_dim,
+        hidden_dim=hidden_dim,
+        device=device,
+        backend=backend,
+    )
+""",
+        """    print(
+        f"Initializing model: {model_id} on {device}"
+        f" (backend={backend}, profile={backend_profile or '-'})"
+    )
+    model = create_world_model(
+        model=model_id,
+        obs_shape=obs_shape,
+        action_dim=action_dim,
+        hidden_dim=hidden_dim,
+        device=device,
+        backend=backend,
+    )
+
+    if backend != "native_torch":
+        trainer = Trainer(
+            model,
+            TrainingConfig(
+                total_steps=total_steps,
+                batch_size=batch_size,
+                sequence_length=sequence_length,
+                learning_rate=learning_rate,
+                output_dir=output_dir,
+                device=device,
+                backend=backend,
+                backend_profile=backend_profile,
+            ),
+        )
+        handle = trainer.submit()
+        print("Delegated training result:")
+        print(json.dumps(handle.metadata, indent=2, sort_keys=True, default=str))
+        return
+""",
+        label="train delegated backend submit",
+    )
+    content = _replace_exact(
+        content,
         """        if dashboard_buffer is not None:
             dashboard_buffer.set_phase(phase, detail)
             if phase == "unavailable":
@@ -480,6 +554,8 @@ def render_worldflux_toml(context: dict[str, Any]) -> str:
         sequence_length = 50
         learning_rate = 3e-4
         device = "{context["device"]}"
+        backend = "{context.get("training_backend", "native_torch")}"
+        backend_profile = "{context.get("training_backend_profile", "")}"
         output_dir = "./outputs"
 
         [data]
@@ -515,6 +591,11 @@ def render_worldflux_toml(context: dict[str, Any]) -> str:
         [verify]
         baseline = "official/dreamerv3"
         env = "{verify_env}"
+        backend = "{context.get("verify_backend", "native_torch")}"
+        backend_profile = "{context.get("verify_backend_profile", "")}"
+        mode = "{context.get("verify_mode", "auto")}"
+        proof_claim = "{context.get("verify_proof_claim", "compare")}"
+        allow_official_only = {str(bool(context.get("verify_allow_official_only", False))).lower()}
 
         [cloud]
         gpu_type = "a100"
@@ -753,6 +834,11 @@ def render_readme_md(context: dict[str, Any]) -> str:
         # Real verification (requires parity suite)
         worldflux verify --target ./outputs/checkpoint_best.pt
         ```
+
+        Stage A note:
+        backend-native training is not enabled through `train.py` yet.
+        Keep `training.backend = "native_torch"` for local training and use
+        `worldflux verify` / `worldflux parity` for official backend proof flows.
 
         ## Gym Data Collection (Optional)
 
