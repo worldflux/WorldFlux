@@ -18,6 +18,7 @@ import torch.nn as nn
 from torch.optim import AdamW, Optimizer
 from torch.optim.lr_scheduler import LRScheduler
 
+from worldflux.core.backend_handle import OfficialBackendHandle
 from worldflux.core.batch import Batch, BatchProvider, BatchProviderV2, BatchRequest
 from worldflux.core.exceptions import (
     BufferError,
@@ -30,6 +31,7 @@ from worldflux.core.exceptions import (
 from worldflux.core.spec import ModelIOContract
 from worldflux.utils import set_seed
 
+from .backend import ExecutionDelegatingBackend, JobHandle, JobStatus, LocalBackend, TrainingBackend
 from .callbacks import Callback, CallbackList, CheckpointCallback, LoggingCallback
 from .config import TrainingConfig
 
@@ -105,7 +107,7 @@ class Trainer:
 
     def __init__(
         self,
-        model: WorldModel | nn.Module,
+        model: WorldModel | nn.Module | OfficialBackendHandle,
         config: TrainingConfig | None = None,
         callbacks: list[Callback] | None = None,
         optimizer: Optimizer | None = None,
@@ -114,17 +116,6 @@ class Trainer:
         self.config = config or TrainingConfig()
         set_seed(self.config.seed)
         self.device = torch.device(self.config.resolve_device())
-
-        # Move model to device
-        self.model: WorldModel | nn.Module = model.to(self.device)
-
-        # Apply torch.compile if requested (PyTorch 2.0+)
-        if self.config.compile_model:
-            if hasattr(torch, "compile"):
-                self.model = torch.compile(self.model)  # type: ignore[assignment]
-                logger.info("Applied torch.compile to model")
-            else:
-                logger.warning("compile_model=True but torch.compile not available (PyTorch <2.0)")
 
         if self.config.model_overrides:
             raise ConfigurationError(
@@ -136,6 +127,57 @@ class Trainer:
                 "TrainingConfig.ema_decay is not implemented yet. Set ema_decay=None."
             )
 
+        # Training state
+        self.state = TrainingState()
+
+        # Gradient accumulation counter
+        self._accumulation_step = 0
+
+        self.execution_mode = "delegated" if isinstance(model, OfficialBackendHandle) else "local"
+        self._backend_handle: OfficialBackendHandle | None = None
+        self._training_backend: TrainingBackend = LocalBackend()
+        self.model: WorldModel | nn.Module | OfficialBackendHandle
+        self.optimizer: Optimizer | None = None
+        self.scheduler: LRScheduler | None = None
+
+        # Mixed precision
+        self.scaler: torch.amp.GradScaler | None = None
+
+        # Create output directory
+        os.makedirs(self.config.output_dir, exist_ok=True)
+
+        # Data iterator cache (for iterable datasets)
+        self._data_iter: Iterator[Any] | None = None
+
+        # Optional model I/O contract for runtime validation.
+        self.io_contract: ModelIOContract | None = None
+        if self.execution_mode == "delegated":
+            self._backend_handle = cast(OfficialBackendHandle, model)
+            self.model = model
+            if self.config.backend == "native_torch":
+                self.config = self.config.with_updates(backend=self._backend_handle.backend)
+            self._training_backend = ExecutionDelegatingBackend()
+            self.callbacks = CallbackList(callbacks or [])
+            return
+
+        if self.config.backend != "native_torch":
+            raise ConfigurationError(
+                "Trainer local mode requires TrainingConfig.backend='native_torch'. "
+                "Use OfficialBackendHandle + Trainer.submit() for non-native backends."
+            )
+
+        # Move model to device
+        local_model = cast(nn.Module, model)
+        self.model = local_model.to(self.device)
+
+        # Apply torch.compile if requested (PyTorch 2.0+)
+        if self.config.compile_model:
+            if hasattr(torch, "compile"):
+                self.model = torch.compile(self.model)  # type: ignore[assignment]
+                logger.info("Applied torch.compile to model")
+            else:
+                logger.warning("compile_model=True but torch.compile not available (PyTorch <2.0)")
+
         # Setup optimizer
         if optimizer is None:
             self.optimizer = self._create_optimizer()
@@ -143,13 +185,10 @@ class Trainer:
             self.optimizer = optimizer
 
         # Setup scheduler
-        self.scheduler: LRScheduler | None
         if scheduler is not None:
             self.scheduler = scheduler
         elif self.config.scheduler != "none":
             self.scheduler = self._create_scheduler()
-        else:
-            self.scheduler = None
 
         # Setup callbacks
         default_callbacks = [
@@ -163,14 +202,6 @@ class Trainer:
             default_callbacks.extend(callbacks)
         self.callbacks = CallbackList(default_callbacks)
 
-        # Training state
-        self.state = TrainingState()
-
-        # Gradient accumulation counter
-        self._accumulation_step = 0
-
-        # Mixed precision
-        self.scaler: torch.amp.GradScaler | None = None
         if self.config.mixed_precision and self.device.type == "cuda":
             self.scaler = torch.amp.GradScaler("cuda")
         elif self.config.mixed_precision:
@@ -179,15 +210,7 @@ class Trainer:
                 self.device.type,
             )
 
-        # Create output directory
-        os.makedirs(self.config.output_dir, exist_ok=True)
-
-        # Data iterator cache (for iterable datasets)
-        self._data_iter: Iterator[Any] | None = None
-
-        # Optional model I/O contract for runtime validation.
         contract_fn = getattr(self.model, "io_contract", None)
-        self.io_contract: ModelIOContract | None = None
         if callable(contract_fn):
             try:
                 maybe_contract = contract_fn()
@@ -202,6 +225,50 @@ class Trainer:
             except ValidationError as e:
                 raise TrainingError(f"Invalid model I/O contract: {e}") from e
             self.io_contract = maybe_contract
+
+    def _require_local_mode(self, operation: str) -> None:
+        if self.execution_mode != "local":
+            raise ConfigurationError(
+                f"{operation} is only available for native_torch Trainer instances. "
+                "Use Trainer.submit() / status() / logs() / cancel() for non-native backends."
+            )
+
+    def _local_model(self) -> nn.Module:
+        model = self.model
+        if isinstance(model, OfficialBackendHandle):
+            raise ConfigurationError(
+                "Local trainer operations are unavailable for OfficialBackendHandle instances."
+            )
+        return cast(nn.Module, model)
+
+    def _require_optimizer(self) -> Optimizer:
+        if self.optimizer is None:
+            raise ConfigurationError("Trainer optimizer is not initialized.")
+        return self.optimizer
+
+    def submit(self, *, resume_from: str | None = None) -> JobHandle:
+        if self.execution_mode != "delegated" or self._backend_handle is None:
+            raise ConfigurationError(
+                "submit() is only available for non-native backends. "
+                "Use train() for native_torch models."
+            )
+        return self._training_backend.submit(
+            {
+                "model_handle": self._backend_handle,
+                "training_config": self.config,
+                "backend_profile": self.config.backend_profile,
+                "resume_from": resume_from,
+            }
+        )
+
+    def status(self, handle: JobHandle) -> JobStatus:
+        return self._training_backend.status(handle)
+
+    def logs(self, handle: JobHandle) -> Iterator[str]:
+        return self._training_backend.logs(handle)
+
+    def cancel(self, handle: JobHandle) -> None:
+        self._training_backend.cancel(handle)
 
     def _apply_contract_to_batch(self, batch: Batch, data: BatchProvider | Any) -> Batch:
         if hasattr(data, "batch_layout"):
@@ -318,7 +385,8 @@ class Trainer:
         its own learning rate.  Otherwise, falls back to
         ``model.parameters()``.
         """
-        param_groups_fn = getattr(self.model, "parameter_groups", None)
+        local_model = self._local_model()
+        param_groups_fn = getattr(local_model, "parameter_groups", None)
         if callable(param_groups_fn):
             groups = param_groups_fn()
             for g in groups:
@@ -326,7 +394,7 @@ class Trainer:
                 g.setdefault("weight_decay", self.config.weight_decay)
             params: Any = groups
         else:
-            params = self.model.parameters()
+            params = local_model.parameters()
 
         if self.config.optimizer == "adamw":
             return AdamW(
@@ -375,7 +443,7 @@ class Trainer:
                 return 0.5 * (1.0 + math.cos(math.pi * progress))
             return 1.0
 
-        return torch.optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda=_lambda)
+        return torch.optim.lr_scheduler.LambdaLR(self._require_optimizer(), lr_lambda=_lambda)
 
     def add_callback(self, callback: Callback) -> None:
         """Register a callback after trainer construction."""
@@ -398,6 +466,7 @@ class Trainer:
         Returns:
             Trained model.
         """
+        self._require_local_mode("train()")
         total_steps = (
             int(num_steps) if num_steps is not None else self.config.effective_total_steps()
         )
@@ -456,7 +525,7 @@ class Trainer:
         if self.config.auto_quality_check:
             self._run_quality_check()
 
-        return self.model
+        return self._local_model()
 
     def _run_quality_check(self) -> None:
         """Run a lightweight SMOKE-level quality check after training."""
@@ -464,7 +533,7 @@ class Trainer:
             from worldflux.verify.quick import QualityTier, quality_check
 
             result = quality_check(
-                self.model,
+                self._local_model(),
                 tier=QualityTier.SMOKE,
                 device=str(self.device),
             )
@@ -537,7 +606,8 @@ class Trainer:
         Raises:
             TrainingError: If NaN or Inf gradients are detected.
         """
-        for name, param in self.model.named_parameters():
+        local_model = self._local_model()
+        for name, param in local_model.named_parameters():
             if param.grad is not None:
                 if torch.isnan(param.grad).any():
                     raise TrainingError(
@@ -553,13 +623,17 @@ class Trainer:
     def _forward_backward(self, batch: Batch, accum_steps: int) -> Any:
         """Run forward pass, check losses, and backward pass. Returns LossOutput."""
         use_amp = self.config.mixed_precision and self.scaler is not None
+        local_model = self._local_model()
+        loss_model = cast(Any, local_model)
+        scaler = self.scaler
 
         if use_amp:
+            assert scaler is not None
             with torch.amp.autocast(device_type=self.device.type):
-                loss_out = self.model.loss(batch)  # type: ignore[attr-defined, operator]
+                loss_out = loss_model.loss(batch)
                 loss = loss_out.loss / accum_steps
         else:
-            loss_out = self.model.loss(batch)  # type: ignore[attr-defined, operator]
+            loss_out = loss_model.loss(batch)
             loss = loss_out.loss / accum_steps
 
         # Check for NaN/Inf in losses before backward
@@ -568,7 +642,8 @@ class Trainer:
         )
 
         if use_amp:
-            self.scaler.scale(loss).backward()  # type: ignore[union-attr]
+            assert scaler is not None
+            scaler.scale(loss).backward()
         else:
             loss.backward()
 
@@ -577,25 +652,29 @@ class Trainer:
     def _optimizer_step(self) -> None:
         """Unscale gradients, check them, clip, and step the optimizer."""
         use_amp = self.config.mixed_precision and self.scaler is not None
+        local_model = self._local_model()
+        optimizer = self._require_optimizer()
 
         if use_amp:
+            scaler = self.scaler
+            assert scaler is not None
             if self.config.grad_clip > 0:
-                self.scaler.unscale_(self.optimizer)  # type: ignore[union-attr]
+                scaler.unscale_(optimizer)
                 self._check_gradients(self.state.global_step)
                 torch.nn.utils.clip_grad_norm_(
-                    self.model.parameters(),
+                    local_model.parameters(),
                     self.config.grad_clip,
                 )
-            self.scaler.step(self.optimizer)  # type: ignore[union-attr]
-            self.scaler.update()  # type: ignore[union-attr]
+            scaler.step(optimizer)
+            scaler.update()
         else:
             self._check_gradients(self.state.global_step)
             if self.config.grad_clip > 0:
                 torch.nn.utils.clip_grad_norm_(
-                    self.model.parameters(),
+                    local_model.parameters(),
                     self.config.grad_clip,
                 )
-            self.optimizer.step()
+            optimizer.step()
 
     def _train_step(self, data: BatchProvider | Any) -> dict[str, float]:
         """
@@ -607,7 +686,9 @@ class Trainer:
 
         The effective batch size is: batch_size * gradient_accumulation_steps
         """
-        self.model.train()
+        self._require_local_mode("_train_step()")
+        local_model = self._local_model()
+        local_model.train()
         accum_steps = self.config.gradient_accumulation_steps
         is_accumulating = self._accumulation_step < accum_steps - 1
 
@@ -616,7 +697,7 @@ class Trainer:
 
         # Only zero gradients at the start of accumulation cycle
         if self._accumulation_step == 0:
-            self.optimizer.zero_grad()
+            self._require_optimizer().zero_grad()
 
         loss_out = self._forward_backward(batch, accum_steps)
 
@@ -657,17 +738,20 @@ class Trainer:
         Returns:
             Dictionary of average metrics.
         """
+        self._require_local_mode("evaluate()")
         if num_batches <= 0:
             raise TrainingError(f"num_batches must be positive, got {num_batches}")
 
-        self.model.eval()
+        local_model = self._local_model()
+        local_model.eval()
+        loss_model = cast(Any, local_model)
 
         total_metrics: dict[str, float] = {}
 
         with torch.no_grad():
             for _ in range(num_batches):
                 batch = self._next_batch(data)
-                loss_out = self.model.loss(batch)  # type: ignore[attr-defined, operator]
+                loss_out = loss_model.loss(batch)
 
                 total_metrics["loss"] = total_metrics.get("loss", 0.0) + loss_out.loss.item()
                 for k, v in loss_out.components.items():
@@ -682,11 +766,14 @@ class Trainer:
         Uses atomic write pattern: write to temp file, validate, then rename.
         This prevents corrupted checkpoints if disk fills or process is killed.
         """
+        self._require_local_mode("save_checkpoint()")
         import tempfile
 
+        local_model = self._local_model()
+        optimizer = self._require_optimizer()
         checkpoint = {
-            "model_state_dict": self.model.state_dict(),
-            "optimizer_state_dict": self.optimizer.state_dict(),
+            "model_state_dict": local_model.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
             "global_step": self.state.global_step,
             "best_loss": self.state.best_loss,
             "config": self.config.to_dict(),
@@ -699,8 +786,9 @@ class Trainer:
             checkpoint["scaler_state_dict"] = self.scaler.state_dict()
 
         # Save model config if available
-        if hasattr(self.model, "config") and hasattr(self.model.config, "to_dict"):  # type: ignore[union-attr, operator]
-            checkpoint["model_config"] = self.model.config.to_dict()  # type: ignore[union-attr, operator]
+        model_config = getattr(local_model, "config", None)
+        if model_config is not None and hasattr(model_config, "to_dict"):
+            checkpoint["model_config"] = model_config.to_dict()
 
         path_obj = Path(path)
         path_obj.parent.mkdir(parents=True, exist_ok=True)
@@ -753,6 +841,7 @@ class Trainer:
         Raises:
             CheckpointError: If checkpoint file is missing or corrupted.
         """
+        self._require_local_mode("load_checkpoint()")
         if not Path(path).exists():
             raise CheckpointError(f"Checkpoint file not found: {path}")
 
@@ -766,8 +855,10 @@ class Trainer:
             raise CheckpointError(f"Failed to load checkpoint from {path}: {e}") from e
 
         try:
-            self.model.load_state_dict(checkpoint["model_state_dict"])
-            self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+            local_model = self._local_model()
+            optimizer = self._require_optimizer()
+            local_model.load_state_dict(checkpoint["model_state_dict"])
+            optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
             self.state.global_step = checkpoint["global_step"]
             self.state.best_loss = checkpoint.get("best_loss", float("inf"))
 

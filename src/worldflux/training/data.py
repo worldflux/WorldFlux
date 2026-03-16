@@ -84,6 +84,10 @@ class ReplayBuffer:
         """Return number of transitions stored."""
         return self._size
 
+    def ready_for_sequence(self, *, batch_size: int, seq_len: int) -> bool:
+        """Return whether the buffer has enough transitions for recipe-style sampling."""
+        return self._size >= max(1, int(batch_size)) * max(1, int(seq_len))
+
     def __repr__(self) -> str:
         """Return a detailed string representation."""
         return (

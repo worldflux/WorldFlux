@@ -102,6 +102,9 @@ The following aliases are available for convenience:
 | `"tdmpc2-ci"` | `"tdmpc2:ci"` |
 | `"tdmpc2"` | `"tdmpc2:5m"` |
 | `"tdmpc-small"` | `"tdmpc2:5m"` |
+| `"tdmpc-proof"` | `"tdmpc2:proof_5m"` |
+| `"tdmpc2:proof"` | `"tdmpc2:proof_5m"` |
+| `"tdmpc-legacy"` | `"tdmpc2:5m_legacy"` |
 | `"tdmpc-medium"` | `"tdmpc2:48m"` |
 | `"tdmpc-large"` | `"tdmpc2:317m"` |
 | `"jepa"` | `"jepa:base"` |

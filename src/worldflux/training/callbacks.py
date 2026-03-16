@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 
+from worldflux.core.backend_handle import OfficialBackendHandle
 from worldflux.telemetry.wasr import make_run_id, write_event
 
 from .report import HealthSignal, LossCurveSummary, TrainingReport
@@ -473,6 +474,8 @@ class DiagnosisCallback(Callback):
         suggestions: list[str] = []
         grad_norms: list[float] = []
         has_nan_or_inf = False
+        if isinstance(trainer.model, OfficialBackendHandle):
+            return suggestions
 
         for param in trainer.model.parameters():
             if param.grad is None:

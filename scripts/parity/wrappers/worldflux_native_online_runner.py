@@ -19,6 +19,7 @@ if str(RUNTIME_ROOT) not in sys.path:
 from runtime.atari_env import AtariEnvError  # noqa: E402
 from runtime.dmcontrol_env import DMControlEnvError  # noqa: E402
 from runtime.dreamer_native_agent import DreamerNativeRunConfig, run_dreamer_native  # noqa: E402
+from runtime.dreamer_official_recipe import OFFICIAL_DREAMER_ATARI100K_RECIPE  # noqa: E402
 from runtime.tdmpc2_native_agent import TDMPC2NativeRunConfig, run_tdmpc2_native  # noqa: E402
 
 
@@ -29,7 +30,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, required=True)
     parser.add_argument("--steps", type=int, required=True)
     parser.add_argument("--eval-interval", type=int, default=5_000)
-    parser.add_argument("--eval-episodes", type=int, default=4)
+    parser.add_argument("--eval-episodes", type=int, default=1)
     parser.add_argument("--eval-window", type=int, default=10)
     parser.add_argument("--device", type=str, default="auto")
     parser.add_argument("--env-backend", type=str, default="auto")
@@ -52,16 +53,23 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--dreamer-policy-impl",
         type=str,
-        default="auto",
+        default="actor",
         choices=["auto", "actor", "shooting"],
     )
-    parser.add_argument("--dreamer-replay-ratio", type=float, default=128.0)
+    parser.add_argument("--dreamer-train-ratio", type=float, default=256.0)
+    parser.add_argument("--dreamer-replay-ratio", type=float, default=0.0)
     parser.add_argument("--dreamer-train-chunk-size", type=int, default=64)
     parser.add_argument(
         "--dreamer-model-profile",
         type=str,
-        default="wf25m",
+        default="official_xl",
         choices=["ci", "wf12m", "wf25m", "wf50m", "wf200m", "official_like", "official_xl"],
+    )
+    parser.add_argument(
+        "--tdmpc2-model-profile",
+        type=str,
+        default="5m",
+        choices=["ci", "5m", "proof_5m", "5m_legacy", "19m", "48m", "317m"],
     )
     parser.add_argument(
         "--dreamer-diagnostic",
@@ -177,7 +185,9 @@ def main() -> int:
                     env_backend=resolved_backend,
                     device=resolved_device,
                     run_dir=run_dir,
-                    buffer_capacity=_override_int(args.buffer_capacity, 200_000),
+                    buffer_capacity=_override_int(
+                        args.buffer_capacity, OFFICIAL_DREAMER_ATARI100K_RECIPE.replay_size
+                    ),
                     warmup_steps=_override_int(args.warmup_steps, 1_024),
                     train_steps_per_eval=_override_int(args.train_steps_per_eval, 64),
                     sequence_length=_override_int(args.sequence_length, 64),
@@ -185,11 +195,17 @@ def main() -> int:
                     max_episode_steps=_override_int(args.max_episode_steps, 27_000),
                     policy_mode=args.policy_mode,
                     policy_impl=args.dreamer_policy_impl,
-                    replay_ratio=float(args.dreamer_replay_ratio),
+                    train_ratio=float(args.dreamer_train_ratio),
+                    replay_ratio=(
+                        float(args.dreamer_replay_ratio)
+                        if float(args.dreamer_replay_ratio) > 0
+                        else None
+                    ),
                     train_chunk_size=_override_int(args.dreamer_train_chunk_size, 64),
                     model_profile=args.dreamer_model_profile,
                     learning_rate_override=float(args.dreamer_lr),
                     dreamer_diagnostic=_parse_bool_arg(args.dreamer_diagnostic),
+                    strict_official_semantics=True,
                 )
             )
         else:
@@ -211,6 +227,7 @@ def main() -> int:
                     batch_size=_override_int(args.batch_size, 64),
                     max_episode_steps=_override_int(args.max_episode_steps, 1_000),
                     policy_mode=args.policy_mode,
+                    model_profile=args.tdmpc2_model_profile,
                 )
             )
     except (AtariEnvError, DMControlEnvError) as exc:

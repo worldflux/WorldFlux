@@ -140,6 +140,7 @@ models = list_models(verbose=True)
 | `dreamerv3:size50m` | ~50M | 4096 | 32 | 32 |
 | `dreamerv3:size100m` | ~100M | 8192 | 32 | 32 |
 | `dreamerv3:size200m` | ~200M | 8192 | 32 | 32 |
+| `dreamerv3:official_xl` | ~200-300M | 8192 | 32 | 64 |
 
 ### TD-MPC2
 
@@ -147,9 +148,20 @@ models = list_models(verbose=True)
 |--------|----------------|--------------|--------------|------------------|
 | `tdmpc2:ci` | ~0.1M | 32 | 32 | 2 |
 | `tdmpc2:5m` | ~5M | 256 | 256 | 5 |
+| `tdmpc2:proof_5m` | ~5M | 256 | 256 | 5 |
+| `tdmpc2:5m_legacy` | ~5M | 256 | 256 | 5 |
 | `tdmpc2:19m` | ~19M | 512 | 512 | 5 |
 | `tdmpc2:48m` | ~48M | 512 | 1024 | 5 |
 | `tdmpc2:317m` | ~317M | 1024 | 2048 | 5 |
+
+## Parity Roles
+
+- `dreamer:ci`, `tdmpc2:ci`: CI / quick validation / scaffold presets. Do not use them for proof-grade parity.
+- `dreamerv3:official_xl`: Dreamer proof-canonical preset.
+- `tdmpc2:proof_5m`: TD-MPC2 proof-canonical preset.
+- `tdmpc2:5m`: TD-MPC2 compatibility preset.
+- `tdmpc2:5m_legacy`: TD-MPC2 legacy compatibility preset.
+- The remaining reference-family presets are for experimentation and capacity tuning.
 
 For the complete catalog (including experimental/skeleton families), use:
 

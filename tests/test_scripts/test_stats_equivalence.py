@@ -19,6 +19,7 @@ def _record(
     auc_return: float,
     *,
     metadata: dict | None = None,
+    adapter: str = "dummy",
 ) -> dict:
     metric_payload = {
         "final_return_mean": final_return,
@@ -34,10 +35,190 @@ def _record(
         "family": "dreamerv3",
         "seed": seed,
         "system": system,
-        "adapter": "dummy",
+        "adapter": adapter,
         "status": "success",
         "metrics": metric_payload,
     }
+
+
+def _dreamer_backend_metadata(*, system: str, policy_impl: str, env_backend: str) -> dict:
+    backend_kind = "jax_subprocess" if system == "official" else "native_torch"
+    adapter_id = (
+        "official_dreamerv3_jax_subprocess"
+        if system == "official"
+        else "worldflux_dreamerv3_native_torch"
+    )
+    return {
+        "backend_kind": backend_kind,
+        "adapter_id": adapter_id,
+        "recipe_hash": "recipe123",
+        "artifact_manifest": {
+            "backend_kind": backend_kind,
+            "adapter_id": adapter_id,
+            "recipe_hash": "recipe123",
+            "checkpoint_paths": [],
+            "score_paths": [],
+            "metrics_paths": ["metrics.json"],
+        },
+        "env_backend": env_backend,
+        "model_id": "dreamerv3:official_xl",
+        "model_profile": "official_xl",
+        "strict_official_semantics": system != "official",
+        "train_budget": {
+            "steps": 100,
+            "warmup_steps": 1,
+            "buffer_capacity": 64,
+            "sequence_length": 2,
+            "batch_size": 2,
+            "replay_ratio": 1,
+            "train_chunk_size": 1,
+            "max_episode_steps": 4,
+        }
+        if system != "official"
+        else {"steps": 100},
+        "eval_protocol": {"eval_interval": 6, "eval_episodes": 1, "eval_window": 2},
+        "eval_protocol_hash": "abc123",
+        "policy_mode": "parity_candidate" if system != "official" else "official_reference",
+        "policy_impl": policy_impl,
+        "policy": "learned" if system != "official" else "official",
+    }
+
+
+def _tdmpc2_backend_metadata(*, system: str, policy_impl: str, env_backend: str) -> dict:
+    backend_kind = "torch_subprocess" if system == "official" else "native_torch"
+    adapter_id = (
+        "official_tdmpc2_torch_subprocess"
+        if system == "official"
+        else "worldflux_tdmpc2_native_torch"
+    )
+    model_id = "tdmpc2:5m" if system == "official" else "tdmpc2:proof_5m"
+    model_profile = "5m" if system == "official" else "proof_5m"
+    return {
+        "backend_kind": backend_kind,
+        "adapter_id": adapter_id,
+        "recipe_hash": "recipe123",
+        "artifact_manifest": {
+            "backend_kind": backend_kind,
+            "adapter_id": adapter_id,
+            "recipe_hash": "recipe123",
+            "checkpoint_paths": [],
+            "score_paths": [],
+            "metrics_paths": ["metrics.json"],
+        },
+        "env_backend": env_backend,
+        "model_id": model_id,
+        "model_profile": model_profile,
+        "canonical_compare_profile": "proof_5m",
+        "official_model_size": 5 if system == "official" else None,
+        "alignment_report_path": "/tmp/tdmpc2_alignment_report.json"
+        if system != "official"
+        else "",
+        "alignment_status": "aligned" if system != "official" else "",
+        "train_budget": {
+            "steps": 100,
+            "warmup_steps": 1,
+            "buffer_capacity": 64,
+            "sequence_length": 2,
+            "batch_size": 2,
+            "replay_ratio": 1,
+            "train_chunk_size": 1,
+            "max_episode_steps": 4,
+        }
+        if system != "official"
+        else {"steps": 100},
+        "eval_protocol": {"eval_interval": 6, "eval_episodes": 1, "eval_window": 2},
+        "eval_protocol_hash": "abc123",
+        "policy_mode": "parity_candidate" if system != "official" else "official_reference",
+        "policy_impl": policy_impl,
+        "policy": "learned" if system != "official" else "official",
+    }
+
+
+def _suite_v2_manifest(
+    path: Path, *, family: str = "dreamerv3", task_id: str = "atari100k_pong"
+) -> Path:
+    manifest = {
+        "schema_version": "parity.suite.v2",
+        "suite_id": "proof-suite",
+        "family": family,
+        "primary_metric": "final_return_mean",
+        "secondary_metrics": ["auc_return"],
+        "higher_is_better": True,
+        "effect_transform": "paired_log_ratio",
+        "equivalence_margin": 0.05,
+        "noninferiority_margin": 0.05,
+        "alpha": 0.05,
+        "holm_scope": "all_metrics",
+        "seed_policy": {
+            "mode": "fixed",
+            "values": [0, 1],
+            "pilot_seeds": 10,
+            "min_seeds": 20,
+            "max_seeds": 50,
+            "power_target": 0.8,
+        },
+        "train_budget": {
+            "steps": 100,
+            "warmup_steps": 1,
+            "buffer_capacity": 64,
+            "sequence_length": 2,
+            "batch_size": 2,
+            "replay_ratio": 1,
+            "train_chunk_size": 1,
+            "max_episode_steps": 4,
+        },
+        "eval_protocol": {
+            "eval_interval": 6,
+            "eval_episodes": 1,
+            "eval_window": 2,
+            "policy_mode": "parity_candidate",
+            "environment_backend": "gymnasium" if family == "dreamerv3" else "dmcontrol",
+        },
+        "validity_requirements": {
+            "policy_mode": "parity_candidate",
+            "environment_backend": "gymnasium" if family == "dreamerv3" else "dmcontrol",
+            "forbidden_shortcuts": ["mode=mock", "policy=random"],
+        },
+        "defaults": {
+            "component_report_required": True,
+        },
+        "tasks": [
+            {
+                "task_id": task_id,
+                "family": family,
+                "official": {
+                    "adapter": (
+                        "official_dreamerv3_jax_subprocess"
+                        if family == "dreamerv3"
+                        else "official_tdmpc2_torch_subprocess"
+                    ),
+                    "backend_kind": "jax_subprocess"
+                    if family == "dreamerv3"
+                    else "torch_subprocess",
+                    "artifact_requirements": {"metrics_paths": ["metrics.json"]},
+                    "cwd": ".",
+                    "command": ["python3", "-c", "print('ok')"],
+                    "env": {},
+                    "source": {"commit": "official-sha", "artifact_path": "official-artifact"},
+                },
+                "worldflux": {
+                    "adapter": (
+                        "worldflux_dreamerv3_native"
+                        if family == "dreamerv3"
+                        else "worldflux_tdmpc2_native"
+                    ),
+                    "backend_kind": "native_torch",
+                    "artifact_requirements": {"metrics_paths": ["metrics.json"]},
+                    "cwd": ".",
+                    "command": ["python3", "-c", "print('ok')"],
+                    "env": {},
+                    "source": {"commit": "wf-sha", "artifact_path": "wf-artifact"},
+                },
+            }
+        ],
+    }
+    path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    return path
 
 
 def _run_stats(
@@ -214,44 +395,84 @@ def test_stats_equivalence_strict_validity_passes_on_parity_candidate_policy(
     for seed in range(2):
         metadata_official = {
             "mode": "official",
-            "eval_protocol_hash": "abc123",
-            "policy_mode": "official_reference",
-            "policy_impl": "official_ref",
+            **_tdmpc2_backend_metadata(
+                system="official",
+                policy_impl="official_ref",
+                env_backend="dmcontrol",
+            ),
         }
         metadata_worldflux = {
             "mode": "native_real_env",
-            "eval_protocol_hash": "abc123",
-            "policy_mode": "parity_candidate",
-            "policy_impl": "cem_planner",
-            "policy": "learned",
-            "env_backend": "dmcontrol",
+            **_tdmpc2_backend_metadata(
+                system="worldflux",
+                policy_impl="cem_planner",
+                env_backend="dmcontrol",
+            ),
         }
-        rows.append(
-            _record(
-                "dog-run",
-                seed,
-                "official",
-                100.0 + seed,
-                90.0 + seed,
-                metadata=metadata_official,
-            )
+        official_row = _record(
+            "dog-run",
+            seed,
+            "official",
+            100.0 + seed,
+            90.0 + seed,
+            metadata=metadata_official,
+            adapter="official_tdmpc2_torch_subprocess",
         )
-        rows.append(
-            _record(
-                "dog-run",
-                seed,
-                "worldflux",
-                100.0 + seed,
-                90.0 + seed,
-                metadata=metadata_worldflux,
-            )
+        official_row["family"] = "tdmpc2"
+        official_row["source_commit"] = "official-sha"
+        official_row["source_artifact_path"] = "official-artifact"
+        official_row["train_budget"] = {
+            "steps": 100,
+            "warmup_steps": 1,
+            "buffer_capacity": 64,
+            "sequence_length": 2,
+            "batch_size": 2,
+            "replay_ratio": 1,
+            "train_chunk_size": 1,
+            "max_episode_steps": 4,
+        }
+        official_row["eval_protocol"] = {
+            "eval_interval": 6,
+            "eval_episodes": 1,
+            "eval_window": 2,
+            "policy_mode": "parity_candidate",
+            "environment_backend": "dmcontrol",
+        }
+        rows.append(official_row)
+
+        worldflux_row = _record(
+            "dog-run",
+            seed,
+            "worldflux",
+            100.0 + seed,
+            90.0 + seed,
+            metadata=metadata_worldflux,
+            adapter="worldflux_tdmpc2_native_torch",
         )
+        worldflux_row["family"] = "tdmpc2"
+        worldflux_row["source_commit"] = "wf-sha"
+        worldflux_row["source_artifact_path"] = "wf-artifact"
+        worldflux_row["train_budget"] = dict(official_row["train_budget"])
+        worldflux_row["eval_protocol"] = dict(official_row["eval_protocol"])
+        rows.append(worldflux_row)
     runs_path.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+    manifest_path = _suite_v2_manifest(tmp_path / "suite.json", family="tdmpc2", task_id="dog-run")
+    component_path = tmp_path / "component_match_report.json"
+    component_path.write_text(
+        json.dumps({"family": "tdmpc2", "all_pass": True, "results": []}), encoding="utf-8"
+    )
 
     report = _run_stats(
         runs_path,
         tmp_path / "report.json",
-        extra_args=["--strict-validity", "--proof-mode"],
+        extra_args=[
+            "--strict-validity",
+            "--proof-mode",
+            "--manifest",
+            str(manifest_path),
+            "--component-report",
+            str(component_path),
+        ],
         expected_returncode=0,
     )
 
@@ -260,7 +481,7 @@ def test_stats_equivalence_strict_validity_passes_on_parity_candidate_policy(
     assert report["validity"]["pass"] is True
 
 
-def test_stats_equivalence_strict_validity_infers_legacy_official_backend_with_manifest(
+def test_stats_equivalence_proof_mode_requires_explicit_official_backend(
     tmp_path: Path,
 ) -> None:
     runs_path = tmp_path / "runs.jsonl"
@@ -273,17 +494,19 @@ def test_stats_equivalence_strict_validity_infers_legacy_official_backend_with_m
     for seed in range(2):
         metadata_official = {
             "mode": "official",
-            "eval_protocol_hash": "abc123",
-            "policy_mode": "official_reference",
-            "policy_impl": "official_ref",
+            **_dreamer_backend_metadata(
+                system="official",
+                policy_impl="official_ref",
+                env_backend="",
+            ),
         }
         metadata_worldflux = {
             "mode": "native_real_env",
-            "eval_protocol_hash": "abc123",
-            "policy_mode": "parity_candidate",
-            "policy_impl": "candidate_actor",
-            "policy": "learned",
-            "env_backend": "gymnasium",
+            **_dreamer_backend_metadata(
+                system="worldflux",
+                policy_impl="candidate_actor_stateful",
+                env_backend="gymnasium",
+            ),
         }
         official_row = _record(
             "atari100k_pong",
@@ -294,6 +517,25 @@ def test_stats_equivalence_strict_validity_infers_legacy_official_backend_with_m
             metadata=metadata_official,
         )
         official_row["validity_requirements"] = dict(validity_requirements)
+        official_row["source_commit"] = "official-sha"
+        official_row["source_artifact_path"] = "official-artifact"
+        official_row["train_budget"] = {
+            "steps": 100,
+            "warmup_steps": 1,
+            "buffer_capacity": 64,
+            "sequence_length": 2,
+            "batch_size": 2,
+            "replay_ratio": 1,
+            "train_chunk_size": 1,
+            "max_episode_steps": 4,
+        }
+        official_row["eval_protocol"] = {
+            "eval_interval": 6,
+            "eval_episodes": 1,
+            "eval_window": 2,
+            "policy_mode": "parity_candidate",
+            "environment_backend": "gymnasium",
+        }
         rows.append(official_row)
 
         worldflux_row = _record(
@@ -305,8 +547,17 @@ def test_stats_equivalence_strict_validity_infers_legacy_official_backend_with_m
             metadata=metadata_worldflux,
         )
         worldflux_row["validity_requirements"] = dict(validity_requirements)
+        worldflux_row["source_commit"] = "wf-sha"
+        worldflux_row["source_artifact_path"] = "wf-artifact"
+        worldflux_row["train_budget"] = dict(official_row["train_budget"])
+        worldflux_row["eval_protocol"] = dict(official_row["eval_protocol"])
         rows.append(worldflux_row)
     runs_path.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+    manifest_path = _suite_v2_manifest(tmp_path / "suite.json")
+    component_path = tmp_path / "component_match_report.json"
+    component_path.write_text(
+        json.dumps({"family": "dreamerv3", "all_pass": True, "results": []}), encoding="utf-8"
+    )
 
     report = _run_stats(
         runs_path,
@@ -315,22 +566,174 @@ def test_stats_equivalence_strict_validity_infers_legacy_official_backend_with_m
             "--strict-validity",
             "--proof-mode",
             "--manifest",
-            "scripts/parity/manifests/preseed_demo_v1.yaml",
+            str(manifest_path),
+            "--component-report",
+            str(component_path),
+        ],
+        expected_returncode=1,
+    )
+
+    assert report["global"]["strict_mode_failed"] is True
+    assert report["global"]["validity_pass"] is False
+    issue_codes = {issue["code"] for issue in report["validity"]["issues"]}
+    assert "missing_env_backend" in issue_codes
+
+
+def test_stats_equivalence_proof_mode_uses_suite_min_pairs(tmp_path: Path) -> None:
+    runs_path = tmp_path / "runs.jsonl"
+    rows: list[dict] = []
+    for seed in range(2):
+        off = _record(
+            "atari100k_pong",
+            seed,
+            "official",
+            100.0 + seed,
+            90.0 + seed,
+            adapter="official_dreamerv3_jax_subprocess",
+        )
+        wf = _record(
+            "atari100k_pong",
+            seed,
+            "worldflux",
+            100.0 + seed,
+            90.0 + seed,
+            adapter="worldflux_dreamerv3_native_torch",
+        )
+        for row, commit in ((off, "official-sha"), (wf, "wf-sha")):
+            row["source_commit"] = commit
+            row["source_artifact_path"] = f"{commit}-artifact"
+            row["train_budget"] = {
+                "steps": 100,
+                "warmup_steps": 1,
+                "buffer_capacity": 64,
+                "sequence_length": 2,
+                "batch_size": 2,
+                "replay_ratio": 1,
+                "train_chunk_size": 1,
+                "max_episode_steps": 4,
+            }
+            row["eval_protocol"] = {
+                "eval_interval": 6,
+                "eval_episodes": 1,
+                "eval_window": 2,
+                "policy_mode": "parity_candidate",
+                "environment_backend": "gymnasium",
+            }
+        off["metrics"]["metadata"] = {
+            "mode": "official",
+            **_dreamer_backend_metadata(
+                system="official",
+                policy_impl="official_ref",
+                env_backend="gymnasium",
+            ),
+        }
+        wf["metrics"]["metadata"] = {
+            "mode": "native_real_env",
+            **_dreamer_backend_metadata(
+                system="worldflux",
+                policy_impl="candidate_actor_stateful",
+                env_backend="gymnasium",
+            ),
+        }
+        rows.extend([off, wf])
+    runs_path.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+    manifest_path = _suite_v2_manifest(tmp_path / "suite.json")
+    component_path = tmp_path / "component_match_report.json"
+    component_path.write_text(
+        json.dumps({"family": "dreamerv3", "all_pass": True, "results": []}), encoding="utf-8"
+    )
+
+    report = _run_stats(
+        runs_path,
+        tmp_path / "report.json",
+        extra_args=[
+            "--strict-validity",
+            "--proof-mode",
+            "--manifest",
+            str(manifest_path),
+            "--component-report",
+            str(component_path),
         ],
         expected_returncode=0,
     )
 
-    assert report["global"]["strict_mode_failed"] is False
-    assert report["global"]["validity_pass"] is True
-    assert report["validity"]["pass"] is True
-    assert report["validity"]["issue_count"] == 0
-    assert report["validity"]["info_count"] >= 1
-    info_codes = {
-        issue["code"]
-        for issue in report["validity"]["issues"]
-        if str(issue.get("severity", "error")) == "info"
-    }
-    assert "official_env_backend_inferred" in info_codes
+    assert report["config"]["min_pairs"] == 20
+    metric = report["tasks"][0]["metrics"]["final_return_mean"]
+    assert metric["status"] == "insufficient_pairs"
+
+
+def test_stats_equivalence_proof_mode_requires_component_report(tmp_path: Path) -> None:
+    runs_path = tmp_path / "runs.jsonl"
+    rows: list[dict] = []
+    for seed in range(20):
+        off = _record(
+            "atari100k_pong",
+            seed,
+            "official",
+            100.0 + seed,
+            90.0 + seed,
+            adapter="official_dreamerv3_jax_subprocess",
+        )
+        wf = _record(
+            "atari100k_pong",
+            seed,
+            "worldflux",
+            100.0 + seed,
+            90.0 + seed,
+            adapter="worldflux_dreamerv3_native_torch",
+        )
+        for row, commit, system in (
+            (off, "official-sha", "official"),
+            (wf, "wf-sha", "worldflux"),
+        ):
+            row["source_commit"] = commit
+            row["source_artifact_path"] = f"{commit}-artifact"
+            row["train_budget"] = {
+                "steps": 100,
+                "warmup_steps": 1,
+                "buffer_capacity": 64,
+                "sequence_length": 2,
+                "batch_size": 2,
+                "replay_ratio": 1,
+                "train_chunk_size": 1,
+                "max_episode_steps": 4,
+            }
+            row["eval_protocol"] = {
+                "eval_interval": 6,
+                "eval_episodes": 1,
+                "eval_window": 2,
+                "policy_mode": "parity_candidate",
+                "environment_backend": "gymnasium",
+            }
+            row["metrics"]["metadata"] = {
+                "mode": "official" if system == "official" else "native_real_env",
+                **_dreamer_backend_metadata(
+                    system=system,
+                    policy_impl=(
+                        "official_ref" if system == "official" else "candidate_actor_stateful"
+                    ),
+                    env_backend="gymnasium",
+                ),
+            }
+        rows.extend([off, wf])
+    runs_path.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+    manifest_path = _suite_v2_manifest(tmp_path / "suite.json")
+
+    report = _run_stats(
+        runs_path,
+        tmp_path / "report.json",
+        extra_args=[
+            "--strict-validity",
+            "--proof-mode",
+            "--manifest",
+            str(manifest_path),
+        ],
+        expected_returncode=1,
+    )
+
+    assert report["component_match"]["required"] is True
+    assert report["component_match"]["present"] is False
+    assert report["global"]["component_match_pass"] is False
 
 
 def test_stats_equivalence_dual_pass_fails_when_bayesian_not_enabled(tmp_path: Path) -> None:

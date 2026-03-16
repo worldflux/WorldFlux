@@ -28,12 +28,19 @@ if str(SCRIPT_DIR) not in sys.path:
 from contract_schema import load_suite_contract
 from suite_registry import build_default_registry
 
-SUPPORTED_ADAPTERS: set[str] = {
+from worldflux.parity import discover_artifacts, get_backend_adapter_registry, stable_recipe_hash
+
+_LEGACY_SUPPORTED_ADAPTERS: set[str] = {
     "official_dreamerv3",
     "official_tdmpc2",
     "worldflux_dreamerv3_native",
     "worldflux_tdmpc2_native",
 }
+
+
+def _supported_adapters() -> set[str]:
+    registry = get_backend_adapter_registry()
+    return set(_LEGACY_SUPPORTED_ADAPTERS) | set(registry.list_ids())
 
 
 class _SafeFormat(dict[str, Any]):
@@ -44,12 +51,15 @@ class _SafeFormat(dict[str, Any]):
 @dataclass(frozen=True)
 class CommandSpec:
     adapter: str
+    backend_kind: str | None
+    adapter_id: str | None
     cwd: str
     command: list[str]
     env: dict[str, str]
     timeout_sec: int | None
     source_commit: str | None
     source_artifact_path: str | None
+    artifact_requirements: dict[str, Any]
 
 
 @dataclass(frozen=True)
@@ -201,105 +211,17 @@ def _load_manifest(path: Path) -> dict[str, Any]:
     return data
 
 
-from _validation_utils import _require_object, _require_string
-
-
-def _coerce_command(value: Any, *, name: str) -> list[str]:
-    if isinstance(value, str):
-        tokens = shlex.split(value, posix=True)
-        if not tokens:
-            raise RuntimeError(f"{name} must not be an empty command string.")
-        dangerous_tokens = {";", "&&", "||", "|", "&"}
-        if any(token in dangerous_tokens for token in tokens):
-            raise RuntimeError(
-                f"{name} contains shell control operators {sorted(dangerous_tokens)}; "
-                "use list[str] without shell operators."
-            )
-        return [str(token) for token in tokens]
-    if isinstance(value, list) and all(isinstance(v, str) for v in value):
-        out = [str(v) for v in value if str(v)]
-        if not out:
-            raise RuntimeError(f"{name} must not be an empty command list.")
-        return out
-    raise RuntimeError(f"{name} must be string or list[str].")
-
-
-def _parse_command_spec(raw: Any, *, name: str) -> CommandSpec:
-    obj = _require_object(raw, name=name)
-    adapter = _require_string(obj.get("adapter"), name=f"{name}.adapter")
-    if adapter not in SUPPORTED_ADAPTERS:
-        raise RuntimeError(
-            f"Unsupported adapter '{adapter}' in {name}.adapter. Supported: {sorted(SUPPORTED_ADAPTERS)}"
-        )
-    cwd = _require_string(obj.get("cwd", "."), name=f"{name}.cwd")
-    command = _coerce_command(obj.get("command"), name=f"{name}.command")
-
-    env = obj.get("env", {})
-    if not isinstance(env, dict) or not all(
-        isinstance(k, str) and isinstance(v, str) for k, v in env.items()
-    ):
-        raise RuntimeError(f"{name}.env must be a mapping of string keys and values.")
-
-    timeout = obj.get("timeout_sec", None)
-    if timeout is not None:
-        if not isinstance(timeout, int) or timeout <= 0:
-            raise RuntimeError(f"{name}.timeout_sec must be a positive integer when provided.")
-
-    source = obj.get("source", None)
-    source_commit: str | None = None
-    source_artifact_path: str | None = None
-    if source is not None:
-        source_obj = _require_object(source, name=f"{name}.source")
-        source_commit = _require_string(source_obj.get("commit"), name=f"{name}.source.commit")
-        source_artifact_path = _require_string(
-            source_obj.get("artifact_path"),
-            name=f"{name}.source.artifact_path",
-        )
-
-    return CommandSpec(
-        adapter=adapter,
-        cwd=cwd,
-        command=command,
-        env=dict(env),
-        timeout_sec=timeout,
-        source_commit=source_commit,
-        source_artifact_path=source_artifact_path,
-    )
-
-
-def _parse_seed_policy(raw: Any) -> SeedPolicy:
-    obj = _require_object(raw, name="seed_policy")
-    mode = _require_string(obj.get("mode", "fixed"), name="seed_policy.mode")
-    if mode not in {"fixed", "auto_power"}:
-        raise RuntimeError("seed_policy.mode must be either 'fixed' or 'auto_power'.")
-
-    values_raw = obj.get("values", [])
-    if not isinstance(values_raw, list) or not all(isinstance(v, int) for v in values_raw):
-        raise RuntimeError("seed_policy.values must be a list[int].")
-
-    pilot_seeds = int(obj.get("pilot_seeds", 10))
-    min_seeds = int(obj.get("min_seeds", 20))
-    max_seeds = int(obj.get("max_seeds", 50))
-    power_target = float(obj.get("power_target", 0.80))
-    if pilot_seeds < 1:
-        raise RuntimeError("seed_policy.pilot_seeds must be >= 1")
-    if not (1 <= min_seeds <= max_seeds):
-        raise RuntimeError("seed_policy must satisfy 1 <= min_seeds <= max_seeds")
-    if not (0.5 <= power_target < 1.0):
-        raise RuntimeError("seed_policy.power_target must be in [0.5, 1.0)")
-
-    return SeedPolicy(
-        mode=mode,
-        values=tuple(int(v) for v in values_raw),
-        pilot_seeds=pilot_seeds,
-        min_seeds=min_seeds,
-        max_seeds=max_seeds,
-        power_target=power_target,
-    )
+def _resolve_source_value(value: str | None, variables: dict[str, Any]) -> str | None:
+    if value is None:
+        return None
+    rendered = _format_recursive(value, variables)
+    if rendered is None:
+        return None
+    return str(rendered)
 
 
 def _parse_manifest(raw: dict[str, Any]) -> Manifest:
-    contract = load_suite_contract(raw, supported_adapters=SUPPORTED_ADAPTERS)
+    contract = load_suite_contract(raw, supported_adapters=_supported_adapters())
 
     tasks: list[TaskSpec] = []
     for task in contract.tasks:
@@ -321,6 +243,8 @@ def _parse_manifest(raw: dict[str, Any]) -> Manifest:
                 validity_requirements=dict(task.validity_requirements),
                 official=CommandSpec(
                     adapter=task.official.adapter,
+                    backend_kind=task.official.backend_kind,
+                    adapter_id=task.official.adapter_id,
                     cwd=task.official.cwd,
                     command=task.official.command,
                     env=dict(task.official.env),
@@ -333,9 +257,12 @@ def _parse_manifest(raw: dict[str, Any]) -> Manifest:
                         if task.official.source is not None
                         else None
                     ),
+                    artifact_requirements=dict(task.official.artifact_requirements),
                 ),
                 worldflux=CommandSpec(
                     adapter=task.worldflux.adapter,
+                    backend_kind=task.worldflux.backend_kind,
+                    adapter_id=task.worldflux.adapter_id,
                     cwd=task.worldflux.cwd,
                     command=task.worldflux.command,
                     env=dict(task.worldflux.env),
@@ -348,6 +275,7 @@ def _parse_manifest(raw: dict[str, Any]) -> Manifest:
                         if task.worldflux.source is not None
                         else None
                     ),
+                    artifact_requirements=dict(task.worldflux.artifact_requirements),
                 ),
             )
         )
@@ -447,11 +375,67 @@ _RETENTION_HEAVY_FILE_SUFFIXES = (
 )
 
 
-def _prune_system_artifacts(system_dir: Path) -> None:
+def _is_within(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
+def _protected_artifact_paths(system_dir: Path, artifact_manifest: Any) -> set[Path]:
+    if not isinstance(artifact_manifest, dict):
+        return set()
+
+    protected: set[Path] = set()
+    for key in ("config_snapshot", "component_match_path"):
+        raw = artifact_manifest.get(key)
+        if isinstance(raw, str) and raw.strip():
+            candidate = Path(raw).expanduser()
+            resolved = (
+                candidate.resolve()
+                if candidate.is_absolute()
+                else (system_dir / candidate).resolve()
+            )
+            if _is_within(resolved, system_dir.resolve()):
+                protected.add(resolved)
+
+    for key in ("score_paths", "metrics_paths"):
+        raw = artifact_manifest.get(key, [])
+        if not isinstance(raw, list):
+            continue
+        for item in raw:
+            if not isinstance(item, str) or not item.strip():
+                continue
+            candidate = Path(item).expanduser()
+            resolved = (
+                candidate.resolve()
+                if candidate.is_absolute()
+                else (system_dir / candidate).resolve()
+            )
+            if _is_within(resolved, system_dir.resolve()):
+                protected.add(resolved)
+    return protected
+
+
+def _path_protected(path: Path, *, protected_paths: set[Path]) -> bool:
+    resolved = path.resolve()
+    for protected in protected_paths:
+        if resolved == protected:
+            return True
+        if path.is_dir() and _is_within(protected, resolved):
+            return True
+    return False
+
+
+def _prune_system_artifacts(system_dir: Path, *, protected_paths: set[Path] | None = None) -> None:
     if not system_dir.exists():
         return
+    protected = protected_paths or set()
     for path in sorted(system_dir.rglob("*"), reverse=True):
         if not path.exists():
+            continue
+        if _path_protected(path, protected_paths=protected):
             continue
         if path.is_dir() and path.name.lower() in _RETENTION_HEAVY_DIR_NAMES:
             shutil.rmtree(path, ignore_errors=True)
@@ -535,18 +519,52 @@ def _run_one(
         "run_root": str(context.run_root),
         "worldflux_sha": context.worldflux_sha,
     }
+    backend_registry = get_backend_adapter_registry()
+    backend_adapter = backend_registry.get(spec.adapter)
 
-    formatted_command_raw = _format_recursive(spec.command, variables)
-    if not isinstance(formatted_command_raw, list) or not all(
-        isinstance(item, str) for item in formatted_command_raw
-    ):
-        raise RuntimeError(
-            f"Rendered command must be list[str] for {task.task_id}/{system}/seed={seed}, "
-            f"got {type(formatted_command_raw)!r}"
+    formatted_command: list[str]
+    prepared_backend_kind = spec.backend_kind
+    prepared_adapter_id = spec.adapter_id or spec.adapter
+    prepared_recipe_hash: str | None = None
+    if backend_adapter is not None:
+        env_backend = str(task.eval_protocol.get("environment_backend", "")).strip().lower()
+        env_spec = {
+            "task_id": task.task_id,
+            "family": task.family,
+            "environment_backend": env_backend,
+            "eval_protocol": dict(task.eval_protocol),
+        }
+        backend_spec = backend_adapter.prepare_run(
+            recipe=dict(task.train_budget),
+            env_spec=env_spec,
+            seed=seed,
+            run_dir=system_dir,
+            repo_root=(
+                Path(str(spec.cwd)).expanduser()
+                if Path(str(spec.cwd)).is_absolute()
+                else (context.manifest_path.parent / spec.cwd).resolve()
+            ),
+            python_executable=sys.executable,
+            device=context.device,
         )
-    formatted_command = [str(item) for item in formatted_command_raw]
+        formatted_command = list(backend_spec.command)
+        prepared_backend_kind = backend_spec.backend_kind
+        prepared_adapter_id = backend_spec.adapter_id
+        prepared_recipe_hash = backend_spec.recipe_hash
+    else:
+        formatted_command_raw = _format_recursive(spec.command, variables)
+        if not isinstance(formatted_command_raw, list) or not all(
+            isinstance(item, str) for item in formatted_command_raw
+        ):
+            raise RuntimeError(
+                f"Rendered command must be list[str] for {task.task_id}/{system}/seed={seed}, "
+                f"got {type(formatted_command_raw)!r}"
+            )
+        formatted_command = [str(item) for item in formatted_command_raw]
     formatted_env = _format_recursive(spec.env, variables)
     formatted_cwd_raw = _format_recursive(spec.cwd, variables)
+    formatted_source_commit = _resolve_source_value(spec.source_commit, variables)
+    formatted_source_artifact_path = _resolve_source_value(spec.source_artifact_path, variables)
     formatted_cwd = Path(str(formatted_cwd_raw)).expanduser()
     if not formatted_cwd.is_absolute():
         formatted_cwd = (context.manifest_path.parent / formatted_cwd).resolve()
@@ -567,7 +585,13 @@ def _run_one(
             "seed": seed,
             "system": system,
             "adapter": spec.adapter,
+            "expected_backend_kind": spec.backend_kind,
+            "expected_adapter_id": spec.adapter_id or spec.adapter,
             "status": "planned",
+            "backend_kind": prepared_backend_kind,
+            "adapter_id": prepared_adapter_id,
+            "recipe_hash": prepared_recipe_hash,
+            "artifact_manifest": None,
             "return_code": None,
             "duration_sec": 0.0,
             "attempt": 0,
@@ -581,10 +605,12 @@ def _run_one(
             "noninferiority_margin": task.noninferiority_margin,
             "alpha": task.alpha,
             "holm_scope": task.holm_scope,
+            "train_budget": task.train_budget,
             "eval_protocol": task.eval_protocol,
             "validity_requirements": task.validity_requirements,
-            "source_commit": spec.source_commit,
-            "source_artifact_path": spec.source_artifact_path,
+            "source_commit": formatted_source_commit,
+            "source_artifact_path": formatted_source_artifact_path,
+            "artifact_requirements": dict(spec.artifact_requirements),
             "success": False,
             "command": command_str,
             "cwd": str(formatted_cwd),
@@ -621,6 +647,35 @@ def _run_one(
             if proc.returncode == 0:
                 metrics = _load_metrics(metrics_path, task.required_metrics)
                 metadata = metrics.get("metadata", {}) if isinstance(metrics, dict) else {}
+                if isinstance(metadata, dict):
+                    fallback_recipe_hash = prepared_recipe_hash or stable_recipe_hash(
+                        dict(task.train_budget)
+                    )
+                    metadata.setdefault(
+                        "backend_kind",
+                        prepared_backend_kind or "legacy_wrapper",
+                    )
+                    metadata.setdefault("adapter_id", prepared_adapter_id)
+                    metadata.setdefault("recipe_hash", fallback_recipe_hash)
+                    if backend_adapter is not None:
+                        artifact_manifest = backend_adapter.collect_artifacts(
+                            run_dir=system_dir,
+                            source_commit=formatted_source_commit,
+                            eval_protocol_hash=str(metadata.get("eval_protocol_hash", "")) or None,
+                            command_argv=formatted_command,
+                            recipe=dict(task.train_budget),
+                        )
+                    else:
+                        artifact_manifest = discover_artifacts(
+                            run_root=system_dir,
+                            backend_kind=str(metadata["backend_kind"]),
+                            adapter_id=str(metadata["adapter_id"]),
+                            recipe_hash=str(metadata["recipe_hash"]),
+                            command_argv=formatted_command,
+                            source_commit=formatted_source_commit,
+                            eval_protocol_hash=str(metadata.get("eval_protocol_hash", "")) or None,
+                        )
+                    metadata.setdefault("artifact_manifest", artifact_manifest.to_dict())
                 policy_mode = (
                     str(metadata.get("policy_mode", "")) if isinstance(metadata, dict) else ""
                 )
@@ -641,7 +696,30 @@ def _run_one(
                     "seed": seed,
                     "system": system,
                     "adapter": spec.adapter,
+                    "expected_backend_kind": spec.backend_kind,
+                    "expected_adapter_id": spec.adapter_id or spec.adapter,
                     "status": "success",
+                    "backend_kind": (
+                        str(metadata.get("backend_kind"))
+                        if isinstance(metadata, dict) and metadata.get("backend_kind") is not None
+                        else prepared_backend_kind
+                    ),
+                    "adapter_id": (
+                        str(metadata.get("adapter_id"))
+                        if isinstance(metadata, dict) and metadata.get("adapter_id") is not None
+                        else prepared_adapter_id
+                    ),
+                    "recipe_hash": (
+                        str(metadata.get("recipe_hash"))
+                        if isinstance(metadata, dict) and metadata.get("recipe_hash") is not None
+                        else prepared_recipe_hash
+                    ),
+                    "artifact_manifest": (
+                        metadata.get("artifact_manifest")
+                        if isinstance(metadata, dict)
+                        and isinstance(metadata.get("artifact_manifest"), dict)
+                        else None
+                    ),
                     "return_code": proc.returncode,
                     "duration_sec": float(time.time() - attempt_started),
                     "duration_total_sec": float(time.time() - start_total),
@@ -656,10 +734,12 @@ def _run_one(
                     "noninferiority_margin": task.noninferiority_margin,
                     "alpha": task.alpha,
                     "holm_scope": task.holm_scope,
+                    "train_budget": task.train_budget,
                     "eval_protocol": task.eval_protocol,
                     "validity_requirements": task.validity_requirements,
-                    "source_commit": spec.source_commit,
-                    "source_artifact_path": spec.source_artifact_path,
+                    "source_commit": formatted_source_commit,
+                    "source_artifact_path": formatted_source_artifact_path,
+                    "artifact_requirements": dict(spec.artifact_requirements),
                     "policy_mode": policy_mode,
                     "policy_impl": policy_impl,
                     "eval_protocol_hash": eval_protocol_hash,
@@ -675,7 +755,13 @@ def _run_one(
                 }
                 _append_jsonl(run_jsonl, record)
                 if context.artifact_retention == "minimal":
-                    _prune_system_artifacts(system_dir)
+                    _prune_system_artifacts(
+                        system_dir,
+                        protected_paths=_protected_artifact_paths(
+                            system_dir,
+                            record.get("artifact_manifest"),
+                        ),
+                    )
                 return record
 
             last_error = (
@@ -709,7 +795,13 @@ def _run_one(
         "seed": seed,
         "system": system,
         "adapter": spec.adapter,
+        "expected_backend_kind": spec.backend_kind,
+        "expected_adapter_id": spec.adapter_id or spec.adapter,
         "status": "failed",
+        "backend_kind": prepared_backend_kind,
+        "adapter_id": prepared_adapter_id,
+        "recipe_hash": prepared_recipe_hash,
+        "artifact_manifest": None,
         "return_code": None,
         "duration_sec": float(time.time() - start_total),
         "attempt": context.max_retries,
@@ -723,10 +815,12 @@ def _run_one(
         "noninferiority_margin": task.noninferiority_margin,
         "alpha": task.alpha,
         "holm_scope": task.holm_scope,
+        "train_budget": task.train_budget,
         "eval_protocol": task.eval_protocol,
         "validity_requirements": task.validity_requirements,
-        "source_commit": spec.source_commit,
-        "source_artifact_path": spec.source_artifact_path,
+        "source_commit": formatted_source_commit,
+        "source_artifact_path": formatted_source_artifact_path,
+        "artifact_requirements": dict(spec.artifact_requirements),
         "success": False,
         "command": command_str,
         "cwd": str(formatted_cwd),

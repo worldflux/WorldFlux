@@ -15,9 +15,17 @@ import torch.nn.functional as F
 
 from worldflux import create_world_model
 from worldflux.core.state import State
-from worldflux.training import ReplayBuffer, Trainer, TrainingConfig
+from worldflux.parity import discover_artifacts, stable_recipe_hash
+from worldflux.training import (
+    LocalClock,
+    RatioUpdateScheduler,
+    ReplayBuffer,
+    Trainer,
+    TrainingConfig,
+)
 
 from .atari_env import AtariEnvError, build_atari_env
+from .dreamer_official_recipe import OFFICIAL_DREAMER_ATARI100K_RECIPE
 
 _VALID_POLICY_IMPLS = {"auto", "actor", "shooting"}
 _VALID_MODEL_PROFILES = {
@@ -42,21 +50,23 @@ class DreamerNativeRunConfig:
     env_backend: str
     device: str
     run_dir: Path
-    buffer_capacity: int = 200_000
+    buffer_capacity: int = OFFICIAL_DREAMER_ATARI100K_RECIPE.replay_size
     warmup_steps: int = 1024
     train_steps_per_eval: int = 64
-    sequence_length: int = 64
-    batch_size: int = 16
-    max_episode_steps: int = 27_000
+    sequence_length: int = OFFICIAL_DREAMER_ATARI100K_RECIPE.batch_length
+    batch_size: int = OFFICIAL_DREAMER_ATARI100K_RECIPE.batch_size
+    max_episode_steps: int = OFFICIAL_DREAMER_ATARI100K_RECIPE.max_episode_steps
     policy_mode: str = "diagnostic_random"
     shooting_horizon: int = 5
     shooting_num_candidates: int = 128
-    policy_impl: str = "auto"
-    replay_ratio: float = 128.0
+    policy_impl: str = "actor"
+    train_ratio: float = OFFICIAL_DREAMER_ATARI100K_RECIPE.train_ratio
+    replay_ratio: float | None = None
     train_chunk_size: int = 64
-    model_profile: str = "wf25m"
-    learning_rate_override: float = 4e-5
+    model_profile: str = OFFICIAL_DREAMER_ATARI100K_RECIPE.model_profile
+    learning_rate_override: float = OFFICIAL_DREAMER_ATARI100K_RECIPE.learning_rate
     dreamer_diagnostic: bool = False
+    strict_official_semantics: bool = False
 
 
 def _normalize_policy_impl(value: str) -> str:
@@ -66,6 +76,27 @@ def _normalize_policy_impl(value: str) -> str:
             f"policy_impl must be one of {sorted(_VALID_POLICY_IMPLS)}, got {value!r}"
         )
     return normalized
+
+
+def _effective_recipe(config: DreamerNativeRunConfig, *, replay_ratio: float) -> dict[str, Any]:
+    return {
+        **OFFICIAL_DREAMER_ATARI100K_RECIPE.to_metadata(),
+        "steps": int(config.steps),
+        "batch_size": int(config.batch_size),
+        "batch_length": int(config.sequence_length),
+        "report_length": OFFICIAL_DREAMER_ATARI100K_RECIPE.report_length,
+        "replay_size": int(config.buffer_capacity),
+        "replay_chunksize": OFFICIAL_DREAMER_ATARI100K_RECIPE.replay_chunksize,
+        "train_ratio": float(config.train_ratio),
+        "replay_ratio": float(replay_ratio),
+        "log_every": OFFICIAL_DREAMER_ATARI100K_RECIPE.log_every,
+        "report_every": OFFICIAL_DREAMER_ATARI100K_RECIPE.report_every,
+        "save_every": OFFICIAL_DREAMER_ATARI100K_RECIPE.save_every,
+        "eval_eps": int(config.eval_episodes),
+        "learning_rate": float(config.learning_rate_override),
+        "model_profile": str(config.model_profile),
+        "max_episode_steps": int(config.max_episode_steps),
+    }
 
 
 def _normalize_model_profile(value: str) -> str:
@@ -135,7 +166,7 @@ def _build_dreamer_model(
 ) -> tuple[Any, str]:
     common_overrides: dict[str, Any] = {
         "actor_critic": True,
-        "action_type": "discrete",
+        "action_type": OFFICIAL_DREAMER_ATARI100K_RECIPE.action_type,
         "learning_rate": float(learning_rate),
         "actor_lr": float(learning_rate),
         "critic_lr": float(learning_rate),
@@ -397,9 +428,17 @@ def _metric_lookup(metrics: dict[str, Any], *keys: str) -> float | None:
 
 
 def _train_ready(
-    *, buffer: ReplayBuffer, env_steps: int, warmup_steps: int, min_buffer_steps: int
+    *,
+    buffer: ReplayBuffer,
+    env_steps: int,
+    warmup_steps: int,
+    min_buffer_steps: int,
+    batch_size: int,
 ) -> bool:
-    return env_steps >= warmup_steps and len(buffer) >= min_buffer_steps
+    return env_steps >= warmup_steps and buffer.ready_for_sequence(
+        batch_size=batch_size,
+        seq_len=min_buffer_steps,
+    )
 
 
 def _drain_backlog(
@@ -447,13 +486,32 @@ def run_dreamer_native(
         learning_rate=learning_rate,
     )
 
-    replay_ratio = max(0.0, float(config.replay_ratio))
+    replay_ratio_raw = config.replay_ratio
+    if replay_ratio_raw is None:
+        replay_ratio_raw = float(config.train_ratio)
+    replay_ratio = max(0.0, float(replay_ratio_raw))
+    scheduler_ratio = (
+        float(config.train_ratio) if config.replay_ratio is None else float(replay_ratio)
+    )
     max_env_steps = max(0, int(config.steps))
     sequence_length = max(2, int(config.sequence_length))
     batch_size = max(1, int(config.batch_size))
     train_chunk_size = max(1, int(config.train_chunk_size))
-    updates_per_env_step = replay_ratio / float(batch_size * sequence_length)
-    target_train_updates = int(math.floor(float(max_env_steps) * updates_per_env_step + 1e-12))
+    scheduler = RatioUpdateScheduler(
+        train_ratio=scheduler_ratio,
+        batch_size=batch_size,
+        batch_length=sequence_length,
+    )
+    target_train_updates = int(
+        math.floor(float(max_env_steps) * scheduler.updates_per_env_step + 1e-12)
+    )
+
+    if (
+        config.strict_official_semantics
+        and str(config.policy_mode).strip().lower() == "parity_candidate"
+    ):
+        if _normalize_policy_impl(config.policy_impl) != "actor":
+            raise AtariEnvError("Dreamer proof mode requires policy_impl='actor'.")
 
     trainer = Trainer(
         model,
@@ -509,6 +567,9 @@ def run_dreamer_native(
     diagnostics_path = config.run_dir / "diagnostics.jsonl"
     diagnostics_enabled = bool(config.dreamer_diagnostic)
     next_diagnostic_step = 100
+    log_clock = LocalClock(OFFICIAL_DREAMER_ATARI100K_RECIPE.log_every)
+    report_clock = LocalClock(OFFICIAL_DREAMER_ATARI100K_RECIPE.report_every)
+    save_clock = LocalClock(OFFICIAL_DREAMER_ATARI100K_RECIPE.save_every)
     if diagnostics_enabled:
         config.run_dir.mkdir(parents=True, exist_ok=True)
         diagnostics_path.write_text("", encoding="utf-8")
@@ -530,6 +591,9 @@ def run_dreamer_native(
             "episode": int(episodes),
             "buffer_size": int(len(buffer)),
             "update_credit": float(update_credit),
+            "effective_train_ratio": float(config.train_ratio),
+            "effective_batch_length": int(sequence_length),
+            "effective_replay_size": int(config.buffer_capacity),
             "train_backlog": int(train_backlog),
             "target_train_updates": int(target_train_updates),
             "train_updates_executed": int(train_updates),
@@ -555,6 +619,7 @@ def run_dreamer_native(
             env_steps=env_steps,
             warmup_steps=warmup_steps,
             min_buffer_steps=min_buffer_steps,
+            batch_size=batch_size,
         ):
             train_backlog, train_target_steps, train_updates = _drain_backlog(
                 trainer=trainer,
@@ -661,15 +726,28 @@ def run_dreamer_native(
                 ep_len += 1
                 done = bool(terminated or truncated)
 
-                update_credit += updates_per_env_step
-                newly_due = int(update_credit)
+                newly_due = scheduler.on_env_step()
                 if newly_due > 0:
                     train_backlog += newly_due
-                    update_credit -= float(newly_due)
+                update_credit = float(scheduler.credit)
 
                 if not done and env_steps < max_env_steps and len(ep_obs) >= sequence_length:
                     _flush_replay_chunk(force_terminal=False)
                 _drain_if_ready()
+                if log_clock.consume(env_steps):
+                    _append_diagnostic_record(event="log")
+                if report_clock.consume(env_steps):
+                    _append_diagnostic_record(event="report")
+                if save_clock.consume(env_steps):
+                    save_checkpoint = getattr(trainer, "save_checkpoint", None)
+                    if callable(save_checkpoint):
+                        save_checkpoint(
+                            str(
+                                (
+                                    config.run_dir / "trainer" / f"checkpoint_env_{env_steps}.pt"
+                                ).resolve()
+                            )
+                        )
                 while env_steps >= next_diagnostic_step:
                     _append_diagnostic_record(event="periodic")
                     next_diagnostic_step += 100
@@ -718,6 +796,7 @@ def run_dreamer_native(
         env_steps=env_steps,
         warmup_steps=warmup_steps,
         min_buffer_steps=min_buffer_steps,
+        batch_size=batch_size,
     ):
         while train_backlog > 0:
             chunk = min(train_chunk_size, train_backlog)
@@ -775,9 +854,15 @@ def run_dreamer_native(
     metadata: dict[str, Any] = {
         "mode": "native_real_env",
         "family": "dreamerv3",
+        "backend_kind": "native_torch",
+        "adapter_id": "worldflux_dreamerv3_native_torch",
+        "recipe_hash": stable_recipe_hash(_effective_recipe(config, replay_ratio=replay_ratio)),
         "task_id": config.task_id,
         "model_id": model_id,
         "model_profile": model_profile,
+        "official_recipe": OFFICIAL_DREAMER_ATARI100K_RECIPE.to_metadata(),
+        "effective_recipe": _effective_recipe(config, replay_ratio=replay_ratio),
+        "strict_official_semantics": bool(config.strict_official_semantics),
         "policy": "model_based" if policy_mode == "parity_candidate" else "random",
         "policy_mode": config.policy_mode,
         "policy_impl": policy_impl_effective,
@@ -792,6 +877,7 @@ def run_dreamer_native(
         "shooting_num_candidates": int(config.shooting_num_candidates),
         "buffer_capacity": int(config.buffer_capacity),
         "warmup_steps": int(config.warmup_steps),
+        "train_ratio": float(config.train_ratio),
         "train_steps_per_eval": int(config.train_steps_per_eval),
         "train_steps_per_eval_status": "deprecated_ignored_for_dreamer",
         "replay_ratio": float(replay_ratio),
@@ -803,13 +889,35 @@ def run_dreamer_native(
         "eval_interval": int(config.eval_interval),
         "eval_episodes": int(config.eval_episodes),
         "eval_window": int(config.eval_window),
+        "eval_protocol": {
+            "environment_backend": str(config.env_backend),
+            "eval_episodes": int(config.eval_episodes),
+            "eval_interval": int(config.eval_interval),
+            "eval_window": int(config.eval_window),
+            "log_every": OFFICIAL_DREAMER_ATARI100K_RECIPE.log_every,
+            "report_every": OFFICIAL_DREAMER_ATARI100K_RECIPE.report_every,
+            "save_every": OFFICIAL_DREAMER_ATARI100K_RECIPE.save_every,
+        },
         "sequence_length": int(sequence_length),
         "batch_size": int(batch_size),
+        "report_length": OFFICIAL_DREAMER_ATARI100K_RECIPE.report_length,
+        "log_every": OFFICIAL_DREAMER_ATARI100K_RECIPE.log_every,
+        "report_every": OFFICIAL_DREAMER_ATARI100K_RECIPE.report_every,
+        "save_every": OFFICIAL_DREAMER_ATARI100K_RECIPE.save_every,
         "learning_rate": float(learning_rate),
         "recurrent_policy_state": bool(policy_mode == "parity_candidate"),
         "state_reset_on_episode": bool(policy_mode == "parity_candidate"),
         "actor_fallback_steps": int(actor_fallback_steps),
     }
+    metadata["artifact_manifest"] = discover_artifacts(
+        run_root=config.run_dir,
+        backend_kind=str(metadata["backend_kind"]),
+        adapter_id=str(metadata["adapter_id"]),
+        recipe_hash=str(metadata["recipe_hash"]),
+        command_argv=[],
+        source_commit=None,
+        eval_protocol_hash=None,
+    ).to_dict()
 
     return curve, metadata
 

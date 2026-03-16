@@ -7,6 +7,7 @@ import argparse
 import json
 import subprocess
 import sys
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -21,7 +22,7 @@ def _build_orchestrator_command(
 ) -> list[str]:
     """Build the aws_distributed_orchestrator.py invocation from CLI args."""
     script = str(Path(__file__).resolve().parent / "aws_distributed_orchestrator.py")
-    run_id = args.run_id or f"proof_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
+    run_id = str(args.run_id)
 
     cmd = [
         sys.executable,
@@ -83,6 +84,117 @@ def _build_orchestrator_command(
     return cmd
 
 
+def _assemble_evidence_bundle(*, summary_path: Path) -> Path:
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    artifacts = summary.get("artifacts", {}) if isinstance(summary, dict) else {}
+    bundle_dir = summary_path.parent / "evidence_bundle"
+    bundle_dir.mkdir(parents=True, exist_ok=True)
+
+    manifest_path = artifacts.get("manifest")
+    merged_runs = artifacts.get("merged_runs")
+    coverage_report = artifacts.get("coverage_report")
+    validity_report = artifacts.get("validity_report")
+    equivalence_report = artifacts.get("equivalence_report")
+    equivalence_md = artifacts.get("equivalence_markdown")
+    component_report = str(summary_path.parent / "component_match_report.json")
+    merged_runs_path = Path(merged_runs) if merged_runs else None
+    artifact_manifests_summary: dict[str, Any] = {}
+    if merged_runs_path is not None and merged_runs_path.exists():
+        lines = [
+            json.loads(line)
+            for line in merged_runs_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        for system in ("official", "worldflux"):
+            rows = [row for row in lines if str(row.get("system", "")) == system]
+            artifact_manifests_summary[system] = {
+                "count": len(rows),
+                "backend_kinds": sorted(
+                    {
+                        str(row.get("backend_kind", "")).strip()
+                        for row in rows
+                        if str(row.get("backend_kind", "")).strip()
+                    }
+                ),
+                "adapter_ids": sorted(
+                    {
+                        str(row.get("adapter_id", "")).strip()
+                        for row in rows
+                        if str(row.get("adapter_id", "")).strip()
+                    }
+                ),
+                "recipe_hashes": sorted(
+                    {
+                        str(row.get("recipe_hash", "")).strip()
+                        for row in rows
+                        if str(row.get("recipe_hash", "")).strip()
+                    }
+                ),
+                "artifact_manifest_count": sum(
+                    1 for row in rows if isinstance(row.get("artifact_manifest"), dict)
+                ),
+            }
+
+    artifact_summary_path = bundle_dir / "artifact_manifest_summary.json"
+    artifact_summary_path.write_text(
+        json.dumps(artifact_manifests_summary, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    provenance_summary = {
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "summary": str(summary_path),
+        "execution_result": summary.get("execution_result") if isinstance(summary, dict) else None,
+        "manifest": manifest_path,
+        "merged_runs": merged_runs,
+        "coverage_report": coverage_report,
+        "validity_report": validity_report,
+        "equivalence_report": equivalence_report,
+        "equivalence_markdown": equivalence_md,
+        "component_report": component_report if Path(component_report).exists() else None,
+        "artifact_manifests": artifact_manifests_summary,
+        "artifact_manifest_summary": str(artifact_summary_path),
+    }
+    (bundle_dir / "provenance_summary.json").write_text(
+        json.dumps(provenance_summary, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    included_paths = [
+        Path(path)
+        for path in (
+            summary_path,
+            Path(manifest_path) if manifest_path else None,
+            Path(merged_runs) if merged_runs else None,
+            Path(coverage_report) if coverage_report else None,
+            Path(validity_report) if validity_report else None,
+            Path(equivalence_report) if equivalence_report else None,
+            Path(equivalence_md) if equivalence_md else None,
+            Path(component_report) if Path(component_report).exists() else None,
+            artifact_summary_path,
+            bundle_dir / "provenance_summary.json",
+        )
+        if path is not None and Path(path).exists()
+    ]
+
+    index_payload = {
+        "schema_version": "parity.evidence_bundle.v1",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "files": [str(path.resolve()) for path in included_paths],
+    }
+    index_path = bundle_dir / "bundle_index.json"
+    index_path.write_text(
+        json.dumps(index_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    included_paths.append(index_path)
+
+    zip_path = summary_path.parent / "evidence_bundle.zip"
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as handle:
+        for path in included_paths:
+            handle.write(path, arcname=path.relative_to(summary_path.parent))
+    return zip_path
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--region", type=str, required=True)
@@ -139,6 +251,8 @@ def main() -> int:
     )
 
     args = parser.parse_args()
+    if not args.run_id:
+        args.run_id = f"proof_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
 
     fleet_plan: dict[str, Any] | None = None
 
@@ -214,6 +328,11 @@ def main() -> int:
         print("[full-proof] paper_comparison hook: not yet implemented (Phase 4)")
     if args.plot_curves:
         print("[full-proof] plot_curves hook: not yet implemented (Phase 5)")
+
+    summary_path = Path("reports/parity") / str(args.run_id) / "orchestrator_summary.json"
+    if summary_path.exists():
+        bundle_path = _assemble_evidence_bundle(summary_path=summary_path)
+        print(f"[full-proof] evidence bundle: {bundle_path}")
 
     print("[full-proof] done.")
     return 0

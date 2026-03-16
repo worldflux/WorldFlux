@@ -10,7 +10,9 @@ from pathlib import Path
 from typing import Any
 
 import typer
+from click.core import ParameterSource
 
+from worldflux.config_loader import load_config
 from worldflux.verify import ParityVerifier, VerifyResult
 
 from ._app import app, console
@@ -18,8 +20,44 @@ from ._rich_output import key_value_panel, result_banner
 from ._utils import _hash_file
 
 
+def _resolve_effective_verify_mode(
+    *,
+    cli_mode: str,
+    config_mode: str | None,
+    proof_claim: str,
+) -> str:
+    explicit_mode = str(cli_mode).strip().lower()
+    if explicit_mode and explicit_mode != "auto":
+        return explicit_mode
+
+    configured_mode = str(config_mode or "").strip().lower()
+    if configured_mode and configured_mode != "auto":
+        return configured_mode
+
+    env_mode = os.getenv("WORLDFLUX_VERIFY_MODE", "").strip().lower()
+    if env_mode == "proof":
+        return "proof"
+    if env_mode == "quick":
+        return "quick"
+
+    if proof_claim in {"compare", "official_only"}:
+        return "proof"
+    return "quick"
+
+
+def _was_cli_option_provided(ctx: typer.Context, param_name: str) -> bool:
+    return ctx.get_parameter_source(param_name) == ParameterSource.COMMANDLINE
+
+
 @app.command(rich_help_panel="Quality & Evaluation")
 def verify(
+    ctx: typer.Context,
+    config: Path | None = typer.Option(
+        None,
+        "--config",
+        "-c",
+        help="Optional worldflux.toml path used for verify defaults.",
+    ),
     target: str = typer.Option(..., "--target", help="Path or registry ID of your custom model."),
     baseline: str = typer.Option(
         "official/dreamerv3", "--baseline", help="Baseline to compare against."
@@ -31,6 +69,20 @@ def verify(
         help="Synthetic demonstration mode for pitches and screenshots. Never use as proof.",
     ),
     device: str = typer.Option("cpu", "--device", help="Execution device."),
+    backend: str | None = typer.Option(None, "--backend", help="Execution backend override."),
+    backend_profile: str | None = typer.Option(
+        None, "--backend-profile", help="Backend profile override."
+    ),
+    allow_official_only: bool | None = typer.Option(
+        None,
+        "--allow-official-only/--no-allow-official-only",
+        help="Allow Dreamer official-only bootstrap routing.",
+    ),
+    proof_claim: str | None = typer.Option(
+        None,
+        "--proof-claim",
+        help="Proof routing intent override (for example: compare).",
+    ),
     mode: str = typer.Option(
         "auto",
         "--mode",
@@ -65,23 +117,64 @@ def verify(
     """
     from rich.status import Status
 
+    config_payload = None
+    config_path = config
+    if config_path is not None and not config_path.exists():
+        console.print(
+            f"[wf.fail]Configuration error:[/wf.fail] Configuration file not found: {config_path}"
+        )
+        raise typer.Exit(code=1) from None
+    if config_path is None:
+        candidate = Path("worldflux.toml")
+        if candidate.exists():
+            config_path = candidate
+    if config_path is not None and config_path.exists():
+        try:
+            config_payload = load_config(config_path)
+        except (FileNotFoundError, ValueError) as exc:
+            console.print(f"[wf.fail]Configuration error:[/wf.fail] {exc}")
+            raise typer.Exit(code=1) from None
+
+    effective_baseline = baseline
+    effective_env = env
+    effective_backend = backend or "native_torch"
+    effective_backend_profile = backend_profile or ""
+    effective_allow_official_only = False if allow_official_only is None else allow_official_only
+    effective_proof_claim = proof_claim or "compare"
+    baseline_provided = _was_cli_option_provided(ctx, "baseline")
+    env_provided = _was_cli_option_provided(ctx, "env")
+
+    if config_payload is not None:
+        if not baseline_provided:
+            effective_baseline = config_payload.verify.baseline
+        if not env_provided:
+            effective_env = config_payload.verify.env
+        if backend is None:
+            effective_backend = config_payload.verify.backend
+        if backend_profile is None:
+            effective_backend_profile = config_payload.verify.backend_profile
+        if allow_official_only is None:
+            effective_allow_official_only = config_payload.verify.allow_official_only
+        if proof_claim is None:
+            effective_proof_claim = config_payload.verify.proof_claim
+
     # Quality tier check mode
     if tier is not None:
         _run_quality_tier_check(target=target, tier=tier, device=device)
         return
 
     # Determine verification mode
-    effective_mode = mode.strip().lower()
-    if effective_mode == "auto":
-        # Default to quick mode. Use --mode proof or WORLDFLUX_VERIFY_MODE=proof
-        # to run the heavyweight proof pipeline.
-        env_mode = os.getenv("WORLDFLUX_VERIFY_MODE", "").strip().lower()
-        effective_mode = "proof" if env_mode == "proof" else "quick"
+    configured_mode = str(config_payload.verify.mode).strip().lower() if config_payload else None
+    effective_mode = _resolve_effective_verify_mode(
+        cli_mode=mode,
+        config_mode=configured_mode,
+        proof_claim=effective_proof_claim,
+    )
 
     if effective_mode == "quick":
         _run_quick_verify(
             target=target,
-            env=env,
+            env=effective_env,
             device=device,
             episodes=episodes,
             format=format,
@@ -92,8 +185,8 @@ def verify(
     if effective_mode == "cloud":
         _run_cloud_verify(
             target=target,
-            baseline=baseline,
-            env=env,
+            baseline=effective_baseline,
+            env=effective_env,
             device=device,
             format=format,
             output=output,
@@ -113,9 +206,10 @@ def verify(
             {
                 "Mode": "demo (synthetic, not proof)" if demo else "proof",
                 "Target": target,
-                "Baseline": baseline,
-                "Env": env,
+                "Baseline": effective_baseline,
+                "Env": effective_env,
                 "Device": device,
+                "Backend": effective_backend,
             },
             title="Verify - Configuration",
             border="wf.border",
@@ -130,10 +224,14 @@ def verify(
         try:
             result: VerifyResult = ParityVerifier.run(
                 target=target,
-                baseline=baseline,
-                env=env,
+                baseline=effective_baseline,
+                env=effective_env,
                 demo=demo,
                 device=device,
+                backend=effective_backend,
+                backend_profile=effective_backend_profile,
+                allow_official_only=effective_allow_official_only,
+                proof_claim=effective_proof_claim,
             )
         except (NotImplementedError, RuntimeError, OSError, ValueError) as exc:
             error_msg = str(exc)
@@ -167,6 +265,42 @@ def verify(
         return
 
     stats = result.stats
+    execution_result = stats.get("execution_result")
+    if isinstance(execution_result, dict) and not result.demo:
+        status = str(execution_result.get("status", "failed"))
+        if status == "succeeded":
+            title = "\u2713 PASS: Proof-mode parity checks satisfied"
+        elif status == "blocked":
+            title = "\u26a0 BLOCKED: Proof execution blocked"
+        elif status == "incomplete":
+            title = "\u23f3 INCOMPLETE: Proof prerequisites not met"
+        else:
+            title = "\u2717 FAIL: Proof execution failed"
+        lines = [
+            f"[wf.label]Status:[/wf.label]      {status}",
+            f"[wf.label]Reason:[/wf.label]      {execution_result.get('reason_code', '-')}",
+            f"[wf.label]Message:[/wf.label]     {execution_result.get('message', '-')}",
+            f"[wf.label]Phase:[/wf.label]       {execution_result.get('proof_phase', '-')}",
+            f"[wf.label]Profile:[/wf.label]     {execution_result.get('profile', '-')}",
+            f"[wf.label]Next:[/wf.label]        {execution_result.get('next_action', '-')}",
+            f"[wf.label]Elapsed:[/wf.label]     {result.elapsed_seconds:.3f}s",
+        ]
+        if "bayesian_equivalence_hdi" in stats:
+            lines.insert(
+                4,
+                f"[wf.label]Bayesian HDI:[/wf.label] {stats.get('bayesian_equivalence_hdi', '-')}",
+            )
+        console.print(result_banner(passed=status == "succeeded", title=title, lines=lines))
+        if evidence_bundle is not None:
+            _write_proof_evidence_bundle(
+                output_dir=evidence_bundle,
+                result=result,
+                mode="proof" if not demo else "demo",
+            )
+        if status != "succeeded":
+            raise typer.Exit(code=_execution_exit_code(execution_result))
+        return
+
     if result.demo:
         title = (
             "\u2713 SYNTHETIC DEMO: Example parity report"
@@ -446,6 +580,14 @@ def _write_proof_evidence_bundle(*, output_dir: Path, result: VerifyResult, mode
             "not_for_proof": True,
             "label": "synthetic demonstration output",
         }
+    execution_result = stats.get("execution_result")
+    proof_phase = stats.get("execution_phase")
+    backend = stats.get("execution_backend")
+    profile = stats.get("execution_profile")
+    if isinstance(execution_result, dict):
+        proof_phase = execution_result.get("proof_phase", proof_phase)
+        backend = execution_result.get("backend", backend)
+        profile = execution_result.get("profile", profile)
     _write_evidence_manifest(
         output_dir=output_dir,
         mode=mode,
@@ -454,6 +596,9 @@ def _write_proof_evidence_bundle(*, output_dir: Path, result: VerifyResult, mode
             "baseline": result.baseline,
             "env": result.env,
             "device": result.stats.get("device"),
+            "backend": backend,
+            "backend_profile": profile,
+            "proof_phase": proof_phase,
         },
         result_payload=result_payload,
         local_artifacts=report_paths,
@@ -537,6 +682,20 @@ def _run_cloud_verify(
 
 def _emit_verify_json(result: VerifyResult, output: Path | None) -> None:
     """Emit VerifyResult as JSON."""
+    execution_result = result.stats.get("execution_result")
+    if isinstance(execution_result, dict) and not result.demo:
+        json_str = json.dumps(execution_result, indent=2)
+        if output is not None:
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text(json_str + "\n", encoding="utf-8")
+            console.print(f"[wf.ok]Results written to:[/wf.ok] {output.resolve()}")
+        else:
+            console.print(json_str)
+        status = str(execution_result.get("status", "failed"))
+        if status != "succeeded":
+            raise typer.Exit(code=_execution_exit_code(execution_result))
+        return
+
     payload = {
         "passed": result.passed,
         "target": result.target,
@@ -562,3 +721,12 @@ def _emit_verify_json(result: VerifyResult, output: Path | None) -> None:
         console.print(json_str)
     if not result.passed:
         raise typer.Exit(code=1)
+
+
+def _execution_exit_code(payload: dict[str, Any]) -> int:
+    status = str(payload.get("status", "failed"))
+    if status == "blocked":
+        return 2
+    if status == "incomplete":
+        return 3
+    return 1

@@ -223,6 +223,72 @@ def test_resolve_python_launcher_falls_back_to_python3(monkeypatch: pytest.Monke
     assert cli._resolve_python_launcher() == "python3"
 
 
+def test_train_delegated_backend_uses_submit(monkeypatch: pytest.MonkeyPatch) -> None:
+    from worldflux.training import JobHandle, JobStatus
+
+    class _FakeBackend:
+        def submit(self, config: dict[str, object]) -> JobHandle:
+            assert config["backend_profile"] == "official_xl"
+            return JobHandle(
+                job_id="train_dreamer_42",
+                backend="official_dreamerv3_jax_subprocess",
+                metadata={
+                    "execution_result": {
+                        "status": "succeeded",
+                        "reason_code": "none",
+                        "summary_path": "/tmp/summary.json",
+                        "next_action": None,
+                    }
+                },
+            )
+
+        def status(self, handle: JobHandle) -> JobStatus:
+            return JobStatus.COMPLETED
+
+        def logs(self, handle: JobHandle):
+            return iter(())
+
+        def cancel(self, handle: JobHandle) -> None:
+            return None
+
+    monkeypatch.setattr(
+        "worldflux.training.trainer.ExecutionDelegatingBackend",
+        lambda: _FakeBackend(),
+    )
+
+    with runner.isolated_filesystem():
+        Path("worldflux.toml").write_text(
+            """\
+project_name = "delegated-train"
+environment = "atari"
+model = "dreamerv3:official_xl"
+
+[architecture]
+obs_shape = [3, 64, 64]
+action_dim = 6
+hidden_dim = 32
+
+[training]
+total_steps = 5
+batch_size = 4
+sequence_length = 10
+device = "cpu"
+backend = "official_dreamerv3_jax_subprocess"
+backend_profile = "official_xl"
+output_dir = "./delegated-out"
+
+[verify]
+env = "atari/pong"
+""",
+            encoding="utf-8",
+        )
+        result = runner.invoke(cli.app, ["train"])
+        assert result.exit_code == 0
+        assert "Delegated Training Result" in result.stdout
+        assert "official_dreamerv3_jax_subprocess" in result.stdout
+        assert "train_dreamer_42" in result.stdout
+
+
 def test_resolve_python_launcher_falls_back_to_uv_when_no_python_binary(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -881,6 +947,53 @@ def test_parity_proof_run_invokes_matrix_script(
     assert "Parity Proof Run" in result.stdout
 
 
+def test_parity_proof_run_resolves_manifest_when_omitted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, list[str]]] = []
+
+    def _run(script_name: str, args: list[str]) -> str:
+        calls.append((script_name, list(args)))
+        return '{"run_id":"proof_02"}'
+
+    monkeypatch.setattr(cli, "_run_parity_proof_script", _run)
+
+    result = runner.invoke(
+        cli.app,
+        [
+            "parity",
+            "proof-run",
+            "--family",
+            "dreamer",
+            "--allow-official-only",
+            "--seed-list",
+            "0,1,2,3,4,5,6,7,8,9",
+        ],
+    )
+
+    assert result.exit_code == 0
+    manifest_arg = calls[0][1][calls[0][1].index("--manifest") + 1]
+    assert manifest_arg.endswith("dreamerv3_official_checkpoint_bootstrap_v1.json")
+
+
+def test_parity_proof_run_tdmpc2_without_manifest_blocks() -> None:
+    result = runner.invoke(
+        cli.app,
+        [
+            "parity",
+            "proof-run",
+            "--family",
+            "tdmpc2",
+            "--backend",
+            "official_tdmpc2_torch_subprocess",
+            "--seed-list",
+            ",".join(str(i) for i in range(20)),
+        ],
+    )
+    assert result.exit_code == 2
+    assert "tdmpc2_architecture_mismatch_open" in result.stdout
+
+
 def test_parity_proof_report_runs_completeness_stats_and_markdown(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -1023,6 +1136,66 @@ def test_parity_proof_combined_runs_all_phases(
     assert (output_dir / "coverage_report.json").exists()
     assert (output_dir / "equivalence_report.json").exists()
     assert (output_dir / "equivalence_report.md").exists()
+
+
+def test_parity_proof_combined_resolves_manifest_when_omitted(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    output_dir = tmp_path / "proof_combined_auto"
+    calls: list[tuple[str, list[str]]] = []
+
+    def _run(script_name: str, args: list[str]) -> str:
+        calls.append((script_name, list(args)))
+        if script_name == "run_parity_matrix.py":
+            run_output_dir = Path(args[args.index("--output-dir") + 1])
+            run_output_dir.mkdir(parents=True, exist_ok=True)
+            (run_output_dir / "parity_runs.jsonl").write_text("", encoding="utf-8")
+            return ""
+        if script_name == "validate_matrix_completeness.py":
+            Path(args[args.index("--output") + 1]).write_text(
+                '{"missing_pairs":0,"pass":true}',
+                encoding="utf-8",
+            )
+            return ""
+        if script_name == "stats_equivalence.py":
+            Path(args[args.index("--output") + 1]).write_text(
+                json.dumps(
+                    {
+                        "global": {
+                            "parity_pass_final": True,
+                            "validity_pass": True,
+                            "missing_pairs": 0,
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            Path(args[args.index("--validity-report") + 1]).write_text("{}", encoding="utf-8")
+            return ""
+        if script_name == "report_markdown.py":
+            Path(args[args.index("--output") + 1]).write_text("# Proof\n", encoding="utf-8")
+            return ""
+        raise AssertionError(f"unexpected script: {script_name}")
+
+    monkeypatch.setattr(cli, "_run_parity_proof_script", _run)
+
+    result = runner.invoke(
+        cli.app,
+        [
+            "parity",
+            "proof",
+            "--family",
+            "dreamer",
+            "--seed-list",
+            ",".join(str(i) for i in range(20)),
+            "--output-dir",
+            str(output_dir),
+        ],
+    )
+
+    assert result.exit_code == 0
+    run_manifest_arg = calls[0][1][calls[0][1].index("--manifest") + 1]
+    assert run_manifest_arg.endswith("official_vs_worldflux_full_v2.yaml")
 
 
 def test_parity_proof_combined_enforce_exits_on_failed_verdict(
@@ -1354,6 +1527,35 @@ output_dir = "{output_dir}"
         )
         assert result.exit_code == 0
         assert "Training Complete" in result.output
+
+    def test_train_non_native_backend_returns_blocked_exit_code(self, tmp_path: Path) -> None:
+        toml_path = tmp_path / "worldflux.toml"
+        toml_path.write_text(
+            """\
+project_name = "blocked-train"
+model = "tdmpc2:proof_5m"
+
+[architecture]
+obs_shape = [39]
+action_dim = 4
+
+[training]
+total_steps = 2
+batch_size = 2
+device = "cpu"
+backend = "official_tdmpc2_torch_subprocess"
+backend_profile = "proof_5m"
+output_dir = "{output_dir}"
+
+[verify]
+env = "dmcontrol/walker-run"
+""".format(output_dir=str(tmp_path / "outputs")),
+            encoding="utf-8",
+        )
+
+        result = runner.invoke(cli.app, ["train", "--config", str(toml_path)])
+        assert result.exit_code == 2
+        assert "blocked" in result.output.lower()
 
 
 # ---------------------------------------------------------------------------

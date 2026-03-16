@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Protocol, cast, runtime_checkable
 
 import torch
 from torch import Tensor
@@ -88,6 +88,12 @@ class ComponentMatchReport:
     @property
     def all_pass(self) -> bool:
         return all(r.rtol_pass and r.atol_pass and r.shape_match for r in self.results)
+
+
+def _require_attrs(obj: Any, attrs: Sequence[str], *, label: str) -> None:
+    missing = [attr for attr in attrs if not hasattr(obj, attr)]
+    if missing:
+        raise TypeError(f"Expected {label} with attributes {missing}, got {type(obj).__name__}")
 
 
 def match_forward(
@@ -202,9 +208,21 @@ def run_dreamerv3_component_match(
     The official_state should already be converted to WorldFlux format
     via weight_map.official_to_worldflux.
     """
-    if not isinstance(worldflux_model, _DreamerV3ModelProtocol):
-        raise TypeError(f"Expected a DreamerV3 WorldModel, got {type(worldflux_model).__name__}")
-    model: _DreamerV3ModelProtocol = worldflux_model
+    _require_attrs(
+        worldflux_model,
+        (
+            "encoder",
+            "rssm",
+            "decoder",
+            "reward_head",
+            "continue_head",
+            "load_state_dict",
+            "eval",
+            "parameters",
+        ),
+        label="DreamerV3 WorldModel",
+    )
+    model = cast(_DreamerV3ModelProtocol, worldflux_model)
     results: list[MatchResult] = []
 
     # Load weights into model
@@ -218,14 +236,19 @@ def run_dreamerv3_component_match(
     # --- Encoder ---
     encoder_obj = model.encoder
     encoder: Callable[..., Tensor] = encoder_obj  # type: ignore[assignment]
-    mlp = getattr(encoder_obj, "mlp", None)
-    obs_dim: int = (
-        mlp[0].in_features  # type: ignore[index]
-        if mlp is not None
-        else getattr(encoder_obj, "_output_dim")
-    )
     torch.manual_seed(42)
-    obs_input = torch.randn(batch, obs_dim, device=device)
+    config = getattr(model, "config", None)
+    obs_shape = tuple(getattr(config, "obs_shape", ()))
+    if len(obs_shape) == 3:
+        obs_input = torch.randn(batch, *obs_shape, device=device)
+    else:
+        mlp = getattr(encoder_obj, "mlp", None)
+        obs_dim: int = (
+            mlp[0].in_features  # type: ignore[index]
+            if mlp is not None
+            else getattr(encoder_obj, "_output_dim")
+        )
+        obs_input = torch.randn(batch, obs_dim, device=device)
 
     result = match_forward(encoder, encoder, [obs_input], component="encoder")
     results.append(result)
@@ -295,9 +318,22 @@ def run_tdmpc2_component_match(
     The official_state should already be converted to WorldFlux format
     via weight_map.official_to_worldflux.
     """
-    if not isinstance(worldflux_model, _TDMPC2ModelProtocol):
-        raise TypeError(f"Expected a TDMPC2 WorldModel, got {type(worldflux_model).__name__}")
-    model: _TDMPC2ModelProtocol = worldflux_model
+    _require_attrs(
+        worldflux_model,
+        (
+            "config",
+            "encoder",
+            "dynamics",
+            "reward_head",
+            "q_networks",
+            "policy",
+            "load_state_dict",
+            "eval",
+            "parameters",
+        ),
+        label="TDMPC2 WorldModel",
+    )
+    model = cast(_TDMPC2ModelProtocol, worldflux_model)
     results: list[MatchResult] = []
 
     model.load_state_dict(official_state, strict=False)

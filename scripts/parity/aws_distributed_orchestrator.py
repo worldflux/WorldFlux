@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ruff: noqa: E402
 """Run official-vs-WorldFlux parity matrix across AWS SSM shard workers."""
 
 from __future__ import annotations
@@ -17,6 +18,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from statistics import NormalDist, median, pstdev
 from typing import Any
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+SRC_ROOT = SCRIPT_DIR.parents[1] / "src"
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
+
+from worldflux.execution import normalize_distributed_proof_summary
 
 
 @dataclass(frozen=True)
@@ -60,7 +68,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--full-manifest",
         type=Path,
-        default=Path("scripts/parity/manifests/official_vs_worldflux_full_v1.yaml"),
+        default=Path("scripts/parity/manifests/official_vs_worldflux_full_v2.yaml"),
     )
     parser.add_argument("--run-id", type=str, required=True)
     parser.add_argument("--s3-prefix", type=str, required=True)
@@ -2011,6 +2019,10 @@ def _execute_phase(
             },
         }
         summary_path = local_root / "orchestrator_summary.json"
+        summary["execution_result"] = normalize_distributed_proof_summary(
+            summary,
+            summary_path=summary_path,
+        ).to_dict()
         _atomic_write_text(
             summary_path,
             json.dumps(summary, indent=2, sort_keys=True) + "\n",
@@ -2228,6 +2240,10 @@ def _execute_phase(
     }
 
     summary_path = local_root / "orchestrator_summary.json"
+    summary["execution_result"] = normalize_distributed_proof_summary(
+        summary,
+        summary_path=summary_path,
+    ).to_dict()
     _atomic_write_text(summary_path, json.dumps(summary, indent=2, sort_keys=True) + "\n")
     print(json.dumps(summary, indent=2, sort_keys=True))
 

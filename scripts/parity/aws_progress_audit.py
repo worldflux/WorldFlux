@@ -637,7 +637,7 @@ def _fmt_shards(values: tuple[str, ...]) -> str:
 
 def _render_report(report: AuditReport) -> str:
     lines: list[str] = []
-    lines.append("[1] 対象Run情報")
+    lines.append("[1] Target Run")
     lines.append(f"- run_id: {report.run_id}")
     lines.append(f"- region: {report.region}")
     lines.append(f"- bucket: {report.bucket}")
@@ -654,7 +654,7 @@ def _render_report(report: AuditReport) -> str:
     lines.append(f"- observed_inprogress_commands: {len(report.inprogress_records)}")
 
     lines.append("")
-    lines.append("[2] official 進捗")
+    lines.append("[2] official Progress")
     lines.append(f"- total: {report.progress_official.total}")
     lines.append(
         f"- completed: {report.progress_official.completed} "
@@ -670,7 +670,7 @@ def _render_report(report: AuditReport) -> str:
     )
 
     lines.append("")
-    lines.append("[3] worldflux 進捗")
+    lines.append("[3] worldflux Progress")
     lines.append(f"- total: {report.progress_worldflux.total}")
     lines.append(
         f"- completed: {report.progress_worldflux.completed} "
@@ -686,14 +686,14 @@ def _render_report(report: AuditReport) -> str:
     )
 
     lines.append("")
-    lines.append("[4] 直近更新時刻（S3 LastModified, UTC）")
+    lines.append("[4] Latest Update Times (S3 LastModified, UTC)")
     lines.append(f"- latest_any: {_fmt_dt(report.latest.latest_any)}")
     lines.append(f"- latest_phase_progress: {_fmt_dt(report.latest.latest_phase_progress)}")
     lines.append(f"- latest_parity_runs: {_fmt_dt(report.latest.latest_parity_runs)}")
     lines.append(f"- generated_at: {_fmt_dt(report.generated_at)}")
 
     lines.append("")
-    lines.append("[5] 停滞警告")
+    lines.append("[5] Stall Warnings")
     if not report.warnings:
         lines.append("- none")
     else:

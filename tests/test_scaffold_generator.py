@@ -62,6 +62,11 @@ def test_generate_project_creates_expected_files(tmp_path: Path) -> None:
     assert "obs_shape = [3, 64, 64]" in toml_content
     assert "total_steps = 100000" in toml_content
     assert "batch_size = 16" in toml_content
+    assert 'backend = "native_torch"' in toml_content
+    assert 'backend_profile = ""' in toml_content
+    assert 'mode = "auto"' in toml_content
+    assert 'proof_claim = "compare"' in toml_content
+    assert "allow_official_only = false" in toml_content
     assert 'source = "gym"' in toml_content
     assert "[gameplay]\nenabled = true" in toml_content
     assert "[online_collection]\nenabled = true" in toml_content
@@ -77,6 +82,15 @@ def test_generate_project_creates_expected_files(tmp_path: Path) -> None:
 
     train_content = (target / "train.py").read_text(encoding="utf-8")
     assert "dashboard_buffer.set_target_steps(total_steps)" in train_content
+    assert (
+        'backend = str(training.get("backend", "native_torch")).strip() or "native_torch"'
+        in train_content
+    )
+    assert 'backend_profile = str(training.get("backend_profile", "")).strip()' in train_content
+    assert "(backend={backend}, profile={backend_profile or '-'})" in train_content
+    assert "handle = trainer.submit()" in train_content
+    assert 'print("Delegated training result:")' in train_content
+    assert "backend=backend," in train_content
     assert "Live gameplay unavailable" in train_content
     assert "Interrupted while waiting for dashboard shutdown." in train_content
     assert "except KeyboardInterrupt:" in train_content
@@ -135,6 +149,8 @@ def test_generate_project_overwrites_when_force_enabled(tmp_path: Path) -> None:
     assert "action_dim = 4" in toml_content
     assert "total_steps = 75000" in toml_content
     assert "batch_size = 24" in toml_content
+    assert 'backend = "native_torch"' in toml_content
+    assert 'backend_profile = ""' in toml_content
     assert 'source = "gym"' in toml_content
     assert "[gameplay]\nenabled = true" in toml_content
     assert "[online_collection]\nenabled = true" in toml_content

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -16,7 +17,7 @@ def test_worldflux_native_online_runner_uses_real_env_backend_when_not_mock(tmp_
     metrics_out = tmp_path / "metrics.json"
 
     cmd = [
-        "python3",
+        sys.executable,
         "scripts/parity/wrappers/worldflux_native_online_runner.py",
         "--family",
         "dreamerv3",
@@ -74,6 +75,8 @@ def test_worldflux_native_online_runner_uses_real_env_backend_when_not_mock(tmp_
     assert payload["metadata"]["eval_policy_impl"] == "candidate_actor_stateful_eval"
     assert isinstance(payload["metadata"]["eval_protocol_hash"], str)
     assert payload["metadata"]["eval_protocol_hash"]
+    assert payload["metadata"]["model_profile"] == "ci"
+    assert payload["metadata"]["model_id"] == "dreamerv3:ci"
     assert payload["num_curve_points"] >= 1
 
 
@@ -82,7 +85,7 @@ def test_worldflux_native_online_runner_keeps_diagnostic_random_mode(tmp_path: P
     metrics_out = tmp_path / "metrics_random.json"
 
     cmd = [
-        "python3",
+        sys.executable,
         "scripts/parity/wrappers/worldflux_native_online_runner.py",
         "--family",
         "tdmpc2",
@@ -140,7 +143,7 @@ def test_worldflux_native_online_runner_uses_tdmpc2_learned_eval_policy(
     metrics_out = tmp_path / "metrics_tdmpc2.json"
 
     cmd = [
-        "python3",
+        sys.executable,
         "scripts/parity/wrappers/worldflux_native_online_runner.py",
         "--family",
         "tdmpc2",
@@ -187,3 +190,5 @@ def test_worldflux_native_online_runner_uses_tdmpc2_learned_eval_policy(
     assert payload["metadata"]["policy_impl"] == "cem_planner"
     assert payload["metadata"]["eval_policy"] == "learned"
     assert payload["metadata"]["eval_policy_impl"] == "cem_planner_eval"
+    assert payload["metadata"]["model_profile"] == "5m"
+    assert payload["metadata"]["model_id"] == "tdmpc2:5m"

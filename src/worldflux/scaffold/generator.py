@@ -153,6 +153,19 @@ def _validate_context(context: dict[str, Any]) -> None:
         raise ValueError(f"training_total_steps must be positive, got {training_total_steps}")
     context["training_total_steps"] = training_total_steps
 
+    training_backend = str(context.get("training_backend", "native_torch")).strip()
+    context["training_backend"] = training_backend or "native_torch"
+    context["training_backend_profile"] = str(context.get("training_backend_profile", "")).strip()
+
+    verify_backend = str(context.get("verify_backend", "native_torch")).strip()
+    context["verify_backend"] = verify_backend or "native_torch"
+    context["verify_backend_profile"] = str(context.get("verify_backend_profile", "")).strip()
+    context["verify_mode"] = str(context.get("verify_mode", "auto")).strip() or "auto"
+    context["verify_proof_claim"] = (
+        str(context.get("verify_proof_claim", "compare")).strip() or "compare"
+    )
+    context["verify_allow_official_only"] = bool(context.get("verify_allow_official_only", False))
+
     training_batch_size = int(context.get("training_batch_size", DEFAULT_BATCH_SIZE))
     if training_batch_size <= 0:
         raise ValueError(f"training_batch_size must be positive, got {training_batch_size}")

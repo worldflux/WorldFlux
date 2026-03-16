@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 import torch
 
-from worldflux import Batch, create_world_model
+from worldflux import Batch, OfficialBackendHandle, create_world_model
 from worldflux.core.exceptions import (
     BufferError,
     ConfigurationError,
@@ -29,6 +29,8 @@ from worldflux.core.spec import (
 from worldflux.core.state import State
 from worldflux.training import (
     CheckpointCallback,
+    JobHandle,
+    JobStatus,
     LoggingCallback,
     ReplayBuffer,
     TokenSequenceProvider,
@@ -432,6 +434,98 @@ class TestTrainer:
         trainer = Trainer(small_model, config)
         assert trainer.model is small_model
         assert trainer.config is config
+
+    def test_trainer_delegated_submit_uses_backend_handle(self, tmp_path, monkeypatch):
+        captured: dict[str, object] = {}
+
+        class _FakeBackend:
+            def submit(self, config: dict[str, object]) -> JobHandle:
+                captured.update(config)
+                return JobHandle(
+                    job_id="train_dreamer_42",
+                    backend="official_dreamerv3_jax_subprocess",
+                    metadata={
+                        "status": "succeeded",
+                        "summary_path": str(tmp_path / "summary.json"),
+                    },
+                )
+
+            def status(self, handle: JobHandle) -> JobStatus:
+                assert handle.job_id == "train_dreamer_42"
+                return JobStatus.COMPLETED
+
+            def logs(self, handle: JobHandle):
+                assert handle.job_id == "train_dreamer_42"
+                return iter(["ok"])
+
+            def cancel(self, handle: JobHandle) -> None:
+                captured["cancelled"] = handle.job_id
+
+        monkeypatch.setattr(
+            "worldflux.training.trainer.ExecutionDelegatingBackend",
+            lambda: _FakeBackend(),
+        )
+
+        handle = OfficialBackendHandle(
+            backend="official_dreamerv3_jax_subprocess",
+            model_id="dreamerv3:official_xl",
+            metadata={"env": "atari/pong", "task_filter": "atari100k_pong"},
+        )
+        config = TrainingConfig(
+            total_steps=5,
+            batch_size=4,
+            sequence_length=10,
+            device="cpu",
+            output_dir=str(tmp_path / "delegated"),
+            backend="official_dreamerv3_jax_subprocess",
+            backend_profile="official_xl",
+        )
+        trainer = Trainer(handle, config, callbacks=[])
+
+        job = trainer.submit()
+        assert job.job_id == "train_dreamer_42"
+        assert captured["backend_profile"] == "official_xl"
+        assert trainer.status(job) == JobStatus.COMPLETED
+        assert list(trainer.logs(job)) == ["ok"]
+        trainer.cancel(job)
+        assert captured["cancelled"] == "train_dreamer_42"
+
+    def test_trainer_delegated_train_rejects_local_loop(self, tmp_path, monkeypatch):
+        class _FakeBackend:
+            def submit(self, config: dict[str, object]) -> JobHandle:
+                raise AssertionError("submit should not be called")
+
+            def status(self, handle: JobHandle) -> JobStatus:
+                return JobStatus.COMPLETED
+
+            def logs(self, handle: JobHandle):
+                return iter(())
+
+            def cancel(self, handle: JobHandle) -> None:
+                return None
+
+        monkeypatch.setattr(
+            "worldflux.training.trainer.ExecutionDelegatingBackend",
+            lambda: _FakeBackend(),
+        )
+
+        handle = OfficialBackendHandle(
+            backend="official_dreamerv3_jax_subprocess",
+            model_id="dreamerv3:official_xl",
+            metadata={"env": "atari/pong", "task_filter": "atari100k_pong"},
+        )
+        config = TrainingConfig(
+            total_steps=5,
+            batch_size=4,
+            sequence_length=10,
+            device="cpu",
+            output_dir=str(tmp_path / "delegated"),
+            backend="official_dreamerv3_jax_subprocess",
+            backend_profile="official_xl",
+        )
+        trainer = Trainer(handle, config, callbacks=[])
+        with pytest.raises(ConfigurationError, match="submit\\(\\)"):
+            trainer.train([])
 
     def test_trainer_train_short(self, small_model, small_buffer):
         """Test a few training steps."""

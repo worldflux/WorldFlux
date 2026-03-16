@@ -5,11 +5,16 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
 
 from common import run_command
+
+RUNTIME_ROOT = Path(__file__).resolve().parents[1]
+if str(RUNTIME_ROOT) not in sys.path:
+    sys.path.insert(0, str(RUNTIME_ROOT))
 
 
 def _parse_args() -> argparse.Namespace:
@@ -30,15 +35,35 @@ def _parse_args() -> argparse.Namespace:
         default="parity_candidate",
         choices=["diagnostic_random", "parity_candidate"],
     )
+    parser.add_argument(
+        "--tdmpc2-model-profile",
+        type=str,
+        default="5m",
+        choices=["ci", "5m", "proof_5m", "5m_legacy", "19m", "48m", "317m"],
+    )
     parser.add_argument("--timeout-sec", type=int, default=0)
-    parser.add_argument("--python-executable", type=str, default="python3")
+    parser.add_argument("--python-executable", type=str, default=sys.executable)
     parser.add_argument("--train-command", type=str, default="")
+    parser.add_argument("--alignment-report", type=Path, default=None)
     parser.add_argument("--mock", action="store_true")
     return parser.parse_args()
 
 
 def _format_template(template: str, values: dict[str, Any]) -> str:
     return template.format_map(values)
+
+
+def _resolve_alignment_report(path: Path | None) -> tuple[str, str]:
+    candidate = path
+    if candidate is None:
+        raw = str(os.environ.get("WORLDFLUX_TDMPC2_ALIGNMENT_REPORT", "")).strip()
+        candidate = Path(raw).expanduser() if raw else None
+    if candidate is None or not candidate.exists():
+        return "", ""
+    payload = json.loads(candidate.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        return "", ""
+    return str(candidate.resolve()), str(payload.get("status", "")).strip().lower()
 
 
 def main() -> int:
@@ -60,6 +85,7 @@ def main() -> int:
         "eval_episodes": args.eval_episodes,
         "eval_window": args.eval_window,
         "policy_mode": args.policy_mode,
+        "tdmpc2_model_profile": args.tdmpc2_model_profile,
     }
 
     command: str | list[str]
@@ -91,6 +117,8 @@ def main() -> int:
             str(args.eval_window),
             "--policy-mode",
             str(args.policy_mode),
+            "--tdmpc2-model-profile",
+            str(args.tdmpc2_model_profile),
         ]
         if args.mock:
             command.append("--mock")
@@ -109,6 +137,15 @@ def main() -> int:
         raise SystemExit(f"metrics file missing after run: {args.metrics_out}")
 
     payload = json.loads(args.metrics_out.read_text(encoding="utf-8"))
+    metadata = payload.get("metadata")
+    if isinstance(metadata, dict):
+        alignment_report_path, alignment_status = _resolve_alignment_report(args.alignment_report)
+        if alignment_report_path:
+            metadata["alignment_report_path"] = alignment_report_path
+            metadata["alignment_status"] = alignment_status
+            args.metrics_out.write_text(
+                json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+            )
     print(json.dumps(payload, indent=2, sort_keys=True))
     return 0
 

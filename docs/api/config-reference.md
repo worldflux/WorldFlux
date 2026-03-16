@@ -127,6 +127,8 @@ with categorical latent variables.
 | `size200m` | ~200M | 8192 | 32x32 | 1024 | 48 |
 | `official_xl` | ~200-300M | 8192 | 32x64 | 1024 | 64 |
 
+`ci` is for quick validation / scaffold workflows and is not the canonical proof-grade parity preset. Dreamer parity proof uses `official_xl`.
+
 ### DreamerV3-Specific Fields
 
 | Field | Type | Default | Description |
@@ -231,9 +233,13 @@ effective for continuous control tasks.
 |--------|--------|------------|------------|
 | `ci` | ~0.1M | 32 | 32 |
 | `5m` | ~5M | 256 | 256 |
+| `proof_5m` | ~5M | 256 | 256 |
+| `5m_legacy` | ~5M | 256 | 256 |
 | `19m` | ~19M | 512 | 512 |
 | `48m` | ~48M | 512 | 1024 |
 | `317m` | ~317M | 1024 | 2048 |
+
+`ci` is for quick validation / scaffold workflows and is not the canonical proof-grade parity preset. TD-MPC2 parity proof uses `proof_5m`. `5m` is the compatibility preset, and `5m_legacy` is the legacy compatibility preset.
 
 ### TD-MPC2-Specific Fields
 
@@ -265,7 +271,7 @@ Create configuration from a size preset.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `size` | `str` | required | Size preset name: `"ci"`, `"5m"`, `"19m"`, `"48m"`, `"317m"`. |
+| `size` | `str` | required | Size preset name: `"ci"`, `"5m"`, `"proof_5m"`, `"5m_legacy"`, `"19m"`, `"48m"`, `"317m"`. |
 | `**kwargs` | `Any` | | Override any preset parameters. |
 
 **Returns:** `TDMPC2Config` with the specified size preset.

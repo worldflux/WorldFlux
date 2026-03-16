@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -19,6 +20,12 @@ from common import (
     run_command,
     write_metrics,
 )
+
+SRC_ROOT = Path(__file__).resolve().parents[3] / "src"
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
+
+from worldflux.parity import get_backend_adapter_registry, stable_recipe_hash  # noqa: E402
 
 
 def _parse_args() -> argparse.Namespace:
@@ -35,9 +42,10 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--eval-freq", type=int, default=50_000)
     parser.add_argument("--timeout-sec", type=int, default=0)
     parser.add_argument("--eval-csv", type=Path, default=None)
-    parser.add_argument("--python-executable", type=str, default="python3")
+    parser.add_argument("--python-executable", type=str, default=sys.executable)
     parser.add_argument("--train-command", type=str, default="")
     parser.add_argument("--model-size", type=int, default=5)
+    parser.add_argument("--alignment-report", type=Path, default=None)
     parser.add_argument("--mock", action="store_true")
     return parser.parse_args()
 
@@ -65,24 +73,37 @@ def _eval_protocol_hash(
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+def _resolve_alignment_report(path: Path | None) -> tuple[str, str]:
+    candidate = path
+    if candidate is None:
+        raw = str(os.environ.get("WORLDFLUX_TDMPC2_ALIGNMENT_REPORT", "")).strip()
+        candidate = Path(raw).expanduser() if raw else None
+    if candidate is None or not candidate.exists():
+        return "", ""
+    payload = json.loads(candidate.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        return "", ""
+    return str(candidate.resolve()), str(payload.get("status", "")).strip().lower()
+
+
 def _default_command(args: argparse.Namespace, *, exp_name: str) -> list[str]:
-    return [
-        args.python_executable,
-        "tdmpc2/train.py",
-        f"task={args.task_id}",
-        f"steps={args.steps}",
-        f"seed={args.seed}",
-        f"model_size={args.model_size}",
-        f"eval_episodes={args.eval_episodes}",
-        f"eval_freq={args.eval_freq}",
-        "enable_wandb=false",
-        "save_csv=true",
-        "save_video=false",
-        "save_agent=false",
-        "compile=false",
-        "hydra/launcher=basic",
-        f"exp_name={exp_name}",
-    ]
+    adapter = get_backend_adapter_registry().require("official_tdmpc2_torch_subprocess")
+    spec = adapter.prepare_run(
+        recipe={"steps": int(args.steps), "model_size": int(args.model_size)},
+        env_spec={
+            "task_id": args.task_id,
+            "eval_protocol": {
+                "eval_episodes": int(args.eval_episodes),
+                "eval_interval": int(args.eval_freq),
+            },
+        },
+        seed=int(args.seed),
+        run_dir=Path(exp_name),
+        repo_root=Path("."),
+        python_executable=args.python_executable,
+        device=args.device,
+    )
+    return list(spec.command)
 
 
 def main() -> int:
@@ -91,12 +112,14 @@ def main() -> int:
     run_dir.mkdir(parents=True, exist_ok=True)
 
     if args.mock:
+        recipe = {"steps": int(args.steps), "model_size": int(args.model_size)}
         points = deterministic_mock_curve(
             seed=args.seed,
             steps=args.steps,
             family="tdmpc2",
             system="official",
         )
+        alignment_report_path, alignment_status = _resolve_alignment_report(args.alignment_report)
         payload = write_metrics(
             metrics_out=args.metrics_out,
             adapter="official_tdmpc2",
@@ -109,8 +132,33 @@ def main() -> int:
             metadata={
                 "mode": "mock",
                 "env_backend": "dmcontrol",
+                "backend_kind": "torch_subprocess",
+                "adapter_id": "official_tdmpc2_torch_subprocess",
+                "recipe_hash": stable_recipe_hash(recipe),
+                "model_id": f"tdmpc2:{args.model_size}m",
+                "model_profile": f"{args.model_size}m",
+                "canonical_compare_profile": "proof_5m",
+                "official_model_size": int(args.model_size),
+                "artifact_manifest": {
+                    "adapter_id": "official_tdmpc2_torch_subprocess",
+                    "backend_kind": "torch_subprocess",
+                    "recipe_hash": stable_recipe_hash(recipe),
+                    "checkpoint_paths": [],
+                    "score_paths": [],
+                    "metrics_paths": [str(args.metrics_out)],
+                },
                 "policy_mode": "official_reference",
                 "policy_impl": "official_tdmpc2_reference",
+                "train_budget": {
+                    "steps": int(args.steps),
+                    "model_size": int(args.model_size),
+                },
+                "eval_protocol": {
+                    "eval_interval": int(args.eval_freq),
+                    "eval_episodes": int(args.eval_episodes),
+                    "eval_window": int(args.eval_window),
+                    "environment_backend": "dmcontrol",
+                },
                 "eval_protocol_hash": _eval_protocol_hash(
                     family="tdmpc2",
                     task_id=args.task_id,
@@ -118,6 +166,8 @@ def main() -> int:
                     eval_episodes=args.eval_episodes,
                     eval_window=args.eval_window,
                 ),
+                "alignment_report_path": alignment_report_path,
+                "alignment_status": alignment_status,
             },
         )
         print(json.dumps(payload, indent=2, sort_keys=True))
@@ -130,6 +180,8 @@ def main() -> int:
         raise SystemExit(f"repo root not found: {repo_root}")
 
     exp_name = run_dir.name
+    recipe = {"steps": int(args.steps), "model_size": int(args.model_size)}
+    adapter = get_backend_adapter_registry().require("official_tdmpc2_torch_subprocess")
     template_values = {
         "repo_root": str(repo_root),
         "task_id": args.task_id,
@@ -176,7 +228,21 @@ def main() -> int:
     )
     if not points:
         raise SystemExit(f"no evaluation points found in {eval_csv}")
+    artifact_manifest = adapter.collect_artifacts(
+        run_dir=run_dir,
+        source_commit=None,
+        eval_protocol_hash=_eval_protocol_hash(
+            family="tdmpc2",
+            task_id=args.task_id,
+            eval_interval=args.eval_freq,
+            eval_episodes=args.eval_episodes,
+            eval_window=args.eval_window,
+        ),
+        command_argv=list(command) if isinstance(command, list) else [],
+        recipe=recipe,
+    )
 
+    alignment_report_path, alignment_status = _resolve_alignment_report(args.alignment_report)
     payload = write_metrics(
         metrics_out=args.metrics_out,
         adapter="official_tdmpc2",
@@ -189,6 +255,14 @@ def main() -> int:
         metadata={
             "mode": "official",
             "env_backend": "dmcontrol",
+            "backend_kind": artifact_manifest.backend_kind,
+            "adapter_id": artifact_manifest.adapter_id,
+            "recipe_hash": artifact_manifest.recipe_hash,
+            "model_id": f"tdmpc2:{args.model_size}m",
+            "model_profile": f"{args.model_size}m",
+            "canonical_compare_profile": "proof_5m",
+            "official_model_size": int(args.model_size),
+            "artifact_manifest": artifact_manifest.to_dict(),
             "repo_root": str(repo_root),
             "eval_csv": str(eval_csv),
             "command": command,
@@ -196,6 +270,16 @@ def main() -> int:
             "stderr_tail": completed.stderr[-1000:],
             "policy_mode": "official_reference",
             "policy_impl": "official_tdmpc2_reference",
+            "train_budget": {
+                "steps": int(args.steps),
+                "model_size": int(args.model_size),
+            },
+            "eval_protocol": {
+                "eval_interval": int(args.eval_freq),
+                "eval_episodes": int(args.eval_episodes),
+                "eval_window": int(args.eval_window),
+                "environment_backend": "dmcontrol",
+            },
             "eval_protocol_hash": _eval_protocol_hash(
                 family="tdmpc2",
                 task_id=args.task_id,
@@ -203,6 +287,8 @@ def main() -> int:
                 eval_episodes=args.eval_episodes,
                 eval_window=args.eval_window,
             ),
+            "alignment_report_path": alignment_report_path,
+            "alignment_status": alignment_status,
         },
     )
     print(json.dumps(payload, indent=2, sort_keys=True))

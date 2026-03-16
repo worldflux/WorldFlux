@@ -57,6 +57,8 @@ def _valid_v2() -> dict:
                 "task_id": "atari100k_pong",
                 "official": {
                     "adapter": "official_dreamerv3",
+                    "backend_kind": "jax_subprocess",
+                    "artifact_requirements": {"metrics_paths": ["metrics.json"]},
                     "cwd": ".",
                     "command": ["python3", "-c", "print('ok')"],
                     "env": {},
@@ -67,6 +69,8 @@ def _valid_v2() -> dict:
                 },
                 "worldflux": {
                     "adapter": "worldflux_dreamerv3_native",
+                    "backend_kind": "native_torch",
+                    "artifact_requirements": {"metrics_paths": ["metrics.json"]},
                     "cwd": ".",
                     "command": ["python3", "-c", "print('ok')"],
                     "env": {},
@@ -106,6 +110,21 @@ def test_load_suite_contract_v2_rejects_string_command() -> None:
     payload["tasks"][0]["official"]["command"] = "python3 -c \"print('ok')\""
 
     with pytest.raises(RuntimeError, match="must be list\\[str\\]"):
+        mod.load_suite_contract(payload)
+
+
+def test_load_suite_contract_v2_requires_backend_kind_and_artifact_requirements() -> None:
+    mod = _load_module()
+    payload = _valid_v2()
+    del payload["tasks"][0]["official"]["backend_kind"]
+
+    with pytest.raises(RuntimeError, match="backend_kind"):
+        mod.load_suite_contract(payload)
+
+    payload = _valid_v2()
+    del payload["tasks"][0]["official"]["artifact_requirements"]
+
+    with pytest.raises(RuntimeError, match="artifact_requirements"):
         mod.load_suite_contract(payload)
 
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .backend import JobHandle, JobStatus, LocalBackend, TrainingBackend
+from .backend import ExecutionDelegatingBackend, JobHandle, JobStatus, LocalBackend, TrainingBackend
 from .callbacks import (
     Callback,
     CheckpointCallback,
@@ -14,6 +14,7 @@ from .callbacks import (
 from .config import TrainingConfig
 from .data import ReplayBuffer, TokenSequenceProvider, TrajectoryDataset, TransitionArrayProvider
 from .report import HealthSignal, LossCurveSummary, TrainingReport
+from .scheduling import LocalClock, RatioUpdateScheduler
 from .trainer import Trainer, train
 
 __all__ = [
@@ -26,6 +27,7 @@ __all__ = [
     "TokenSequenceProvider",
     "TransitionArrayProvider",
     "TrainingBackend",
+    "ExecutionDelegatingBackend",
     "LocalBackend",
     "JobHandle",
     "JobStatus",
@@ -40,4 +42,6 @@ __all__ = [
     "TrainingReport",
     "HealthSignal",
     "LossCurveSummary",
+    "LocalClock",
+    "RatioUpdateScheduler",
 ]
