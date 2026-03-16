@@ -75,8 +75,12 @@ def test_shared_memory_copy_mode_breaks_aliasing() -> None:
 
 
 def test_to_shared_memory_rejects_cuda_without_explicit_copy() -> None:
-    if not torch.cuda.is_available():
-        pytest.skip("CUDA unavailable")
-    state = State(tensors={"latent": torch.ones(2, 2, device="cuda")})
+    class _FakeCudaTensor:
+        device = torch.device("cuda")
+
+        def detach(self) -> _FakeCudaTensor:
+            return self
+
+    state = State(tensors={"latent": _FakeCudaTensor()})  # type: ignore[dict-item]
     with pytest.raises(StateError, match="allow_copy_from_cuda=True"):
         state.to_shared_memory()

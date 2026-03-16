@@ -1,6 +1,5 @@
 """Tests for training infrastructure."""
 
-import importlib.util
 import os
 import tempfile
 
@@ -257,9 +256,6 @@ class TestReplayBuffer:
         os.unlink(f.name)
 
     def test_to_from_parquet_roundtrip(self, tmp_path):
-        if importlib.util.find_spec("pyarrow") is None:
-            pytest.skip("pyarrow is not installed")
-
         buffer = create_random_buffer(
             capacity=64,
             obs_shape=(4,),
@@ -301,6 +297,27 @@ class TestReplayBuffer:
             buffer.add_episode(obs, actions, rewards)
 
         assert len(buffer) == 100  # Capped at capacity
+
+    def test_add_episode_larger_than_capacity_keeps_latest_rows(self):
+        buffer = ReplayBuffer(capacity=8, obs_shape=(2,), action_dim=1)
+        obs = np.arange(24, dtype=np.float32).reshape(12, 2)
+        actions = np.arange(12, dtype=np.float32).reshape(12, 1)
+        rewards = np.arange(12, dtype=np.float32)
+        dones = np.zeros(12, dtype=np.float32)
+        dones[-1] = 1.0
+
+        buffer.add_episode(obs, actions, rewards, dones)
+
+        assert len(buffer) == 8
+        retained_obs = obs[-8:]
+        retained_actions = actions[-8:]
+        retained_rewards = rewards[-8:]
+        retained_dones = dones[-8:]
+        indices = [(buffer._position + i) % buffer.capacity for i in range(buffer.capacity)]
+        np.testing.assert_allclose(buffer._obs[indices], retained_obs)
+        np.testing.assert_allclose(buffer._actions[indices], retained_actions)
+        np.testing.assert_allclose(buffer._rewards[indices], retained_rewards)
+        np.testing.assert_allclose(buffer._dones[indices], retained_dones)
 
     def test_add_episode_action_length_mismatch(self):
         buffer = ReplayBuffer(capacity=100, obs_shape=(4,), action_dim=2)

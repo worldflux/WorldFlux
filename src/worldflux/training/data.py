@@ -168,8 +168,21 @@ class ReplayBuffer:
                     got=dones.shape,
                 )
 
-        # Handle wrap-around
+        # Handle episodes larger than capacity by retaining only the newest rows.
+        original_episode_len = episode_len
         start_pos = self._position
+        if episode_len >= self.capacity:
+            obs = obs[-self.capacity :]
+            actions = actions[-self.capacity :]
+            rewards = rewards[-self.capacity :]
+            dones = dones[-self.capacity :]
+            episode_len = self.capacity
+            start_pos = (self._position + original_episode_len - episode_len) % self.capacity
+            self._episode_starts.clear()
+            self._episode_ends.clear()
+            self._num_episodes = 0
+
+        # Handle wrap-around
         end_pos = start_pos + episode_len
 
         if end_pos <= self.capacity:
