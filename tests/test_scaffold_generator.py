@@ -184,7 +184,6 @@ def test_generate_project_falls_back_when_pydantic_is_unavailable(
 def test_generate_project_rejects_schema_coercion_when_pydantic_available(
     tmp_path: Path,
 ) -> None:
-    pytest.importorskip("pydantic")
     context = _context()
     context["action_dim"] = "6"  # type: ignore[assignment]
 

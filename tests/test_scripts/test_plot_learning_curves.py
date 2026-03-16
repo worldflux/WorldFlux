@@ -7,8 +7,6 @@ import json
 import sys
 from pathlib import Path
 
-import pytest
-
 _SCRIPT_DIR = Path(__file__).resolve().parent.parent.parent / "scripts" / "parity"
 
 
@@ -92,10 +90,6 @@ class TestPlotLearningCurvesCLI:
         assert mod._system_label("official_dreamerv3") == "official"
         assert mod._system_label("worldflux_tdmpc2") == "worldflux"
 
-    @pytest.mark.skipif(
-        not importlib.util.find_spec("matplotlib"),
-        reason="matplotlib not installed",
-    )
     def test_plot_per_task_creates_files(self, tmp_path: Path) -> None:
         mod = _load_module()
         from worldflux.parity.curves import aggregate_curves, load_curves_from_parity_jsonl
@@ -112,10 +106,6 @@ class TestPlotLearningCurvesCLI:
             assert path.exists()
             assert path.suffix == ".png"
 
-    @pytest.mark.skipif(
-        not importlib.util.find_spec("matplotlib"),
-        reason="matplotlib not installed",
-    )
     def test_plot_suite_grid_creates_file(self, tmp_path: Path) -> None:
         mod = _load_module()
         from worldflux.parity.curves import aggregate_curves, load_curves_from_parity_jsonl
