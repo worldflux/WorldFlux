@@ -259,6 +259,16 @@ class TestCreateWorldModel:
                 device="cpu",
             )
 
+    def test_create_with_hybrid_action_rejected_in_v3(self):
+        with pytest.raises(ValueError, match="hybrid"):
+            create_world_model(
+                "tdmpc2:ci",
+                obs_shape=(4,),
+                action_dim=2,
+                api_version="v3",
+                action_spec={"kind": "hybrid", "dim": 2},
+            )
+
 
 class TestBackendBridge:
     def test_resolve_backend_execution_native_torch(self):
@@ -285,16 +295,6 @@ class TestBackendBridge:
             )
         assert model.config.model_type == "tdmpc2"
         assert getattr(model, "_wf_api_version", None) == "v0.2"
-
-    def test_create_with_hybrid_action_rejected_in_v3(self):
-        with pytest.raises(ValueError, match="hybrid"):
-            create_world_model(
-                "tdmpc2:ci",
-                obs_shape=(4,),
-                action_dim=2,
-                api_version="v3",
-                action_spec={"kind": "hybrid", "dim": 2},
-            )
 
     def test_create_with_invalid_api_version_raises(self):
         with pytest.raises(ValueError, match="Unsupported api_version"):
