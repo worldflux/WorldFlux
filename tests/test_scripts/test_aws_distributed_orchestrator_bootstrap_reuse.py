@@ -157,3 +157,11 @@ def test_build_remote_commands_bootstrap_uses_vendored_dreamer_and_proof_jax() -
     assert "third_party/dreamerv3_official" in joined
     assert "git clone https://github.com/danijar/dreamerv3.git dreamerv3-official" not in joined
     assert "python -m pip install -e .[proof-jax]" in joined
+
+
+def test_manifest_relpath_preserves_repo_relative_manifest_suffix() -> None:
+    mod = _load_module()
+    manifest = (
+        Path("/tmp/any-worktree") / "scripts" / "parity" / "manifests" / "dreamerv3_smoke_v3.yaml"
+    )
+    assert mod._manifest_relpath(manifest) == "scripts/parity/manifests/dreamerv3_smoke_v3.yaml"
