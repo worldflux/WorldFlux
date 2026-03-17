@@ -76,7 +76,7 @@ def _eval_protocol_hash(
 def _runner_command(args: argparse.Namespace, *, repo_root: Path) -> list[str]:
     return [
         args.python_executable,
-        str((RUNTIME_ROOT / "dreamer_worldflux_jax_runner.py").resolve()),
+        str((RUNTIME_ROOT / "runtime" / "dreamer_worldflux_jax_runner.py").resolve()),
         "--repo-root",
         str(repo_root),
         "--task-id",
