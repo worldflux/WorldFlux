@@ -201,6 +201,6 @@ def test_worldflux_jax_wrapper_defaults_to_repo_local_runner() -> None:
     root = _repo_root()
     wrapper = root / "scripts" / "parity" / "wrappers" / "worldflux_dreamerv3_jax.py"
     text = wrapper.read_text(encoding="utf-8")
-    assert "dreamer_worldflux_jax_runner.py" in text
+    assert 'RUNTIME_ROOT / "runtime" / "dreamer_worldflux_jax_runner.py"' in text
     assert "WORLDFLUX_DREAMER_JAX_TRAIN_COMMAND" not in text
     assert "official_recipe_fallback" not in text
