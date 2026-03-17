@@ -7,5 +7,6 @@ try:
 except ImportError:
     pass
 
-from . import envs, jax, run
 from .core import *
+
+from . import envs, jax, run
