@@ -6,6 +6,7 @@ from .backend_adapters import (
     BackendAdapter,
     BackendAdapterRegistry,
     DreamerOfficialJAXSubprocessAdapter,
+    DreamerWorldFluxJAXSubprocessAdapter,
     TDMPC2OfficialTorchSubprocessAdapter,
     get_backend_adapter_registry,
 )
@@ -59,6 +60,7 @@ __all__ = [
     "BackendAdapterRegistry",
     "BackendRunSpec",
     "DreamerOfficialJAXSubprocessAdapter",
+    "DreamerWorldFluxJAXSubprocessAdapter",
     "TDMPC2OfficialTorchSubprocessAdapter",
     "discover_artifacts",
     "get_backend_adapter_registry",

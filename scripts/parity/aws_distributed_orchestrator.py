@@ -619,6 +619,14 @@ def _manifest_relpath(manifest: Path) -> str:
     try:
         return manifest_resolved.relative_to(repo_root).as_posix()
     except Exception:
+        parts = manifest_resolved.parts
+        try:
+            idx = parts.index("scripts")
+        except ValueError:
+            return manifest.name
+        suffix = Path(*parts[idx:]).as_posix()
+        if suffix.startswith("scripts/parity/"):
+            return suffix
         return manifest.name
 
 
@@ -1008,7 +1016,7 @@ def _build_remote_commands(
         commands.extend(
             [
                 '[ -d worldflux/.git ] || { echo "Missing bootstrap repo: worldflux"; exit 2; }',
-                '[ -d dreamerv3-official/.git ] || { echo "Missing bootstrap repo: dreamerv3-official"; exit 2; }',
+                '[ -d worldflux/third_party/dreamerv3_official ] || { echo "Missing vendored Dreamer repo"; exit 2; }',
                 '[ -d tdmpc2-official/.git ] || { echo "Missing bootstrap repo: tdmpc2-official"; exit 2; }',
                 '[ -f .venv/bin/activate ] || { echo "Missing bootstrap venv"; exit 2; }',
                 "cd worldflux",
@@ -1020,10 +1028,9 @@ def _build_remote_commands(
         commands.extend(
             [
                 "if [ ! -d worldflux/.git ]; then git clone https://github.com/worldflux/WorldFlux.git worldflux; fi",
-                "if [ ! -d dreamerv3-official/.git ]; then git clone https://github.com/danijar/dreamerv3.git dreamerv3-official; fi",
                 "if [ ! -d tdmpc2-official/.git ]; then git clone https://github.com/nicklashansen/tdmpc2.git tdmpc2-official; fi",
                 f"cd worldflux && git fetch origin --tags --prune && git checkout {shlex.quote(wf_ref)}",
-                f"cd ../dreamerv3-official && git fetch origin --tags --prune && git checkout {shlex.quote(dreamer_sha)}",
+                '[ -d third_party/dreamerv3_official ] || { echo "Missing vendored Dreamer repo"; exit 2; }',
                 f"cd ../tdmpc2-official && git fetch origin --tags --prune && git checkout {shlex.quote(tdmpc2_sha)}",
                 "cd ../worldflux",
                 "if [ ! -f ../.venv/.parity_ready_v2 ]; then",
@@ -1034,9 +1041,8 @@ def _build_remote_commands(
                 "  fi",
                 "  . ../.venv/bin/activate",
                 "  python -m pip install --upgrade pip",
-                "  python -m pip install -e .",
+                "  python -m pip install -e .[proof-jax]",
                 "  python -m pip install hydra-core==1.3.2 hydra-submitit-launcher==1.2.0 submitit==1.5.1 omegaconf==2.3.0 termcolor==2.4.0 tensordict torchrl gymnasium==0.29.1 dm-control==1.0.16 mujoco==3.1.2 imageio==2.34.1 imageio-ffmpeg==0.4.9 h5py==3.11.0 kornia==0.7.2 tqdm==4.66.4 pandas==2.2.3 wandb==0.17.4",
-                "  python -m pip install -r ../dreamerv3-official/requirements.txt",
                 "  python -m pip install pyyaml gymnasium==0.29.1 ale-py dm-control==1.0.16 mujoco==3.1.2 hydra-core==1.3.2 omegaconf==2.3.0",
                 "  touch ../.venv/.parity_ready_v2",
                 "fi",

@@ -251,6 +251,16 @@ class TestCreateWorldModel:
         assert handle.metadata["requested_device"] == "cpu"
         assert handle.metadata["api_version"] == "v3"
 
+    def test_create_with_worldflux_dreamer_jax_backend_returns_backend_handle(self):
+        handle = create_world_model(
+            "dreamerv3:official_xl",
+            backend="worldflux_dreamerv3_jax_subprocess",
+            device="cpu",
+        )
+        assert isinstance(handle, OfficialBackendHandle)
+        assert handle.backend == "worldflux_dreamerv3_jax_subprocess"
+        assert handle.model_id == "dreamerv3:official_xl"
+
     def test_create_with_non_native_backend_rejects_unknown_model(self):
         with pytest.raises(ValueError, match="unknown|invalid|unsupported|Unknown"):
             create_world_model(

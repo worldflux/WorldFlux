@@ -42,11 +42,11 @@ def _record(
 
 
 def _dreamer_backend_metadata(*, system: str, policy_impl: str, env_backend: str) -> dict:
-    backend_kind = "jax_subprocess" if system == "official" else "native_torch"
+    backend_kind = "jax_subprocess"
     adapter_id = (
         "official_dreamerv3_jax_subprocess"
         if system == "official"
-        else "worldflux_dreamerv3_native_torch"
+        else "worldflux_dreamerv3_jax_subprocess"
     )
     return {
         "backend_kind": backend_kind,
@@ -203,11 +203,11 @@ def _suite_v2_manifest(
                 },
                 "worldflux": {
                     "adapter": (
-                        "worldflux_dreamerv3_native"
+                        "worldflux_dreamerv3_jax_subprocess"
                         if family == "dreamerv3"
                         else "worldflux_tdmpc2_native"
                     ),
-                    "backend_kind": "native_torch",
+                    "backend_kind": "jax_subprocess" if family == "dreamerv3" else "native_torch",
                     "artifact_requirements": {"metrics_paths": ["metrics.json"]},
                     "cwd": ".",
                     "command": ["python3", "-c", "print('ok')"],
@@ -597,7 +597,7 @@ def test_stats_equivalence_proof_mode_uses_suite_min_pairs(tmp_path: Path) -> No
             "worldflux",
             100.0 + seed,
             90.0 + seed,
-            adapter="worldflux_dreamerv3_native_torch",
+            adapter="worldflux_dreamerv3_jax_subprocess",
         )
         for row, commit in ((off, "official-sha"), (wf, "wf-sha")):
             row["source_commit"] = commit
@@ -628,7 +628,7 @@ def test_stats_equivalence_proof_mode_uses_suite_min_pairs(tmp_path: Path) -> No
             ),
         }
         wf["metrics"]["metadata"] = {
-            "mode": "native_real_env",
+            "mode": "worldflux_jax",
             **_dreamer_backend_metadata(
                 system="worldflux",
                 policy_impl="candidate_actor_stateful",
@@ -680,7 +680,7 @@ def test_stats_equivalence_proof_mode_requires_component_report(tmp_path: Path) 
             "worldflux",
             100.0 + seed,
             90.0 + seed,
-            adapter="worldflux_dreamerv3_native_torch",
+            adapter="worldflux_dreamerv3_jax_subprocess",
         )
         for row, commit, system in (
             (off, "official-sha", "official"),
@@ -706,7 +706,7 @@ def test_stats_equivalence_proof_mode_requires_component_report(tmp_path: Path) 
                 "environment_backend": "gymnasium",
             }
             row["metrics"]["metadata"] = {
-                "mode": "official" if system == "official" else "native_real_env",
+                "mode": "official" if system == "official" else "worldflux_jax",
                 **_dreamer_backend_metadata(
                     system=system,
                     policy_impl=(

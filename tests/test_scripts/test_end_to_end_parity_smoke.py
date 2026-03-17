@@ -58,12 +58,12 @@ def test_parity_pipeline_smoke_generates_all_artifacts(tmp_path: Path) -> None:
                     ],
                 },
                 "worldflux": {
-                    "adapter": "worldflux_dreamerv3_native",
+                    "adapter": "worldflux_dreamerv3_jax",
                     "cwd": str(root),
                     "env": {},
                     "command": [
                         sys.executable,
-                        "scripts/parity/wrappers/worldflux_dreamerv3_native.py",
+                        "scripts/parity/wrappers/worldflux_dreamerv3_jax.py",
                         "--task-id",
                         "{task_id}",
                         "--seed",
@@ -76,8 +76,6 @@ def test_parity_pipeline_smoke_generates_all_artifacts(tmp_path: Path) -> None:
                         "{run_root}/executions/{task_id}/seed_{seed}/worldflux",
                         "--metrics-out",
                         "{metrics_out}",
-                        "--policy-mode",
-                        "parity_candidate",
                         "--mock",
                     ],
                 },

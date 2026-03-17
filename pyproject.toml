@@ -92,8 +92,23 @@ cli = [
 hub = [
     "huggingface_hub>=0.24.0,<2.0.0",
 ]
+proof-jax = [
+    "jax==0.4.33; python_version < '3.13'",
+    "jaxlib==0.4.33; python_version < '3.13'",
+    "dm-haiku>=0.0.12,<1.0.0",
+    "optax>=0.2.3,<1.0.0",
+    "chex>=0.1.86,<1.0.0",
+    "elements>=3.19.1,<4.0.0",
+    "portal>=3.5.0,<4.0.0",
+    "ninjax>=3.5.1,<4.0.0",
+    "einops>=0.8.0,<1.0.0",
+    "cloudpickle>=3.0.0,<4.0.0",
+    "ruamel.yaml>=0.18.0,<1.0.0",
+    "jaxtyping>=0.3.0,<1.0.0",
+    "colored-traceback>=0.4.2,<1.0.0",
+]
 all = [
-    "worldflux[dev,training,env,atari,viz,logging,cli,hub]",
+    "worldflux[dev,training,env,atari,viz,logging,cli,hub,proof-jax]",
 ]
 
 [project.entry-points."worldflux.models"]
