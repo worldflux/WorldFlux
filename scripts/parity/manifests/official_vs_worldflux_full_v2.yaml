@@ -114,7 +114,7 @@
           "python3",
           "scripts/parity/wrappers/official_dreamerv3.py",
           "--repo-root",
-          "../dreamerv3-official",
+          "third_party/dreamerv3_official",
           "--task-id",
           "{task_id}",
           "--seed",
@@ -136,8 +136,8 @@
         }
       },
       "worldflux": {
-        "adapter": "worldflux_dreamerv3_native",
-        "backend_kind": "native_torch",
+        "adapter": "worldflux_dreamerv3_jax_subprocess",
+        "backend_kind": "jax_subprocess",
         "artifact_requirements": {
           "metrics_paths": ["metrics.json"]
         },
@@ -146,7 +146,7 @@
         "env": {},
         "command": [
           "python3",
-          "scripts/parity/wrappers/worldflux_dreamerv3_native.py",
+          "scripts/parity/wrappers/worldflux_dreamerv3_jax.py",
           "--repo-root",
           ".",
           "--task-id",
@@ -261,8 +261,8 @@
         }
       },
       "worldflux": {
-        "adapter": "worldflux_dreamerv3_native",
-        "backend_kind": "native_torch",
+        "adapter": "worldflux_dreamerv3_jax_subprocess",
+        "backend_kind": "jax_subprocess",
         "artifact_requirements": {
           "metrics_paths": ["metrics.json"]
         },
@@ -271,7 +271,7 @@
         "env": {},
         "command": [
           "python3",
-          "scripts/parity/wrappers/worldflux_dreamerv3_native.py",
+          "scripts/parity/wrappers/worldflux_dreamerv3_jax.py",
           "--repo-root",
           ".",
           "--task-id",
@@ -386,8 +386,8 @@
         }
       },
       "worldflux": {
-        "adapter": "worldflux_dreamerv3_native",
-        "backend_kind": "native_torch",
+        "adapter": "worldflux_dreamerv3_jax_subprocess",
+        "backend_kind": "jax_subprocess",
         "artifact_requirements": {
           "metrics_paths": ["metrics.json"]
         },
@@ -396,7 +396,7 @@
         "env": {},
         "command": [
           "python3",
-          "scripts/parity/wrappers/worldflux_dreamerv3_native.py",
+          "scripts/parity/wrappers/worldflux_dreamerv3_jax.py",
           "--repo-root",
           ".",
           "--task-id",
@@ -511,8 +511,8 @@
         }
       },
       "worldflux": {
-        "adapter": "worldflux_dreamerv3_native",
-        "backend_kind": "native_torch",
+        "adapter": "worldflux_dreamerv3_jax_subprocess",
+        "backend_kind": "jax_subprocess",
         "artifact_requirements": {
           "metrics_paths": ["metrics.json"]
         },
@@ -521,7 +521,7 @@
         "env": {},
         "command": [
           "python3",
-          "scripts/parity/wrappers/worldflux_dreamerv3_native.py",
+          "scripts/parity/wrappers/worldflux_dreamerv3_jax.py",
           "--repo-root",
           ".",
           "--task-id",
@@ -636,8 +636,8 @@
         }
       },
       "worldflux": {
-        "adapter": "worldflux_dreamerv3_native",
-        "backend_kind": "native_torch",
+        "adapter": "worldflux_dreamerv3_jax_subprocess",
+        "backend_kind": "jax_subprocess",
         "artifact_requirements": {
           "metrics_paths": ["metrics.json"]
         },
@@ -646,7 +646,7 @@
         "env": {},
         "command": [
           "python3",
-          "scripts/parity/wrappers/worldflux_dreamerv3_native.py",
+          "scripts/parity/wrappers/worldflux_dreamerv3_jax.py",
           "--repo-root",
           ".",
           "--task-id",
@@ -761,8 +761,8 @@
         }
       },
       "worldflux": {
-        "adapter": "worldflux_dreamerv3_native",
-        "backend_kind": "native_torch",
+        "adapter": "worldflux_dreamerv3_jax_subprocess",
+        "backend_kind": "jax_subprocess",
         "artifact_requirements": {
           "metrics_paths": ["metrics.json"]
         },
@@ -771,7 +771,7 @@
         "env": {},
         "command": [
           "python3",
-          "scripts/parity/wrappers/worldflux_dreamerv3_native.py",
+          "scripts/parity/wrappers/worldflux_dreamerv3_jax.py",
           "--repo-root",
           ".",
           "--task-id",
@@ -886,8 +886,8 @@
         }
       },
       "worldflux": {
-        "adapter": "worldflux_dreamerv3_native",
-        "backend_kind": "native_torch",
+        "adapter": "worldflux_dreamerv3_jax_subprocess",
+        "backend_kind": "jax_subprocess",
         "artifact_requirements": {
           "metrics_paths": ["metrics.json"]
         },
@@ -896,7 +896,7 @@
         "env": {},
         "command": [
           "python3",
-          "scripts/parity/wrappers/worldflux_dreamerv3_native.py",
+          "scripts/parity/wrappers/worldflux_dreamerv3_jax.py",
           "--repo-root",
           ".",
           "--task-id",
@@ -1011,8 +1011,8 @@
         }
       },
       "worldflux": {
-        "adapter": "worldflux_dreamerv3_native",
-        "backend_kind": "native_torch",
+        "adapter": "worldflux_dreamerv3_jax_subprocess",
+        "backend_kind": "jax_subprocess",
         "artifact_requirements": {
           "metrics_paths": ["metrics.json"]
         },
@@ -1021,7 +1021,7 @@
         "env": {},
         "command": [
           "python3",
-          "scripts/parity/wrappers/worldflux_dreamerv3_native.py",
+          "scripts/parity/wrappers/worldflux_dreamerv3_jax.py",
           "--repo-root",
           ".",
           "--task-id",
@@ -1136,8 +1136,8 @@
         }
       },
       "worldflux": {
-        "adapter": "worldflux_dreamerv3_native",
-        "backend_kind": "native_torch",
+        "adapter": "worldflux_dreamerv3_jax_subprocess",
+        "backend_kind": "jax_subprocess",
         "artifact_requirements": {
           "metrics_paths": ["metrics.json"]
         },
@@ -1146,7 +1146,7 @@
         "env": {},
         "command": [
           "python3",
-          "scripts/parity/wrappers/worldflux_dreamerv3_native.py",
+          "scripts/parity/wrappers/worldflux_dreamerv3_jax.py",
           "--repo-root",
           ".",
           "--task-id",
@@ -1261,8 +1261,8 @@
         }
       },
       "worldflux": {
-        "adapter": "worldflux_dreamerv3_native",
-        "backend_kind": "native_torch",
+        "adapter": "worldflux_dreamerv3_jax_subprocess",
+        "backend_kind": "jax_subprocess",
         "artifact_requirements": {
           "metrics_paths": ["metrics.json"]
         },
@@ -1271,7 +1271,7 @@
         "env": {},
         "command": [
           "python3",
-          "scripts/parity/wrappers/worldflux_dreamerv3_native.py",
+          "scripts/parity/wrappers/worldflux_dreamerv3_jax.py",
           "--repo-root",
           ".",
           "--task-id",
@@ -1386,8 +1386,8 @@
         }
       },
       "worldflux": {
-        "adapter": "worldflux_dreamerv3_native",
-        "backend_kind": "native_torch",
+        "adapter": "worldflux_dreamerv3_jax_subprocess",
+        "backend_kind": "jax_subprocess",
         "artifact_requirements": {
           "metrics_paths": ["metrics.json"]
         },
@@ -1396,7 +1396,7 @@
         "env": {},
         "command": [
           "python3",
-          "scripts/parity/wrappers/worldflux_dreamerv3_native.py",
+          "scripts/parity/wrappers/worldflux_dreamerv3_jax.py",
           "--repo-root",
           ".",
           "--task-id",
@@ -1511,8 +1511,8 @@
         }
       },
       "worldflux": {
-        "adapter": "worldflux_dreamerv3_native",
-        "backend_kind": "native_torch",
+        "adapter": "worldflux_dreamerv3_jax_subprocess",
+        "backend_kind": "jax_subprocess",
         "artifact_requirements": {
           "metrics_paths": ["metrics.json"]
         },
@@ -1521,7 +1521,7 @@
         "env": {},
         "command": [
           "python3",
-          "scripts/parity/wrappers/worldflux_dreamerv3_native.py",
+          "scripts/parity/wrappers/worldflux_dreamerv3_jax.py",
           "--repo-root",
           ".",
           "--task-id",
@@ -1636,8 +1636,8 @@
         }
       },
       "worldflux": {
-        "adapter": "worldflux_dreamerv3_native",
-        "backend_kind": "native_torch",
+        "adapter": "worldflux_dreamerv3_jax_subprocess",
+        "backend_kind": "jax_subprocess",
         "artifact_requirements": {
           "metrics_paths": ["metrics.json"]
         },
@@ -1646,7 +1646,7 @@
         "env": {},
         "command": [
           "python3",
-          "scripts/parity/wrappers/worldflux_dreamerv3_native.py",
+          "scripts/parity/wrappers/worldflux_dreamerv3_jax.py",
           "--repo-root",
           ".",
           "--task-id",
@@ -1761,8 +1761,8 @@
         }
       },
       "worldflux": {
-        "adapter": "worldflux_dreamerv3_native",
-        "backend_kind": "native_torch",
+        "adapter": "worldflux_dreamerv3_jax_subprocess",
+        "backend_kind": "jax_subprocess",
         "artifact_requirements": {
           "metrics_paths": ["metrics.json"]
         },
@@ -1771,7 +1771,7 @@
         "env": {},
         "command": [
           "python3",
-          "scripts/parity/wrappers/worldflux_dreamerv3_native.py",
+          "scripts/parity/wrappers/worldflux_dreamerv3_jax.py",
           "--repo-root",
           ".",
           "--task-id",
@@ -1886,8 +1886,8 @@
         }
       },
       "worldflux": {
-        "adapter": "worldflux_dreamerv3_native",
-        "backend_kind": "native_torch",
+        "adapter": "worldflux_dreamerv3_jax_subprocess",
+        "backend_kind": "jax_subprocess",
         "artifact_requirements": {
           "metrics_paths": ["metrics.json"]
         },
@@ -1896,7 +1896,7 @@
         "env": {},
         "command": [
           "python3",
-          "scripts/parity/wrappers/worldflux_dreamerv3_native.py",
+          "scripts/parity/wrappers/worldflux_dreamerv3_jax.py",
           "--repo-root",
           ".",
           "--task-id",
@@ -2011,8 +2011,8 @@
         }
       },
       "worldflux": {
-        "adapter": "worldflux_dreamerv3_native",
-        "backend_kind": "native_torch",
+        "adapter": "worldflux_dreamerv3_jax_subprocess",
+        "backend_kind": "jax_subprocess",
         "artifact_requirements": {
           "metrics_paths": ["metrics.json"]
         },
@@ -2021,7 +2021,7 @@
         "env": {},
         "command": [
           "python3",
-          "scripts/parity/wrappers/worldflux_dreamerv3_native.py",
+          "scripts/parity/wrappers/worldflux_dreamerv3_jax.py",
           "--repo-root",
           ".",
           "--task-id",
@@ -2136,8 +2136,8 @@
         }
       },
       "worldflux": {
-        "adapter": "worldflux_dreamerv3_native",
-        "backend_kind": "native_torch",
+        "adapter": "worldflux_dreamerv3_jax_subprocess",
+        "backend_kind": "jax_subprocess",
         "artifact_requirements": {
           "metrics_paths": ["metrics.json"]
         },
@@ -2146,7 +2146,7 @@
         "env": {},
         "command": [
           "python3",
-          "scripts/parity/wrappers/worldflux_dreamerv3_native.py",
+          "scripts/parity/wrappers/worldflux_dreamerv3_jax.py",
           "--repo-root",
           ".",
           "--task-id",
@@ -2261,8 +2261,8 @@
         }
       },
       "worldflux": {
-        "adapter": "worldflux_dreamerv3_native",
-        "backend_kind": "native_torch",
+        "adapter": "worldflux_dreamerv3_jax_subprocess",
+        "backend_kind": "jax_subprocess",
         "artifact_requirements": {
           "metrics_paths": ["metrics.json"]
         },
@@ -2271,7 +2271,7 @@
         "env": {},
         "command": [
           "python3",
-          "scripts/parity/wrappers/worldflux_dreamerv3_native.py",
+          "scripts/parity/wrappers/worldflux_dreamerv3_jax.py",
           "--repo-root",
           ".",
           "--task-id",
@@ -2386,8 +2386,8 @@
         }
       },
       "worldflux": {
-        "adapter": "worldflux_dreamerv3_native",
-        "backend_kind": "native_torch",
+        "adapter": "worldflux_dreamerv3_jax_subprocess",
+        "backend_kind": "jax_subprocess",
         "artifact_requirements": {
           "metrics_paths": ["metrics.json"]
         },
@@ -2396,7 +2396,7 @@
         "env": {},
         "command": [
           "python3",
-          "scripts/parity/wrappers/worldflux_dreamerv3_native.py",
+          "scripts/parity/wrappers/worldflux_dreamerv3_jax.py",
           "--repo-root",
           ".",
           "--task-id",
@@ -2511,8 +2511,8 @@
         }
       },
       "worldflux": {
-        "adapter": "worldflux_dreamerv3_native",
-        "backend_kind": "native_torch",
+        "adapter": "worldflux_dreamerv3_jax_subprocess",
+        "backend_kind": "jax_subprocess",
         "artifact_requirements": {
           "metrics_paths": ["metrics.json"]
         },
@@ -2521,7 +2521,7 @@
         "env": {},
         "command": [
           "python3",
-          "scripts/parity/wrappers/worldflux_dreamerv3_native.py",
+          "scripts/parity/wrappers/worldflux_dreamerv3_jax.py",
           "--repo-root",
           ".",
           "--task-id",
@@ -2636,8 +2636,8 @@
         }
       },
       "worldflux": {
-        "adapter": "worldflux_dreamerv3_native",
-        "backend_kind": "native_torch",
+        "adapter": "worldflux_dreamerv3_jax_subprocess",
+        "backend_kind": "jax_subprocess",
         "artifact_requirements": {
           "metrics_paths": ["metrics.json"]
         },
@@ -2646,7 +2646,7 @@
         "env": {},
         "command": [
           "python3",
-          "scripts/parity/wrappers/worldflux_dreamerv3_native.py",
+          "scripts/parity/wrappers/worldflux_dreamerv3_jax.py",
           "--repo-root",
           ".",
           "--task-id",
@@ -2761,8 +2761,8 @@
         }
       },
       "worldflux": {
-        "adapter": "worldflux_dreamerv3_native",
-        "backend_kind": "native_torch",
+        "adapter": "worldflux_dreamerv3_jax_subprocess",
+        "backend_kind": "jax_subprocess",
         "artifact_requirements": {
           "metrics_paths": ["metrics.json"]
         },
@@ -2771,7 +2771,7 @@
         "env": {},
         "command": [
           "python3",
-          "scripts/parity/wrappers/worldflux_dreamerv3_native.py",
+          "scripts/parity/wrappers/worldflux_dreamerv3_jax.py",
           "--repo-root",
           ".",
           "--task-id",
@@ -2886,8 +2886,8 @@
         }
       },
       "worldflux": {
-        "adapter": "worldflux_dreamerv3_native",
-        "backend_kind": "native_torch",
+        "adapter": "worldflux_dreamerv3_jax_subprocess",
+        "backend_kind": "jax_subprocess",
         "artifact_requirements": {
           "metrics_paths": ["metrics.json"]
         },
@@ -2896,7 +2896,7 @@
         "env": {},
         "command": [
           "python3",
-          "scripts/parity/wrappers/worldflux_dreamerv3_native.py",
+          "scripts/parity/wrappers/worldflux_dreamerv3_jax.py",
           "--repo-root",
           ".",
           "--task-id",
@@ -3011,8 +3011,8 @@
         }
       },
       "worldflux": {
-        "adapter": "worldflux_dreamerv3_native",
-        "backend_kind": "native_torch",
+        "adapter": "worldflux_dreamerv3_jax_subprocess",
+        "backend_kind": "jax_subprocess",
         "artifact_requirements": {
           "metrics_paths": ["metrics.json"]
         },
@@ -3021,7 +3021,7 @@
         "env": {},
         "command": [
           "python3",
-          "scripts/parity/wrappers/worldflux_dreamerv3_native.py",
+          "scripts/parity/wrappers/worldflux_dreamerv3_jax.py",
           "--repo-root",
           ".",
           "--task-id",
@@ -3136,8 +3136,8 @@
         }
       },
       "worldflux": {
-        "adapter": "worldflux_dreamerv3_native",
-        "backend_kind": "native_torch",
+        "adapter": "worldflux_dreamerv3_jax_subprocess",
+        "backend_kind": "jax_subprocess",
         "artifact_requirements": {
           "metrics_paths": ["metrics.json"]
         },
@@ -3146,7 +3146,7 @@
         "env": {},
         "command": [
           "python3",
-          "scripts/parity/wrappers/worldflux_dreamerv3_native.py",
+          "scripts/parity/wrappers/worldflux_dreamerv3_jax.py",
           "--repo-root",
           ".",
           "--task-id",
@@ -3261,8 +3261,8 @@
         }
       },
       "worldflux": {
-        "adapter": "worldflux_dreamerv3_native",
-        "backend_kind": "native_torch",
+        "adapter": "worldflux_dreamerv3_jax_subprocess",
+        "backend_kind": "jax_subprocess",
         "artifact_requirements": {
           "metrics_paths": ["metrics.json"]
         },
@@ -3271,7 +3271,7 @@
         "env": {},
         "command": [
           "python3",
-          "scripts/parity/wrappers/worldflux_dreamerv3_native.py",
+          "scripts/parity/wrappers/worldflux_dreamerv3_jax.py",
           "--repo-root",
           ".",
           "--task-id",

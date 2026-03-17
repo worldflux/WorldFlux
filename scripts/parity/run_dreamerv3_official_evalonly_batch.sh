@@ -6,7 +6,7 @@ set -euo pipefail
 # the requested number of scores has been written to scores.jsonl.
 
 BASE_DIR="${BASE_DIR:-/opt/parity/bootstrap/i-03558d158797a5f2f}"
-OFFICIAL_REPO="${OFFICIAL_REPO:-$BASE_DIR/dreamerv3-official}"
+OFFICIAL_REPO="${OFFICIAL_REPO:-$BASE_DIR/worldflux-current/third_party/dreamerv3_official}"
 PYTHON_BIN="${PYTHON_BIN:-$BASE_DIR/.venv/bin/python}"
 SITE_PACKAGES="${SITE_PACKAGES:-$BASE_DIR/.venv/lib/python3.10/site-packages}"
 CHECKPOINT_ROOT="${CHECKPOINT_ROOT:-$BASE_DIR/worldflux-current/reports/parity/dreamer_official_batch10_managed}"

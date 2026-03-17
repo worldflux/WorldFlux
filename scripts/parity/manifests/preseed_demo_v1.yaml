@@ -41,7 +41,7 @@
                     "python3",
                     "scripts/parity/wrappers/official_dreamerv3.py",
                     "--repo-root",
-                    "../dreamerv3-official",
+                    "third_party/dreamerv3_official",
                     "--task-id",
                     "{task_id}",
                     "--seed",
@@ -57,13 +57,13 @@
                 ]
             },
             "worldflux": {
-                "adapter": "worldflux_dreamerv3_native",
+                "adapter": "worldflux_dreamerv3_jax_subprocess",
                 "cwd": "../../..",
                 "timeout_sec": 86400,
                 "env": {},
                 "command": [
                     "python3",
-                    "scripts/parity/wrappers/worldflux_dreamerv3_native.py",
+                    "scripts/parity/wrappers/worldflux_dreamerv3_jax.py",
                     "--repo-root",
                     ".",
                     "--task-id",
@@ -109,7 +109,7 @@
                     "python3",
                     "scripts/parity/wrappers/official_dreamerv3.py",
                     "--repo-root",
-                    "../dreamerv3-official",
+                    "third_party/dreamerv3_official",
                     "--task-id",
                     "{task_id}",
                     "--seed",
@@ -125,13 +125,13 @@
                 ]
             },
             "worldflux": {
-                "adapter": "worldflux_dreamerv3_native",
+                "adapter": "worldflux_dreamerv3_jax_subprocess",
                 "cwd": "../../..",
                 "timeout_sec": 86400,
                 "env": {},
                 "command": [
                     "python3",
-                    "scripts/parity/wrappers/worldflux_dreamerv3_native.py",
+                    "scripts/parity/wrappers/worldflux_dreamerv3_jax.py",
                     "--repo-root",
                     ".",
                     "--task-id",
@@ -177,7 +177,7 @@
                     "python3",
                     "scripts/parity/wrappers/official_dreamerv3.py",
                     "--repo-root",
-                    "../dreamerv3-official",
+                    "third_party/dreamerv3_official",
                     "--task-id",
                     "{task_id}",
                     "--seed",
@@ -193,13 +193,13 @@
                 ]
             },
             "worldflux": {
-                "adapter": "worldflux_dreamerv3_native",
+                "adapter": "worldflux_dreamerv3_jax_subprocess",
                 "cwd": "../../..",
                 "timeout_sec": 86400,
                 "env": {},
                 "command": [
                     "python3",
-                    "scripts/parity/wrappers/worldflux_dreamerv3_native.py",
+                    "scripts/parity/wrappers/worldflux_dreamerv3_jax.py",
                     "--repo-root",
                     ".",
                     "--task-id",

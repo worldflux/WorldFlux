@@ -6,6 +6,7 @@ from pathlib import Path
 
 from worldflux.parity import (
     DreamerOfficialJAXSubprocessAdapter,
+    DreamerWorldFluxJAXSubprocessAdapter,
     discover_artifacts,
     get_backend_adapter_registry,
     stable_recipe_hash,
@@ -22,6 +23,13 @@ def test_backend_adapter_registry_contains_dreamer_adapter() -> None:
     registry = get_backend_adapter_registry()
     adapter = registry.require("official_dreamerv3_jax_subprocess")
     assert isinstance(adapter, DreamerOfficialJAXSubprocessAdapter)
+
+
+def test_backend_adapter_registry_contains_worldflux_dreamer_jax_adapter() -> None:
+    registry = get_backend_adapter_registry()
+    adapter = registry.require("worldflux_dreamerv3_jax_subprocess")
+    assert isinstance(adapter, DreamerWorldFluxJAXSubprocessAdapter)
+    assert adapter.backend_kind == "jax_subprocess"
 
 
 def test_backend_adapter_registry_contains_tdmpc2_adapter() -> None:
@@ -48,6 +56,22 @@ def test_dreamer_adapter_prepare_run_matches_expected_command(tmp_path: Path) ->
     assert "atari100k" in spec.command
     assert "--run.steps" in spec.command
     assert "110000" in spec.command
+
+
+def test_worldflux_dreamer_jax_adapter_prepare_run_invokes_wrapper(tmp_path: Path) -> None:
+    adapter = DreamerWorldFluxJAXSubprocessAdapter()
+    spec = adapter.prepare_run(
+        recipe={"steps": 110000, "train_ratio": 256},
+        env_spec={"task_id": "atari100k_pong"},
+        seed=0,
+        run_dir=tmp_path / "run",
+        repo_root=Path("/tmp/worldflux"),
+        python_executable="python3",
+        device="cuda",
+    )
+    assert spec.adapter_id == "worldflux_dreamerv3_jax_subprocess"
+    assert spec.backend_kind == "jax_subprocess"
+    assert any("worldflux_dreamerv3_jax.py" in part for part in spec.command)
 
 
 def test_discover_artifacts_collects_expected_paths(tmp_path: Path) -> None:

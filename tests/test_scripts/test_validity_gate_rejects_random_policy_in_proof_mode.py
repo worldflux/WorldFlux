@@ -19,14 +19,14 @@ def _load_module():
 
 
 def _entry(system: str, *, random_policy: bool, env_backend: str | None = "gymnasium") -> dict:
-    backend_kind = "jax_subprocess" if system == "official" else "native_torch"
+    backend_kind = "jax_subprocess"
     adapter_id = (
         "official_dreamerv3_jax_subprocess"
         if system == "official"
-        else "worldflux_dreamerv3_native_torch"
+        else "worldflux_dreamerv3_jax_subprocess"
     )
     metadata = {
-        "mode": "native_real_env" if system == "worldflux" else "official",
+        "mode": "worldflux_jax" if system == "worldflux" else "official",
         "eval_protocol_hash": "abc123",
         "backend_kind": backend_kind,
         "adapter_id": adapter_id,

@@ -199,7 +199,7 @@ class ParityBackedExecutor:
     ) -> BackendExecutionResult:
         run_id = request.run_id or self._utc_run_id("dreamer_official_bootstrap")
         output_root = Path(request.output_root or (self.repo_root / "reports" / "parity" / run_id))
-        official_repo = (self.repo_root.parent / "dreamerv3-official").resolve()
+        official_repo = (self.repo_root / "third_party" / "dreamerv3_official").resolve()
         command = [
             sys.executable,
             str(self.scripts_root / "run_dreamerv3_official_batch.py"),

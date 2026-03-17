@@ -29,6 +29,7 @@ from typing import Any, cast
 
 from .core.backend_bridge import (
     NATIVE_TORCH_BACKEND,
+    canonical_backend_profile,
     normalize_backend_hint,
     resolve_backend_execution,
 )
@@ -126,7 +127,7 @@ MODEL_CATALOG: dict[str, dict[str, Any]] = {
         "parity_role": "reference_family",
     },
     "dreamerv3:official_xl": {
-        "description": "DreamerV3 official XL - Matches danijar/dreamerv3 default architecture",
+        "description": "DreamerV3 official XL - canonical profile for Dreamer proof JAX backends",
         "params": "~200-300M",
         "type": "dreamer",
         "default_obs": "image",
@@ -399,16 +400,18 @@ def create_world_model(
     if action_spec is not None:
         config_kwargs["action_spec"] = action_spec
 
+    if backend_name != NATIVE_TORCH_BACKEND:
+        ConfigRegistry.from_pretrained(resolved_model, **config_kwargs)
     backend_execution = resolve_backend_execution(resolved_model, backend_name)
 
     if isinstance(backend_execution, OfficialBackendHandle):
-        ConfigRegistry.from_pretrained(resolved_model, **config_kwargs)
         return cast(
             WorldModel,
             backend_execution.with_metadata(
                 execution_kind="backend_handle",
                 requested_device=str(device),
                 api_version=api_version,
+                backend_profile=canonical_backend_profile(resolved_model, backend_name),
             ),
         )
 

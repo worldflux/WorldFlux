@@ -5,7 +5,7 @@ set -euo pipefail
 # normalized artifacts to a chosen S3 prefix.
 
 BASE_DIR="${BASE_DIR:-/opt/parity/bootstrap/i-03558d158797a5f2f}"
-REPO_DIR="${REPO_DIR:-$BASE_DIR/dreamerv3-official}"
+REPO_DIR="${REPO_DIR:-$BASE_DIR/worldflux-current/third_party/dreamerv3_official}"
 PYTHON_BIN="${PYTHON_BIN:-$BASE_DIR/.venv/bin/python}"
 SITE_PACKAGES="${SITE_PACKAGES:-$BASE_DIR/.venv/lib/python3.10/site-packages}"
 WRAPPER_PATH="${WRAPPER_PATH:-$BASE_DIR/worldflux-current/scripts/parity/wrappers/official_dreamerv3.py}"

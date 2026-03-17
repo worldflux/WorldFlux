@@ -68,8 +68,8 @@ def _valid_v2() -> dict:
                     },
                 },
                 "worldflux": {
-                    "adapter": "worldflux_dreamerv3_native",
-                    "backend_kind": "native_torch",
+                    "adapter": "worldflux_dreamerv3_jax_subprocess",
+                    "backend_kind": "jax_subprocess",
                     "artifact_requirements": {"metrics_paths": ["metrics.json"]},
                     "cwd": ".",
                     "command": ["python3", "-c", "print('ok')"],
