@@ -619,6 +619,14 @@ def _manifest_relpath(manifest: Path) -> str:
     try:
         return manifest_resolved.relative_to(repo_root).as_posix()
     except Exception:
+        parts = manifest_resolved.parts
+        try:
+            idx = parts.index("scripts")
+        except ValueError:
+            return manifest.name
+        suffix = Path(*parts[idx:]).as_posix()
+        if suffix.startswith("scripts/parity/"):
+            return suffix
         return manifest.name
 
 
