@@ -167,10 +167,14 @@ def main() -> int:
         raise SystemExit(f"repo root not found: {repo_root}")
 
     command = _runner_command(args, repo_root=repo_root)
+    stdout_log = args.run_dir.resolve() / "train_stdout.log"
+    stderr_log = args.run_dir.resolve() / "train_stderr.log"
     completed = run_command(
         command,
         cwd=repo_root,
         timeout_sec=args.timeout_sec if args.timeout_sec > 0 else None,
+        stdout_path=stdout_log,
+        stderr_path=stderr_log,
     )
     if completed.returncode != 0:
         print(completed.stdout)

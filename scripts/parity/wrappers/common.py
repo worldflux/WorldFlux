@@ -21,14 +21,34 @@ class CurvePoint:
     value: float
 
 
+def _read_file_tail(path: Path, max_bytes: int = 10_000) -> str:
+    """Read the tail of a text file, returning at most *max_bytes* of content."""
+    if not path.exists():
+        return ""
+    size = path.stat().st_size
+    if size <= max_bytes:
+        return path.read_text(encoding="utf-8", errors="replace")
+    with open(path, "rb") as fh:
+        fh.seek(max(0, size - max_bytes))
+        return fh.read().decode("utf-8", errors="replace")
+
+
 def run_command(
     command: str | list[str],
     *,
     cwd: Path,
     timeout_sec: int | None = None,
     env: dict[str, str] | None = None,
+    stdout_path: Path | None = None,
+    stderr_path: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    """Run a subprocess command and return the completed process."""
+    """Run a subprocess command and return the completed process.
+
+    When *stdout_path* and *stderr_path* are both provided, output is streamed
+    directly to those files instead of being buffered in memory.  The returned
+    ``CompletedProcess`` contains only the tail of each file so callers can
+    still inspect recent output without holding the full log in RAM.
+    """
     argv: list[str]
     if isinstance(command, str):
         if any(pattern in command for pattern in ("`", "$(", "${", "\n", "\r")):
@@ -41,13 +61,39 @@ def run_command(
     if not argv:
         raise RuntimeError("Command must not be empty.")
 
+    merged_env = {**os.environ, **env} if env is not None else None
+
+    if stdout_path is not None and stderr_path is not None:
+        stdout_path.parent.mkdir(parents=True, exist_ok=True)
+        stderr_path.parent.mkdir(parents=True, exist_ok=True)
+        with (
+            open(stdout_path, "w", encoding="utf-8") as f_out,
+            open(stderr_path, "w", encoding="utf-8") as f_err,
+        ):
+            result = subprocess.run(
+                argv,
+                cwd=str(cwd),
+                stdout=f_out,
+                stderr=f_err,
+                text=True,
+                timeout=timeout_sec,
+                env=merged_env,
+                check=False,
+            )
+        return subprocess.CompletedProcess(
+            result.args,
+            result.returncode,
+            stdout=_read_file_tail(stdout_path),
+            stderr=_read_file_tail(stderr_path),
+        )
+
     return subprocess.run(
         argv,
         cwd=str(cwd),
         text=True,
         capture_output=True,
         timeout=timeout_sec,
-        env=({**os.environ, **env} if env is not None else None),
+        env=merged_env,
         check=False,
     )
 

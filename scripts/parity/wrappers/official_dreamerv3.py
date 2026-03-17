@@ -217,11 +217,15 @@ def main() -> int:
     else:
         command = _default_command(args, repo_root=repo_root, logdir=logdir)
 
+    stdout_log = run_dir / "train_stdout.log"
+    stderr_log = run_dir / "train_stderr.log"
     completed = run_command(
         command,
         cwd=repo_root,
         timeout_sec=args.timeout_sec if args.timeout_sec > 0 else None,
         env=_official_env(repo_root=repo_root),
+        stdout_path=stdout_log,
+        stderr_path=stderr_log,
     )
     if completed.returncode != 0:
         print(completed.stdout)
