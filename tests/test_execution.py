@@ -297,3 +297,48 @@ def test_executor_allows_dreamer_compare_when_bootstrap_summary_succeeded(
     result = executor.execute(request)
     assert result.status == "succeeded"
     assert result.proof_phase == "compare"
+
+
+def test_executor_dreamer_bootstrap_uses_vendored_official_repo(
+    tmp_path: Path, monkeypatch
+) -> None:
+    scripts_root = tmp_path / "scripts" / "parity"
+    manifests_root = scripts_root / "manifests"
+    manifests_root.mkdir(parents=True, exist_ok=True)
+    manifest_path = manifests_root / "dreamerv3_official_checkpoint_bootstrap_v1.json"
+    manifest_path.write_text("{}", encoding="utf-8")
+    vendor_root = tmp_path / "third_party" / "dreamerv3_official"
+    vendor_root.mkdir(parents=True, exist_ok=True)
+
+    captured: dict[str, object] = {}
+
+    def _fake_run_subprocess(self, command: list[str]):
+        del self
+        captured["command"] = command
+        return type(
+            "_Completed",
+            (),
+            {"returncode": 0, "stdout": "", "stderr": ""},
+        )()
+
+    monkeypatch.setattr(ParityBackedExecutor, "_run_subprocess", _fake_run_subprocess)
+
+    executor = ParityBackedExecutor(repo_root=tmp_path, scripts_root=scripts_root)
+    request = BackendExecutionRequest(
+        backend="official_dreamerv3_jax_subprocess",
+        family="dreamer",
+        mode="proof_bootstrap",
+        target="m.pt",
+        baseline="official/dreamerv3",
+        task_filter="atari100k_pong",
+        env="atari/pong",
+        seed_list=list(range(10)),
+        device="cpu",
+    )
+    result = executor.execute(request)
+    assert result.status == "succeeded"
+    command = captured["command"]
+    assert isinstance(command, list)
+    assert "--repo-root" in command
+    idx = command.index("--repo-root")
+    assert command[idx + 1] == str(vendor_root.resolve())

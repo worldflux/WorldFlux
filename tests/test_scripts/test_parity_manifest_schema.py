@@ -107,9 +107,9 @@ def test_full_manifest_includes_65_tasks() -> None:
     assert dreamer.worldflux.source_commit == "{worldflux_sha}"
     assert dreamer.official.source_commit
     assert dreamer.official.backend_kind == "jax_subprocess"
+    assert dreamer.worldflux.backend_kind == "jax_subprocess"
     assert dreamer.official.artifact_requirements["checkpoint_paths"]
-    assert "--dreamer-model-profile" in dreamer.worldflux.command
-    assert "official_xl" in dreamer.worldflux.command
+    assert any("worldflux_dreamerv3_jax.py" in part for part in dreamer.worldflux.command)
     assert "--tdmpc2-model-profile" in tdmpc2.worldflux.command
     assert "5m" in tdmpc2.worldflux.command
     assert tdmpc2.official.backend_kind == "torch_subprocess"

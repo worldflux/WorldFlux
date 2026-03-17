@@ -18,8 +18,10 @@ As of 2026-03-11, WorldFlux is intentionally not treating proof work as
   official JAX stack.
 - The immediate goal is to lock the official Dreamer run set to `10` seeds and
   then reach the `20`-seed minimum proof threshold.
-- WorldFlux-vs-official comparison is currently paused until the Dreamer
-  official-only reproducibility pass is stable.
+- Dreamer proof compare now has a JAX/JAX canonical path:
+  `official_dreamerv3_jax_subprocess` vs `worldflux_dreamerv3_jax_subprocess`.
+  Statistical comparison still depends on the official-only reproducibility pass
+  being stable enough to resume compare runs.
 - `create_world_model`, `Trainer`, `verify`, and `scaffold` still have
   PyTorch-native assumptions and are not yet treated as fully
   multi-backend-native product surfaces.

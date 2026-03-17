@@ -116,5 +116,44 @@ def test_build_remote_commands_skip_bootstrap_avoids_clone_and_install() -> None
     )
     joined = "\n".join(commands)
     assert "Missing bootstrap repo: worldflux" in joined
+    assert "Missing vendored Dreamer repo" in joined
     assert "git clone https://github.com/worldflux/WorldFlux.git worldflux" not in joined
+    assert "git clone https://github.com/danijar/dreamerv3.git dreamerv3-official" not in joined
     assert "python -m pip install -e ." not in joined
+
+
+def test_build_remote_commands_bootstrap_uses_vendored_dreamer_and_proof_jax() -> None:
+    mod = _load_module()
+    shard = mod.ShardPlan(
+        shard_id=0,
+        instance_id="i-abcd",
+        task_ids=("atari100k_pong",),
+        shard_run_id="run_a_shard00",
+        estimated_cost=1.0,
+        estimated_duration_sec=1.0,
+        seed_values=(0,),
+        systems=("official",),
+        gpu_slot=0,
+    )
+    commands = mod._build_remote_commands(
+        shard=shard,
+        manifest_rel="scripts/parity/manifests/official_vs_worldflux_full_v2.yaml",
+        run_id="run_a",
+        s3_prefix="s3://bucket/run_a",
+        device="cuda",
+        max_retries=2,
+        workspace_root="/opt/parity",
+        bootstrap_root="/opt/parity/bootstrap",
+        worldflux_sha="",
+        dreamer_sha="dreamer_sha",
+        tdmpc2_sha="tdmpc2_sha",
+        sync_interval_sec=60,
+        resume_from_s3=True,
+        thread_limit_profile="strict1",
+        cpu_affinity_policy="p4d_8gpu_12vcpu",
+        skip_bootstrap=False,
+    )
+    joined = "\n".join(commands)
+    assert "third_party/dreamerv3_official" in joined
+    assert "git clone https://github.com/danijar/dreamerv3.git dreamerv3-official" not in joined
+    assert "python -m pip install -e .[proof-jax]" in joined

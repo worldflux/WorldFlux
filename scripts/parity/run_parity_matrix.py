@@ -33,6 +33,7 @@ from worldflux.parity import discover_artifacts, get_backend_adapter_registry, s
 _LEGACY_SUPPORTED_ADAPTERS: set[str] = {
     "official_dreamerv3",
     "official_tdmpc2",
+    "worldflux_dreamerv3_jax",
     "worldflux_dreamerv3_native",
     "worldflux_tdmpc2_native",
 }

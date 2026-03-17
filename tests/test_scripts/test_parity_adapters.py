@@ -39,6 +39,10 @@ def test_adapter_wrappers_emit_normalized_metrics(tmp_path: Path) -> None:
             ["--task-id", "atari100k_pong", "--seed", "0", "--steps", "1000", "--mock"],
         ),
         (
+            "worldflux_dreamerv3_jax.py",
+            ["--task-id", "atari100k_pong", "--seed", "0", "--steps", "1000", "--mock"],
+        ),
+        (
             "worldflux_tdmpc2_native.py",
             ["--task-id", "dog-run", "--seed", "0", "--steps", "1000", "--mock"],
         ),
@@ -191,3 +195,12 @@ def test_load_csv_curve_parses_numeric_strings(tmp_path: Path) -> None:
     assert points[0].value == 1.5
     assert points[1].step == 5000.0
     assert points[1].value == 2.75
+
+
+def test_worldflux_jax_wrapper_defaults_to_repo_local_runner() -> None:
+    root = _repo_root()
+    wrapper = root / "scripts" / "parity" / "wrappers" / "worldflux_dreamerv3_jax.py"
+    text = wrapper.read_text(encoding="utf-8")
+    assert "dreamer_worldflux_jax_runner.py" in text
+    assert "WORLDFLUX_DREAMER_JAX_TRAIN_COMMAND" not in text
+    assert "official_recipe_fallback" not in text
