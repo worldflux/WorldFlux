@@ -13,6 +13,7 @@ import typer
 from click.core import ParameterSource
 
 from worldflux.config_loader import load_config
+from worldflux.execution import resolve_proof_backend_defaults
 from worldflux.verify import ParityVerifier, VerifyResult
 
 from ._app import app, console
@@ -49,23 +50,6 @@ def _was_cli_option_provided(ctx: typer.Context, param_name: str) -> bool:
     return ctx.get_parameter_source(param_name) == ParameterSource.COMMANDLINE
 
 
-def _infer_canonical_verify_backend(
-    *,
-    baseline: str,
-    target: str,
-    proof_claim: str,
-) -> tuple[str, str]:
-    proof_mode_requested = str(proof_claim).strip().lower() in {"compare", "official_only"}
-    if not proof_mode_requested:
-        return ("native_torch", "")
-
-    baseline_value = str(baseline).strip().lower()
-    target_value = str(target).strip().lower()
-    if "tdmpc2" in baseline_value or target_value.startswith("tdmpc2"):
-        return ("official_tdmpc2_torch_subprocess", "proof_5m")
-    return ("official_dreamerv3_jax_subprocess", "official_xl")
-
-
 @app.command(rich_help_panel="Quality & Evaluation")
 def verify(
     ctx: typer.Context,
@@ -86,9 +70,15 @@ def verify(
         help="Synthetic demonstration mode for pitches and screenshots. Never use as proof.",
     ),
     device: str = typer.Option("cpu", "--device", help="Execution device."),
-    backend: str | None = typer.Option(None, "--backend", help="Execution backend override."),
+    backend: str | None = typer.Option(
+        None,
+        "--backend",
+        help="Execution backend override for proof mode. Quick mode stays local-native.",
+    ),
     backend_profile: str | None = typer.Option(
-        None, "--backend-profile", help="Backend profile override."
+        None,
+        "--backend-profile",
+        help="Backend profile override for proof mode.",
     ),
     allow_official_only: bool | None = typer.Option(
         None,
@@ -160,30 +150,24 @@ def verify(
     effective_proof_claim = proof_claim or "compare"
     baseline_provided = _was_cli_option_provided(ctx, "baseline")
     env_provided = _was_cli_option_provided(ctx, "env")
+    config_verify_raw: dict[str, Any] = {}
 
     if config_payload is not None:
+        raw_verify = config_payload.raw.get("verify", {})
+        if isinstance(raw_verify, dict):
+            config_verify_raw = raw_verify
         if not baseline_provided:
             effective_baseline = config_payload.verify.baseline
         if not env_provided:
             effective_env = config_payload.verify.env
-        if backend is None:
+        if backend is None and "backend" in config_verify_raw:
             effective_backend = config_payload.verify.backend
-        if backend_profile is None:
+        if backend_profile is None and "backend_profile" in config_verify_raw:
             effective_backend_profile = config_payload.verify.backend_profile
         if allow_official_only is None:
             effective_allow_official_only = config_payload.verify.allow_official_only
         if proof_claim is None:
             effective_proof_claim = config_payload.verify.proof_claim
-
-    if not str(effective_backend).strip():
-        inferred_backend, inferred_profile = _infer_canonical_verify_backend(
-            baseline=effective_baseline,
-            target=target,
-            proof_claim=effective_proof_claim,
-        )
-        effective_backend = inferred_backend
-        if not str(effective_backend_profile).strip():
-            effective_backend_profile = inferred_profile
 
     # Quality tier check mode
     if tier is not None:
@@ -197,6 +181,20 @@ def verify(
         config_mode=configured_mode,
         proof_claim=effective_proof_claim,
     )
+
+    if effective_mode == "proof":
+        inferred_family = ParityVerifier._infer_family(
+            baseline=effective_baseline,
+            target=target,
+        )
+        effective_backend, effective_backend_profile = resolve_proof_backend_defaults(
+            inferred_family,
+            backend=effective_backend or None,
+            backend_profile=effective_backend_profile or None,
+        )
+    else:
+        effective_backend = str(effective_backend or "native_torch").strip() or "native_torch"
+        effective_backend_profile = str(effective_backend_profile or "").strip()
 
     if effective_mode == "quick":
         _run_quick_verify(

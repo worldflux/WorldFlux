@@ -13,7 +13,20 @@ from worldflux.execution import (
     normalize_dreamer_official_batch_summary,
     normalize_parity_run_row,
     resolve_execution_manifest,
+    resolve_proof_backend_defaults,
 )
+
+
+def test_resolve_proof_backend_defaults_dreamer() -> None:
+    backend, profile = resolve_proof_backend_defaults("dreamer", backend=None, backend_profile="")
+    assert backend == "official_dreamerv3_jax_subprocess"
+    assert profile == "official_xl"
+
+
+def test_resolve_proof_backend_defaults_tdmpc2() -> None:
+    backend, profile = resolve_proof_backend_defaults("tdmpc2", backend=None, backend_profile="")
+    assert backend == "official_tdmpc2_torch_subprocess"
+    assert profile == "proof_5m"
 
 
 def test_resolve_execution_manifest_dreamer_bootstrap(tmp_path: Path) -> None:
