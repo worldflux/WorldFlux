@@ -22,8 +22,12 @@ from statistics import NormalDist, pstdev
 from typing import Any
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-if str(SCRIPT_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPT_DIR))
+REPO_ROOT = SCRIPT_DIR.parents[1]
+SRC_ROOT = REPO_ROOT / "src"
+for path in (SCRIPT_DIR, SRC_ROOT):
+    path_str = str(path)
+    if path_str not in sys.path:
+        sys.path.insert(0, path_str)
 
 from contract_schema import load_suite_contract
 from suite_registry import build_default_registry
@@ -633,17 +637,22 @@ def _run_one(
     for attempt in range(context.max_retries + 1):
         attempt_started = time.time()
         try:
-            proc = subprocess.run(
-                formatted_command,
-                cwd=str(formatted_cwd),
-                env=env,
-                capture_output=True,
-                text=True,
-                timeout=spec.timeout_sec,
-                check=False,
-            )
-            stdout_path.write_text(proc.stdout, encoding="utf-8")
-            stderr_path.write_text(proc.stderr, encoding="utf-8")
+            stdout_path.parent.mkdir(parents=True, exist_ok=True)
+            stderr_path.parent.mkdir(parents=True, exist_ok=True)
+            with (
+                open(stdout_path, "w", encoding="utf-8") as f_out,
+                open(stderr_path, "w", encoding="utf-8") as f_err,
+            ):
+                proc = subprocess.run(
+                    formatted_command,
+                    cwd=str(formatted_cwd),
+                    env=env,
+                    stdout=f_out,
+                    stderr=f_err,
+                    text=True,
+                    timeout=spec.timeout_sec,
+                    check=False,
+                )
 
             if proc.returncode == 0:
                 metrics = _load_metrics(metrics_path, task.required_metrics)
@@ -765,12 +774,19 @@ def _run_one(
                     )
                 return record
 
-            last_error = (
-                f"non-zero exit code ({proc.returncode}); stderr tail: "
-                f"{proc.stderr[-500:] if proc.stderr else '<empty>'}"
-            )
-            stderr_tail = proc.stderr[-2000:] if proc.stderr else ""
-            is_oom = any(
+            stderr_tail = ""
+            if stderr_path.exists():
+                raw = stderr_path.read_bytes()
+                stderr_tail = raw[-2000:].decode("utf-8", errors="replace")
+            stderr_preview = stderr_tail[-500:] if stderr_tail else "<empty>"
+            last_error = f"non-zero exit code ({proc.returncode}); stderr tail: {stderr_preview}"
+            # SIGKILL detection: when the Linux OOM-killer terminates a process,
+            # it sends SIGKILL (signal 9) which leaves no stderr trace.
+            # returncode == -9  : direct child received SIGKILL
+            # returncode == 137 : shell-wrapped 128+9
+            # returncode == 247 : Python SystemExit(-9) wraps to 256-9
+            is_signal_kill = proc.returncode in (-9, 137, 247)
+            is_oom = is_signal_kill or any(
                 marker in stderr_tail
                 for marker in (
                     "RESOURCE_EXHAUSTED",
@@ -781,7 +797,10 @@ def _run_one(
                 )
             )
             if is_oom:
-                last_error = f"OOM: {last_error}"
+                if is_signal_kill:
+                    last_error = f"OOM (SIGKILL, rc={proc.returncode}): {last_error}"
+                else:
+                    last_error = f"OOM: {last_error}"
                 if attempt < context.max_retries:
                     time.sleep(5)  # GPU memory reclaim grace period
         except Exception as exc:  # pragma: no cover - runtime guard

@@ -110,12 +110,56 @@ def test_dreamer_adapter_monitor_run_detects_latest_checkpoint(tmp_path: Path) -
         latest_dir.name, encoding="utf-8"
     )
     (latest_dir / "agent.pkl").write_text("x", encoding="utf-8")
+    (latest_dir / "replay.pkl").write_text("x", encoding="utf-8")
+    (latest_dir / "step.pkl").write_text("x", encoding="utf-8")
+    (latest_dir / "done").write_text("", encoding="utf-8")
 
     status = adapter.monitor_run(run_dir=run_root)
     assert status["config_present"] is True
     assert status["scores_present"] is True
     assert status["scores_lines"] == 2
     assert status["agent_present"] is True
+    assert status["replay_present"] is True
+    assert status["step_present"] is True
+    assert status["done_present"] is True
+
+
+def test_dreamer_adapters_collect_metrics_jsonl_in_artifact_manifest(tmp_path: Path) -> None:
+    run_root = tmp_path / "run"
+    latest_dir = run_root / "dreamerv3_logdir" / "ckpt" / "20260101T000000F000001"
+    latest_dir.mkdir(parents=True, exist_ok=True)
+    (run_root / "dreamerv3_logdir" / "config.yaml").write_text("x", encoding="utf-8")
+    (run_root / "dreamerv3_logdir" / "scores.jsonl").write_text("{}\n", encoding="utf-8")
+    (run_root / "dreamerv3_logdir" / "metrics.jsonl").write_text("{}\n", encoding="utf-8")
+    (run_root / "metrics.json").write_text("{}", encoding="utf-8")
+    (run_root / "dreamerv3_logdir" / "ckpt" / "latest").write_text(
+        latest_dir.name, encoding="utf-8"
+    )
+    (latest_dir / "agent.pkl").write_text("x", encoding="utf-8")
+    (latest_dir / "replay.pkl").write_text("x", encoding="utf-8")
+    (latest_dir / "step.pkl").write_text("x", encoding="utf-8")
+    (latest_dir / "done").write_text("", encoding="utf-8")
+
+    adapters = [
+        DreamerOfficialJAXSubprocessAdapter(),
+        DreamerWorldFluxJAXSubprocessAdapter(),
+    ]
+    for adapter in adapters:
+        manifest = adapter.collect_artifacts(
+            run_dir=run_root,
+            source_commit="deadbeef",
+            eval_protocol_hash="hash123",
+            command_argv=["python3", "-m", "launcher"],
+            recipe={"steps": 110000},
+        )
+        assert any(
+            path.endswith("dreamerv3_logdir/metrics.jsonl") for path in manifest.metrics_paths
+        )
+        assert any(path.endswith("metrics.json") for path in manifest.metrics_paths)
+        assert any(path.endswith("/agent.pkl") for path in manifest.checkpoint_paths)
+        assert any(path.endswith("/replay.pkl") for path in manifest.checkpoint_paths)
+        assert any(path.endswith("/step.pkl") for path in manifest.checkpoint_paths)
+        assert any(path.endswith("/done") for path in manifest.checkpoint_paths)
 
 
 def test_tdmpc2_adapter_monitor_run_detects_eval_and_checkpoint(tmp_path: Path) -> None:

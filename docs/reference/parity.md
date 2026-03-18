@@ -22,11 +22,12 @@ As of 2026-03-11, WorldFlux is intentionally not treating proof work as
   `official_dreamerv3_jax_subprocess` vs `worldflux_dreamerv3_jax_subprocess`.
   Statistical comparison still depends on the official-only reproducibility pass
   being stable enough to resume compare runs.
-- `create_world_model`, `Trainer`, `verify`, and `scaffold` still have
-  PyTorch-native assumptions and are not yet treated as fully
-  multi-backend-native product surfaces.
-- TD-MPC2 is not considered parity-complete yet; adapter work exists, but the
-  `official 5m` vs `WorldFlux 5m` architecture mismatch is still unresolved.
+- Product-facing factory/training surfaces now expose delegated backend handles
+  for family-native proof paths:
+  Dreamer defaults to the JAX subprocess family and TD-MPC2 defaults to the
+  Torch subprocess family when proof manifests are omitted.
+- TD-MPC2 is not parity-complete yet, but the aligned `proof_5m` path is now
+  conditionally runnable when a passing alignment report is available.
 
 WorldFlux only treats proof work as "100%" when all of the following are true:
 
@@ -71,6 +72,13 @@ Proof commands call `scripts/parity/*`, which is the canonical path for:
 - canonical profile matching (`dreamerv3:official_xl`, `tdmpc2:proof_5m`)
 - component match report gate when the suite requires it
 - final global verdict
+
+When `worldflux parity proof-run` or `worldflux parity proof` is called without
+an explicit manifest, WorldFlux resolves the family-native canonical backend by
+default:
+
+- Dreamer: `official_dreamerv3_jax_subprocess`
+- TD-MPC2: `official_tdmpc2_torch_subprocess`
 
 ### Run Matrix
 
@@ -117,8 +125,8 @@ phase.
 
 - DreamerV3 is currently in `official-only` reproducibility hardening before
   active WorldFlux comparison resumes.
-- TD-MPC2 remains on the proof roadmap, but unresolved architecture mismatch
-  means a runnable manifest alone is not a final parity claim.
+- TD-MPC2 remains on the proof roadmap. An aligned `proof_5m` path is runnable,
+  but that alone is not yet a final public parity claim.
 
 ## Campaign Helpers (Reproducible Exports)
 

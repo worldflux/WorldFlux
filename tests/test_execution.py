@@ -116,6 +116,41 @@ def test_resolve_execution_manifest_tdmpc2_compare_allowed_when_alignment_report
     assert resolution.manifest_path == manifest_path.resolve()
 
 
+def test_executor_blocks_tdmpc2_train_even_when_alignment_report_passes(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    scripts_root = tmp_path / "scripts" / "parity"
+    (scripts_root / "manifests").mkdir(parents=True, exist_ok=True)
+    report_path = tmp_path / "alignment.json"
+    report_path.write_text(json.dumps({"status": "aligned"}), encoding="utf-8")
+    monkeypatch.setenv("WORLDFLUX_TDMPC2_ALIGNMENT_REPORT", str(report_path))
+
+    executor = ParityBackedExecutor(repo_root=tmp_path, scripts_root=scripts_root)
+    request = BackendExecutionRequest(
+        backend="official_tdmpc2_torch_subprocess",
+        family="tdmpc2",
+        mode="train",
+        target="tdmpc2:proof_5m",
+        baseline="official/tdmpc2",
+        task_filter="walker-run",
+        env="dmcontrol/walker-run",
+        seed_list=[0],
+        device="cpu",
+        profile="proof_5m",
+        run_id="train_tdmpc2_0",
+    )
+
+    result = executor.execute(request)
+
+    assert result.status == "blocked"
+    assert result.reason_code == "backend_unsupported"
+    assert result.backend == "official_tdmpc2_torch_subprocess"
+    assert result.family == "tdmpc2"
+    assert result.mode == "train"
+    assert result.proof_phase == "official_only"
+
+
 def test_normalize_dreamer_official_batch_summary_marks_incomplete_below_locked_minimum(
     tmp_path: Path,
 ) -> None:
@@ -187,6 +222,98 @@ def test_normalize_parity_run_row_success() -> None:
 
 def test_normalize_distributed_proof_summary_marks_success(tmp_path: Path) -> None:
     eq_json = tmp_path / "equivalence_report.json"
+    coverage_json = tmp_path / "coverage_report.json"
+    phase_progress = tmp_path / "phase_progress.json"
+    validity_json = tmp_path / "validity_report.json"
+    merge_summary = tmp_path / "merge_summary.json"
+    markdown_report = tmp_path / "equivalence_report.md"
+    evidence_bundle = tmp_path / "evidence_bundle.zip"
+    eq_json.write_text(
+        json.dumps({"global": {"parity_pass_final": True, "validity_pass": True}}),
+        encoding="utf-8",
+    )
+    coverage_json.write_text('{"pass": true, "missing_pairs": 0}', encoding="utf-8")
+    phase_progress.write_text('{"proof_phase": "compare"}', encoding="utf-8")
+    validity_json.write_text('{"pass": true}', encoding="utf-8")
+    merge_summary.write_text('{"merged_records": 2}', encoding="utf-8")
+    markdown_report.write_text("# report\n", encoding="utf-8")
+    markdown_report.write_text("# report\n", encoding="utf-8")
+    markdown_report.write_text("# report\n", encoding="utf-8")
+    markdown_report.write_text("# report\n", encoding="utf-8")
+    evidence_bundle.write_text("zip", encoding="utf-8")
+    summary = {
+        "run_id": "proof_run",
+        "manifest": "/tmp/manifest.yaml",
+        "failed_shards": 0,
+        "coverage": {"pass": True, "missing_pairs": 0, "rerun_command": ""},
+        "artifacts": {
+            "equivalence_report": str(eq_json),
+            "equivalence_markdown": str(markdown_report),
+            "coverage_report": str(coverage_json),
+            "phase_progress": str(phase_progress),
+            "validity_report": str(validity_json),
+            "merge_summary": str(merge_summary),
+            "evidence_bundle": str(evidence_bundle),
+        },
+        "errors": {"stats_or_report": ""},
+    }
+    summary_path = tmp_path / "orchestrator_summary.json"
+    result = normalize_distributed_proof_summary(summary, summary_path=summary_path)
+    assert result.status == "succeeded"
+    assert result.reason_code == "none"
+    assert result.proof_phase == "compare"
+    assert result.evidence_bundle == str(evidence_bundle.resolve())
+
+
+def test_normalize_distributed_proof_summary_prefers_declared_evidence_bundle_path(
+    tmp_path: Path,
+) -> None:
+    eq_json = tmp_path / "equivalence_report.json"
+    coverage_json = tmp_path / "coverage_report.json"
+    phase_progress = tmp_path / "phase_progress.json"
+    validity_json = tmp_path / "validity_report.json"
+    merge_summary = tmp_path / "merge_summary.json"
+    markdown_report = tmp_path / "equivalence_report.md"
+    evidence_bundle = tmp_path / "nested" / "proof_bundle.zip"
+    evidence_bundle.parent.mkdir(parents=True, exist_ok=True)
+    eq_json.write_text(
+        json.dumps({"global": {"parity_pass_final": True, "validity_pass": True}}),
+        encoding="utf-8",
+    )
+    coverage_json.write_text('{"pass": true, "missing_pairs": 0}', encoding="utf-8")
+    phase_progress.write_text('{"proof_phase": "compare"}', encoding="utf-8")
+    validity_json.write_text('{"pass": true}', encoding="utf-8")
+    merge_summary.write_text('{"merged_records": 2}', encoding="utf-8")
+    markdown_report.write_text("# report\n", encoding="utf-8")
+    evidence_bundle.write_text("zip", encoding="utf-8")
+    summary = {
+        "run_id": "proof_run",
+        "manifest": "/tmp/manifest.yaml",
+        "failed_shards": 0,
+        "coverage": {"pass": True, "missing_pairs": 0, "rerun_command": ""},
+        "artifacts": {
+            "equivalence_report": str(eq_json),
+            "equivalence_markdown": str(markdown_report),
+            "coverage_report": str(coverage_json),
+            "phase_progress": str(phase_progress),
+            "validity_report": str(validity_json),
+            "merge_summary": str(merge_summary),
+            "evidence_bundle": str(evidence_bundle),
+        },
+        "errors": {"stats_or_report": ""},
+    }
+    summary_path = tmp_path / "orchestrator_summary.json"
+    result = normalize_distributed_proof_summary(summary, summary_path=summary_path)
+
+    assert result.status == "succeeded"
+    assert result.evidence_bundle == str(evidence_bundle.resolve())
+
+
+def test_normalize_distributed_proof_summary_requires_coverage_and_phase_progress_artifacts(
+    tmp_path: Path,
+) -> None:
+    eq_json = tmp_path / "equivalence_report.json"
+    markdown_report = tmp_path / "equivalence_report.md"
     eq_json.write_text(
         json.dumps({"global": {"parity_pass_final": True, "validity_pass": True}}),
         encoding="utf-8",
@@ -198,15 +325,188 @@ def test_normalize_distributed_proof_summary_marks_success(tmp_path: Path) -> No
         "coverage": {"pass": True, "missing_pairs": 0, "rerun_command": ""},
         "artifacts": {
             "equivalence_report": str(eq_json),
-            "equivalence_markdown": str(tmp_path / "equivalence_report.md"),
+            "equivalence_markdown": str(markdown_report),
+            "coverage_report": str(tmp_path / "coverage_report.json"),
+            "phase_progress": str(tmp_path / "phase_progress.json"),
         },
         "errors": {"stats_or_report": ""},
     }
     summary_path = tmp_path / "orchestrator_summary.json"
     result = normalize_distributed_proof_summary(summary, summary_path=summary_path)
-    assert result.status == "succeeded"
-    assert result.reason_code == "none"
-    assert result.proof_phase == "compare"
+
+    assert result.status == "failed"
+    assert result.reason_code == "artifact_missing"
+    assert "coverage_report.json" in result.message or "phase_progress.json" in result.message
+
+
+def test_normalize_distributed_proof_summary_requires_evidence_bundle(
+    tmp_path: Path,
+) -> None:
+    eq_json = tmp_path / "equivalence_report.json"
+    coverage_json = tmp_path / "coverage_report.json"
+    phase_progress = tmp_path / "phase_progress.json"
+    validity_json = tmp_path / "validity_report.json"
+    merge_summary = tmp_path / "merge_summary.json"
+    markdown_report = tmp_path / "equivalence_report.md"
+    eq_json.write_text(
+        json.dumps({"global": {"parity_pass_final": True, "validity_pass": True}}),
+        encoding="utf-8",
+    )
+    coverage_json.write_text('{"pass": true, "missing_pairs": 0}', encoding="utf-8")
+    phase_progress.write_text('{"proof_phase": "compare"}', encoding="utf-8")
+    validity_json.write_text('{"pass": true}', encoding="utf-8")
+    merge_summary.write_text('{"merged_records": 2}', encoding="utf-8")
+    markdown_report.write_text("# report\n", encoding="utf-8")
+    summary = {
+        "run_id": "proof_run",
+        "manifest": "/tmp/manifest.yaml",
+        "failed_shards": 0,
+        "coverage": {"pass": True, "missing_pairs": 0, "rerun_command": ""},
+        "artifacts": {
+            "equivalence_report": str(eq_json),
+            "equivalence_markdown": str(markdown_report),
+            "coverage_report": str(coverage_json),
+            "phase_progress": str(phase_progress),
+            "validity_report": str(validity_json),
+            "merge_summary": str(merge_summary),
+            "evidence_bundle": str(tmp_path / "evidence_bundle.zip"),
+        },
+        "errors": {"stats_or_report": ""},
+    }
+    summary_path = tmp_path / "orchestrator_summary.json"
+    result = normalize_distributed_proof_summary(summary, summary_path=summary_path)
+
+    assert result.status == "failed"
+    assert result.reason_code == "artifact_missing"
+    assert "evidence_bundle.zip" in result.message
+
+
+def test_normalize_distributed_proof_summary_requires_validity_and_component_match(
+    tmp_path: Path,
+) -> None:
+    eq_json = tmp_path / "equivalence_report.json"
+    coverage_json = tmp_path / "coverage_report.json"
+    phase_progress = tmp_path / "phase_progress.json"
+    validity_json = tmp_path / "validity_report.json"
+    merge_summary = tmp_path / "merge_summary.json"
+    markdown_report = tmp_path / "equivalence_report.md"
+    eq_json.write_text(
+        json.dumps(
+            {
+                "global": {
+                    "parity_pass_final": True,
+                    "validity_pass": False,
+                    "component_match_pass": False,
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    coverage_json.write_text('{"pass": true, "missing_pairs": 0}', encoding="utf-8")
+    phase_progress.write_text('{"proof_phase": "compare"}', encoding="utf-8")
+    validity_json.write_text('{"pass": false}', encoding="utf-8")
+    merge_summary.write_text('{"merged_records": 2}', encoding="utf-8")
+    markdown_report.write_text("# report\n", encoding="utf-8")
+    summary = {
+        "run_id": "proof_run",
+        "manifest": "/tmp/manifest.yaml",
+        "failed_shards": 0,
+        "coverage": {"pass": True, "missing_pairs": 0, "rerun_command": ""},
+        "artifacts": {
+            "equivalence_report": str(eq_json),
+            "equivalence_markdown": str(markdown_report),
+            "coverage_report": str(coverage_json),
+            "phase_progress": str(phase_progress),
+            "validity_report": str(validity_json),
+            "merge_summary": str(merge_summary),
+        },
+        "errors": {"stats_or_report": ""},
+    }
+    summary_path = tmp_path / "orchestrator_summary.json"
+    result = normalize_distributed_proof_summary(summary, summary_path=summary_path)
+
+    assert result.status == "failed"
+    assert result.reason_code == "validity_failed"
+    assert result.metrics["parity_pass_final"] is True
+    assert result.metrics["validity_pass"] is False
+    assert result.metrics["component_match_pass"] is False
+
+
+def test_normalize_distributed_proof_summary_requires_validity_and_merge_summary_artifacts(
+    tmp_path: Path,
+) -> None:
+    eq_json = tmp_path / "equivalence_report.json"
+    coverage_json = tmp_path / "coverage_report.json"
+    phase_progress = tmp_path / "phase_progress.json"
+    eq_json.write_text(
+        json.dumps({"global": {"parity_pass_final": True, "validity_pass": True}}),
+        encoding="utf-8",
+    )
+    coverage_json.write_text('{"pass": true, "missing_pairs": 0}', encoding="utf-8")
+    phase_progress.write_text('{"proof_phase": "compare"}', encoding="utf-8")
+    summary = {
+        "run_id": "proof_run",
+        "manifest": "/tmp/manifest.yaml",
+        "failed_shards": 0,
+        "coverage": {"pass": True, "missing_pairs": 0, "rerun_command": ""},
+        "artifacts": {
+            "equivalence_report": str(eq_json),
+            "equivalence_markdown": str(tmp_path / "equivalence_report.md"),
+            "coverage_report": str(coverage_json),
+            "phase_progress": str(phase_progress),
+            "validity_report": str(tmp_path / "validity_report.json"),
+            "merge_summary": str(tmp_path / "merge_summary.json"),
+        },
+        "errors": {"stats_or_report": ""},
+    }
+    summary_path = tmp_path / "orchestrator_summary.json"
+    result = normalize_distributed_proof_summary(summary, summary_path=summary_path)
+
+    assert result.status == "failed"
+    assert result.reason_code == "artifact_missing"
+    assert "validity_report.json" in result.message or "merge_summary.json" in result.message
+
+
+def test_normalize_distributed_proof_summary_requires_equivalence_markdown(
+    tmp_path: Path,
+) -> None:
+    eq_json = tmp_path / "equivalence_report.json"
+    coverage_json = tmp_path / "coverage_report.json"
+    phase_progress = tmp_path / "phase_progress.json"
+    validity_json = tmp_path / "validity_report.json"
+    merge_summary = tmp_path / "merge_summary.json"
+    evidence_bundle = tmp_path / "evidence_bundle.zip"
+    eq_json.write_text(
+        json.dumps({"global": {"parity_pass_final": True, "validity_pass": True}}),
+        encoding="utf-8",
+    )
+    coverage_json.write_text('{"pass": true, "missing_pairs": 0}', encoding="utf-8")
+    phase_progress.write_text('{"proof_phase": "compare"}', encoding="utf-8")
+    validity_json.write_text('{"pass": true}', encoding="utf-8")
+    merge_summary.write_text('{"merged_records": 2}', encoding="utf-8")
+    evidence_bundle.write_text("zip", encoding="utf-8")
+    summary = {
+        "run_id": "proof_run",
+        "manifest": "/tmp/manifest.yaml",
+        "failed_shards": 0,
+        "coverage": {"pass": True, "missing_pairs": 0, "rerun_command": ""},
+        "artifacts": {
+            "equivalence_report": str(eq_json),
+            "equivalence_markdown": str(tmp_path / "equivalence_report.md"),
+            "coverage_report": str(coverage_json),
+            "phase_progress": str(phase_progress),
+            "validity_report": str(validity_json),
+            "merge_summary": str(merge_summary),
+            "evidence_bundle": str(evidence_bundle),
+        },
+        "errors": {"stats_or_report": ""},
+    }
+    summary_path = tmp_path / "orchestrator_summary.json"
+    result = normalize_distributed_proof_summary(summary, summary_path=summary_path)
+
+    assert result.status == "failed"
+    assert result.reason_code == "artifact_missing"
+    assert "equivalence_report.md" in result.message
 
 
 def test_executor_blocks_dreamer_compare_without_bootstrap_summary(tmp_path: Path) -> None:

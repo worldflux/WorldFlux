@@ -10,7 +10,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Protocol
 
-from .backend_policy import DREAMER_MIN_LOCKED_SEEDS
+from .backend_policy import (
+    DREAMER_MIN_LOCKED_SEEDS,
+    _resolve_tdmpc2_alignment_report,
+    _tdmpc2_alignment_status,
+)
 from .contracts import BackendExecutionRequest, BackendExecutionResult
 from .manifest_routing import resolve_execution_manifest
 
@@ -258,6 +262,29 @@ class ParityBackedExecutor:
             ).resolve()
             return self._execute_dreamer_bootstrap(request, manifest_path=manifest_path)
         if request.family == "tdmpc2":
+            report_path = _resolve_tdmpc2_alignment_report(request)
+            report_status = _tdmpc2_alignment_status(report_path)
+            if (
+                str(request.profile or "").strip().lower() == "proof_5m"
+                and report_status == "aligned"
+            ):
+                return BackendExecutionResult(
+                    status="blocked",
+                    reason_code="backend_unsupported",
+                    message=(
+                        "TD-MPC2 proof_5m alignment passed, but delegated training execution "
+                        "is not implemented yet."
+                    ),
+                    backend=request.backend,
+                    family=request.family,
+                    mode=request.mode,
+                    proof_phase="official_only",
+                    profile=request.profile,
+                    run_id=request.run_id,
+                    manifest_path=str(report_path) if report_path is not None else None,
+                    metrics={"alignment_status": report_status},
+                    next_action="Use native_torch local training until TD-MPC2 delegated execution is implemented.",
+                )
             return BackendExecutionResult(
                 status="blocked",
                 reason_code="tdmpc2_architecture_mismatch_open",

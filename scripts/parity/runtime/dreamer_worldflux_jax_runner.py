@@ -6,9 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
 import sys
-import sysconfig
 from pathlib import Path
 
 RUNTIME_ROOT = Path(__file__).resolve().parent
@@ -28,6 +26,14 @@ from common import (  # noqa: E402
 )
 from dreamer_official_recipe import OFFICIAL_DREAMER_ATARI100K_RECIPE  # noqa: E402
 
+from worldflux.backends.jax.dreamerv3 import (  # noqa: E402
+    DreamerJAXRuntimeConfig,
+    build_launcher_command,
+    build_proof_metadata,
+    official_runtime_env,
+    resolve_official_repo_root,
+    validate_required_artifacts,
+)
 from worldflux.parity import get_backend_adapter_registry  # noqa: E402
 
 _ADAPTER_ID = "worldflux_dreamerv3_jax_subprocess"
@@ -73,58 +79,23 @@ def _eval_protocol_hash(
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
-def _official_env(*, repo_root: Path) -> dict[str, str]:
-    purelib = Path(sysconfig.get_paths().get("purelib", "")).resolve()
-    vendor_root = _resolve_official_repo_root(
-        argparse.Namespace(repo_root=repo_root, official_repo_root=None)
-    )
-    pythonpath_parts = [
-        str(purelib),
-        str(vendor_root.resolve()),
-    ]
-    env_parts = []
-    seen: set[str] = set()
-    for part in pythonpath_parts:
-        if part and part not in seen:
-            env_parts.append(part)
-            seen.add(part)
-    if os.environ.get("PYTHONPATH"):
-        for part in os.environ["PYTHONPATH"].split(os.pathsep):
-            part = part.strip()
-            if part and part not in seen:
-                env_parts.append(part)
-                seen.add(part)
-    return {"PYTHONPATH": os.pathsep.join(env_parts)}
-
-
 def _resolve_official_repo_root(args: argparse.Namespace) -> Path:
-    if args.official_repo_root is not None:
-        return args.official_repo_root.resolve()
-    return (args.repo_root.resolve() / "third_party" / "dreamerv3_official").resolve()
+    return resolve_official_repo_root(args.repo_root, args.official_repo_root)
 
 
 def _build_command(args: argparse.Namespace) -> list[str]:
     official_repo_root = _resolve_official_repo_root(args)
-    python_executable = str(getattr(args, "python_executable", sys.executable))
-    logdir = args.run_dir.resolve() / "dreamerv3_logdir"
-    return [
-        python_executable,
-        str((official_repo_root / "dreamerv3" / "main.py").resolve()),
-        "--logdir",
-        str(logdir.resolve()),
-        "--configs",
-        "atari100k",
-        "--task",
-        str(args.task_id),
-        "--seed",
-        str(int(args.seed)),
-        "--run.steps",
-        str(int(args.steps)),
-        "--jax.platform",
-        "cpu" if str(args.device).lower() == "cpu" else "cuda",
-        "--logger.outputs",
-        "jsonl",
-    ]
+    runtime_config = DreamerJAXRuntimeConfig(
+        repo_root=args.repo_root.resolve(),
+        official_repo_root=official_repo_root,
+        run_dir=args.run_dir.resolve(),
+        task_id=str(args.task_id),
+        seed=int(args.seed),
+        steps=int(args.steps),
+        device=str(args.device),
+        python_executable=str(getattr(args, "python_executable", sys.executable)),
+    )
+    return build_launcher_command(runtime_config)
 
 
 def main() -> int:
@@ -141,9 +112,9 @@ def main() -> int:
     command = _build_command(args)
     completed = run_command(
         command,
-        cwd=official_repo_root,
+        cwd=repo_root,
         timeout_sec=args.timeout_sec if args.timeout_sec > 0 else None,
-        env=_official_env(repo_root=official_repo_root),
+        env=official_runtime_env(repo_root=repo_root, official_repo_root=official_repo_root),
     )
     if completed.returncode != 0:
         print(completed.stdout)
@@ -153,11 +124,16 @@ def main() -> int:
     scores_file = args.scores_file
     if scores_file is None:
         scores_file = find_latest_file(
-            [run_dir, official_repo_root],
+            [run_dir],
             ["scores.jsonl", "metrics.jsonl"],
         )
     if scores_file is None or not scores_file.exists():
         raise SystemExit("could not locate DreamerV3 score logs (scores.jsonl/metrics.jsonl)")
+
+    try:
+        validate_required_artifacts(run_dir)
+    except RuntimeError as exc:
+        raise SystemExit(str(exc)) from exc
 
     points = load_jsonl_curve(
         scores_file,
@@ -191,30 +167,24 @@ def main() -> int:
         points=points,
         final_return_mean=curve_final_mean(points, args.eval_window),
         auc_return=curve_auc(points),
-        metadata={
-            "mode": "worldflux_jax",
-            "env_backend": "gymnasium",
-            "backend_kind": artifact_manifest.backend_kind,
-            "adapter_id": artifact_manifest.adapter_id,
-            "recipe_hash": artifact_manifest.recipe_hash,
-            "model_id": "dreamerv3:official_xl",
-            "model_profile": "official_xl",
-            "official_recipe": OFFICIAL_DREAMER_ATARI100K_RECIPE.to_metadata(),
-            "effective_recipe": recipe,
-            "artifact_manifest": artifact_manifest.to_dict(),
-            "repo_root": str(repo_root),
-            "official_repo_root": str(official_repo_root),
-            "scores_file": str(scores_file),
-            "command": command,
-            "command_source": "repo_local_runner",
-            "stdout_tail": completed.stdout[-1000:],
-            "stderr_tail": completed.stderr[-1000:],
-            "policy_mode": "parity_candidate",
-            "policy_impl": "worldflux_dreamerv3_jax_candidate",
-            "framework_mode": "shared_jax_subprocess",
-            "eval_protocol_hash": eval_protocol_hash,
-            "implementation_source": "repo_local_worldflux_jax_runner",
-        },
+        metadata=build_proof_metadata(
+            task_id=str(args.task_id),
+            seed=int(args.seed),
+            device=str(args.device),
+            steps=int(args.steps),
+            eval_interval=int(args.eval_interval),
+            eval_episodes=int(args.eval_episodes),
+            eval_window=int(args.eval_window),
+            recipe_hash=artifact_manifest.recipe_hash,
+            backend_kind=artifact_manifest.backend_kind,
+            adapter_id=artifact_manifest.adapter_id,
+            artifact_manifest=artifact_manifest.to_dict(),
+            command=list(command),
+            repo_root=repo_root,
+            scores_file=scores_file,
+            stdout_tail=completed.stdout[-1000:],
+            stderr_tail=completed.stderr[-1000:],
+        ),
     )
     print(json.dumps(payload, indent=2, sort_keys=True))
     return 0

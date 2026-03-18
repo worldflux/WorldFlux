@@ -31,6 +31,13 @@ DEFAULT_TOTAL_STEPS = 100000
 DEFAULT_BATCH_SIZE = 16
 
 
+def _default_verify_settings(model_type: str) -> tuple[str, str, str]:
+    normalized = str(model_type).strip().lower()
+    if normalized == "tdmpc2":
+        return ("official/tdmpc2", "official_tdmpc2_torch_subprocess", "proof_5m")
+    return ("official/dreamerv3", "official_dreamerv3_jax_subprocess", "official_xl")
+
+
 def _validate_context_with_pydantic(context: dict[str, Any]) -> dict[str, Any] | None:
     try:
         from pydantic import BaseModel, StrictInt, StrictStr, ValidationError
@@ -157,9 +164,17 @@ def _validate_context(context: dict[str, Any]) -> None:
     context["training_backend"] = training_backend or "native_torch"
     context["training_backend_profile"] = str(context.get("training_backend_profile", "")).strip()
 
-    verify_backend = str(context.get("verify_backend", "native_torch")).strip()
-    context["verify_backend"] = verify_backend or "native_torch"
-    context["verify_backend_profile"] = str(context.get("verify_backend_profile", "")).strip()
+    (
+        default_verify_baseline,
+        default_verify_backend,
+        default_verify_profile,
+    ) = _default_verify_settings(model_type)
+    verify_baseline = str(context.get("verify_baseline", "")).strip()
+    context["verify_baseline"] = verify_baseline or default_verify_baseline
+    verify_backend = str(context.get("verify_backend", "")).strip()
+    context["verify_backend"] = verify_backend or default_verify_backend
+    verify_backend_profile = str(context.get("verify_backend_profile", "")).strip()
+    context["verify_backend_profile"] = verify_backend_profile or default_verify_profile
     context["verify_mode"] = str(context.get("verify_mode", "auto")).strip() or "auto"
     context["verify_proof_claim"] = (
         str(context.get("verify_proof_claim", "compare")).strip() or "compare"
