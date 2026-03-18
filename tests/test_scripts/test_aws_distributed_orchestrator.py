@@ -187,6 +187,7 @@ def test_aws_distributed_orchestrator_wait_mode_with_mocked_aws(
                     "parity_pass_primary": True,
                     "parity_pass_all_metrics": True,
                     "parity_pass_final": True,
+                    "validity_pass": True,
                     "missing_pairs": 0,
                     "strict_mode_failed": False,
                 },
@@ -259,10 +260,13 @@ def test_aws_distributed_orchestrator_wait_mode_with_mocked_aws(
 
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
     assert summary["failed_shards"] == 0
+    assert summary["artifacts"]["manifest"] == str(manifest_path.resolve())
     assert Path(summary["artifacts"]["equivalence_report"]).exists()
     assert Path(summary["artifacts"]["coverage_report"]).exists()
+    assert Path(summary["artifacts"]["evidence_bundle"]).exists()
     assert summary["timing"]["timeout_risk"] in {"low", "medium", "high"}
     assert summary["execution_result"]["status"] in {"succeeded", "failed", "incomplete", "running"}
+    assert summary["execution_result"]["evidence_bundle"] == summary["artifacts"]["evidence_bundle"]
 
 
 def test_aws_distributed_orchestrator_emits_rerun_manifest_on_missing_pairs(

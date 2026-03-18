@@ -27,6 +27,7 @@ if str(RUNTIME_ROOT) not in sys.path:
 
 from runtime.dreamer_official_recipe import OFFICIAL_DREAMER_ATARI100K_RECIPE  # noqa: E402
 
+from worldflux.backends.jax.dreamerv3 import build_proof_metadata  # noqa: E402
 from worldflux.parity import stable_recipe_hash  # noqa: E402
 
 _ADAPTER_ID = "worldflux_dreamerv3_jax_subprocess"
@@ -133,26 +134,32 @@ def main() -> int:
             final_return_mean=curve_final_mean(points, args.eval_window),
             auc_return=curve_auc(points),
             metadata={
+                **build_proof_metadata(
+                    task_id=str(args.task_id),
+                    seed=int(args.seed),
+                    device=str(args.device),
+                    steps=int(args.steps),
+                    eval_interval=int(args.eval_interval),
+                    eval_episodes=int(args.eval_episodes),
+                    eval_window=int(args.eval_window),
+                    recipe_hash=stable_recipe_hash(recipe),
+                    backend_kind="jax_subprocess",
+                    adapter_id=_ADAPTER_ID,
+                    artifact_manifest={
+                        "adapter_id": _ADAPTER_ID,
+                        "backend_kind": "jax_subprocess",
+                        "recipe_hash": stable_recipe_hash(recipe),
+                        "checkpoint_paths": [],
+                        "score_paths": [],
+                        "metrics_paths": [str(args.metrics_out)],
+                    },
+                    command=[],
+                    repo_root=Path(".").resolve(),
+                    scores_file=args.metrics_out,
+                    stdout_tail="",
+                    stderr_tail="",
+                ),
                 "mode": "mock",
-                "env_backend": "gymnasium",
-                "backend_kind": "jax_subprocess",
-                "adapter_id": _ADAPTER_ID,
-                "recipe_hash": stable_recipe_hash(recipe),
-                "model_id": "dreamerv3:official_xl",
-                "model_profile": "official_xl",
-                "official_recipe": OFFICIAL_DREAMER_ATARI100K_RECIPE.to_metadata(),
-                "effective_recipe": recipe,
-                "artifact_manifest": {
-                    "adapter_id": _ADAPTER_ID,
-                    "backend_kind": "jax_subprocess",
-                    "recipe_hash": stable_recipe_hash(recipe),
-                    "checkpoint_paths": [],
-                    "score_paths": [],
-                    "metrics_paths": [str(args.metrics_out)],
-                },
-                "policy_mode": "parity_candidate",
-                "policy_impl": "worldflux_dreamerv3_jax_candidate",
-                "framework_mode": "shared_jax_subprocess",
                 "command_source": "mock",
                 "eval_protocol_hash": eval_protocol_hash,
             },

@@ -9,18 +9,11 @@ import json
 import sys
 from pathlib import Path
 
-import torch
 from common import CurvePoint, curve_auc, curve_final_mean, deterministic_mock_curve, write_metrics
 
 RUNTIME_ROOT = Path(__file__).resolve().parents[1]
 if str(RUNTIME_ROOT) not in sys.path:
     sys.path.insert(0, str(RUNTIME_ROOT))
-
-from runtime.atari_env import AtariEnvError  # noqa: E402
-from runtime.dmcontrol_env import DMControlEnvError  # noqa: E402
-from runtime.dreamer_native_agent import DreamerNativeRunConfig, run_dreamer_native  # noqa: E402
-from runtime.dreamer_official_recipe import OFFICIAL_DREAMER_ATARI100K_RECIPE  # noqa: E402
-from runtime.tdmpc2_native_agent import TDMPC2NativeRunConfig, run_tdmpc2_native  # noqa: E402
 
 
 def _parse_args() -> argparse.Namespace:
@@ -82,11 +75,17 @@ def _parse_args() -> argparse.Namespace:
 
 
 def _resolve_device(requested: str) -> str:
-    if requested == "auto":
-        return "cuda" if torch.cuda.is_available() else "cpu"
-    if requested.startswith("cuda") and not torch.cuda.is_available():
+    normalized = str(requested).strip().lower()
+    if normalized == "cpu":
         return "cpu"
-    return requested
+
+    import torch
+
+    if normalized == "auto":
+        return "cuda" if torch.cuda.is_available() else "cpu"
+    if normalized.startswith("cuda") and not torch.cuda.is_available():
+        return "cpu"
+    return normalized
 
 
 def _resolve_backend(family: str, backend: str) -> str:
@@ -165,6 +164,12 @@ def main() -> int:
         )
         print(json.dumps(payload, indent=2, sort_keys=True))
         return 0
+
+    from runtime.atari_env import AtariEnvError
+    from runtime.dmcontrol_env import DMControlEnvError
+    from runtime.dreamer_native_agent import DreamerNativeRunConfig, run_dreamer_native
+    from runtime.dreamer_official_recipe import OFFICIAL_DREAMER_ATARI100K_RECIPE
+    from runtime.tdmpc2_native_agent import TDMPC2NativeRunConfig, run_tdmpc2_native
 
     try:
         if args.family == "dreamerv3":

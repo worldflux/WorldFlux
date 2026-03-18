@@ -22,8 +22,12 @@ from statistics import NormalDist, pstdev
 from typing import Any
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-if str(SCRIPT_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPT_DIR))
+REPO_ROOT = SCRIPT_DIR.parents[1]
+SRC_ROOT = REPO_ROOT / "src"
+for path in (SCRIPT_DIR, SRC_ROOT):
+    path_str = str(path)
+    if path_str not in sys.path:
+        sys.path.insert(0, path_str)
 
 from contract_schema import load_suite_contract
 from suite_registry import build_default_registry

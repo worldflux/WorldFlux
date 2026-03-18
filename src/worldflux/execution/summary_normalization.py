@@ -222,6 +222,12 @@ def normalize_distributed_proof_summary(
     errors = summary.get("errors", {}) if isinstance(summary.get("errors"), dict) else {}
     failed_shards = int(summary.get("failed_shards", 0) or 0)
     equivalence_report_raw = str(artifacts.get("equivalence_report", "")).strip()
+    coverage_report_raw = str(artifacts.get("coverage_report", "")).strip()
+    phase_progress_raw = str(artifacts.get("phase_progress", "")).strip()
+    validity_report_raw = str(artifacts.get("validity_report", "")).strip()
+    merge_summary_raw = str(artifacts.get("merge_summary", "")).strip()
+    equivalence_markdown_raw = str(artifacts.get("equivalence_markdown", "")).strip()
+    evidence_bundle_raw = str(artifacts.get("evidence_bundle", "")).strip()
     coverage_pass = bool(coverage.get("pass", False))
     missing_pairs = int(coverage.get("missing_pairs", 0) or 0)
     stats_error = str(errors.get("stats_or_report", "")).strip()
@@ -231,6 +237,11 @@ def normalize_distributed_proof_summary(
         "failed_shards": failed_shards,
         "missing_pairs": missing_pairs,
         "coverage_pass": coverage_pass,
+        "coverage_report_present": bool(coverage_report_raw),
+        "phase_progress_present": bool(phase_progress_raw),
+        "validity_report_present": bool(validity_report_raw),
+        "merge_summary_present": bool(merge_summary_raw),
+        "equivalence_markdown_present": bool(equivalence_markdown_raw),
     }
 
     summary_path_value = str(summary_path.resolve()) if summary_path is not None else None
@@ -316,6 +327,51 @@ def normalize_distributed_proof_summary(
             next_action="Rebuild proof reports.",
         )
 
+    missing_artifacts: list[str] = []
+    coverage_report_path = Path(coverage_report_raw) if coverage_report_raw else None
+    phase_progress_path = Path(phase_progress_raw) if phase_progress_raw else None
+    validity_report_path = Path(validity_report_raw) if validity_report_raw else None
+    merge_summary_path = Path(merge_summary_raw) if merge_summary_raw else None
+    equivalence_markdown_path = Path(equivalence_markdown_raw) if equivalence_markdown_raw else None
+    if coverage_report_path is None or not coverage_report_path.exists():
+        missing_artifacts.append("coverage_report.json")
+    if phase_progress_path is None or not phase_progress_path.exists():
+        missing_artifacts.append("phase_progress.json")
+    if validity_report_path is None or not validity_report_path.exists():
+        missing_artifacts.append("validity_report.json")
+    if merge_summary_path is None or not merge_summary_path.exists():
+        missing_artifacts.append("merge_summary.json")
+    if equivalence_markdown_path is None or not equivalence_markdown_path.exists():
+        missing_artifacts.append("equivalence_report.md")
+    if missing_artifacts:
+        return BackendExecutionResult(
+            status="failed",
+            reason_code="artifact_missing",
+            message=(
+                "Distributed proof is missing required summary artifacts: "
+                + ", ".join(missing_artifacts)
+            ),
+            backend="official_and_worldflux",
+            family="mixed",
+            mode="proof_compare",
+            proof_phase="compare",
+            run_id=str(summary.get("run_id", "")).strip() or None,
+            manifest_path=str(summary.get("manifest", "")).strip() or None,
+            summary_path=summary_path_value,
+            metrics=metrics,
+            next_action="Regenerate distributed proof reports and phase progress artifacts.",
+        )
+
+    evidence_bundle_path = None
+    if evidence_bundle_raw:
+        candidate = Path(evidence_bundle_raw)
+        if candidate.exists():
+            evidence_bundle_path = str(candidate.resolve())
+    if evidence_bundle_path is None and summary_path is not None:
+        candidate = summary_path.parent / "evidence_bundle.zip"
+        if candidate.exists():
+            evidence_bundle_path = str(candidate.resolve())
+
     report_payload = json.loads(report_path.read_text(encoding="utf-8"))
     global_block = report_payload.get("global", {}) if isinstance(report_payload, dict) else {}
     final_pass = (
@@ -326,14 +382,37 @@ def normalize_distributed_proof_summary(
     validity_pass = (
         bool(global_block.get("validity_pass", False)) if isinstance(global_block, dict) else False
     )
+    component_match_pass = (
+        bool(global_block.get("component_match_pass", False))
+        if isinstance(global_block, dict) and "component_match_pass" in global_block
+        else None
+    )
     metrics.update(
         {
             "parity_pass_final": final_pass,
             "validity_pass": validity_pass,
+            "component_match_pass": component_match_pass,
         }
     )
 
-    if final_pass:
+    proof_success = final_pass and validity_pass and component_match_pass is not False
+
+    if proof_success:
+        if evidence_bundle_path is None:
+            return BackendExecutionResult(
+                status="failed",
+                reason_code="artifact_missing",
+                message="Distributed proof is missing required summary artifacts: evidence_bundle.zip",
+                backend="official_and_worldflux",
+                family="mixed",
+                mode="proof_compare",
+                proof_phase="compare",
+                run_id=str(summary.get("run_id", "")).strip() or None,
+                manifest_path=str(summary.get("manifest", "")).strip() or None,
+                summary_path=summary_path_value,
+                metrics=metrics,
+                next_action="Assemble the final evidence bundle before treating the proof run as complete.",
+            )
         return BackendExecutionResult(
             status="succeeded",
             reason_code="none",
@@ -347,9 +426,7 @@ def normalize_distributed_proof_summary(
             summary_path=summary_path_value,
             equivalence_report_json=str(report_path.resolve()),
             equivalence_report_md=str(artifacts.get("equivalence_markdown", "")).strip() or None,
-            evidence_bundle=str((summary_path.parent / "evidence_bundle.zip").resolve())
-            if summary_path is not None
-            else None,
+            evidence_bundle=evidence_bundle_path,
             metrics=metrics,
             next_action=None,
         )
@@ -357,7 +434,10 @@ def normalize_distributed_proof_summary(
     return BackendExecutionResult(
         status="failed",
         reason_code="validity_failed",
-        message="Distributed proof completed, but proof-grade validity/parity gates did not pass.",
+        message=(
+            "Distributed proof completed, but proof-grade validity/parity/component-match "
+            "gates did not pass."
+        ),
         backend="official_and_worldflux",
         family="mixed",
         mode="proof_compare",
