@@ -289,6 +289,72 @@ env = "atari/pong"
         assert "train_dreamer_42" in result.stdout
 
 
+def test_train_delegated_backend_defaults_profile_from_handle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from worldflux.training import JobHandle, JobStatus
+
+    class _FakeBackend:
+        def submit(self, config: dict[str, object]) -> JobHandle:
+            assert config["backend_profile"] == "official_xl"
+            return JobHandle(
+                job_id="train_dreamer_43",
+                backend="official_dreamerv3_jax_subprocess",
+                metadata={
+                    "execution_result": {
+                        "status": "succeeded",
+                        "reason_code": "none",
+                        "summary_path": "/tmp/summary.json",
+                        "next_action": None,
+                    }
+                },
+            )
+
+        def status(self, handle: JobHandle) -> JobStatus:
+            return JobStatus.COMPLETED
+
+        def logs(self, handle: JobHandle):
+            return iter(())
+
+        def cancel(self, handle: JobHandle) -> None:
+            return None
+
+    monkeypatch.setattr(
+        "worldflux.training.trainer.ExecutionDelegatingBackend",
+        lambda: _FakeBackend(),
+    )
+
+    with runner.isolated_filesystem():
+        Path("worldflux.toml").write_text(
+            """\
+project_name = "delegated-train-default-profile"
+environment = "atari"
+model = "dreamerv3:official_xl"
+
+[architecture]
+obs_shape = [3, 64, 64]
+action_dim = 6
+hidden_dim = 32
+
+[training]
+total_steps = 5
+batch_size = 4
+sequence_length = 10
+device = "cpu"
+backend = "official_dreamerv3_jax_subprocess"
+output_dir = "./delegated-out"
+
+[verify]
+env = "atari/pong"
+""",
+            encoding="utf-8",
+        )
+        result = runner.invoke(cli.app, ["train"])
+        assert result.exit_code == 0
+        assert "official_xl" in result.stdout
+        assert "train_dreamer_43" in result.stdout
+
+
 def test_resolve_python_launcher_falls_back_to_uv_when_no_python_binary(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -976,6 +1042,74 @@ def test_parity_proof_run_resolves_manifest_when_omitted(
     assert manifest_arg.endswith("dreamerv3_official_checkpoint_bootstrap_v1.json")
 
 
+def test_resolve_proof_manifest_uses_dreamer_canonical_backend_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    import worldflux.cli._parity as parity_cli
+
+    captured: dict[str, object] = {}
+    manifest_path = tmp_path / "dreamer.yaml"
+
+    def _resolve(request, *, scripts_root: Path, allow_official_only: bool):
+        captured["backend"] = request.backend
+        captured["family"] = request.family
+        captured["mode"] = request.mode
+        captured["scripts_root"] = scripts_root
+        captured["allow_official_only"] = allow_official_only
+        return SimpleNamespace(manifest_path=manifest_path, early_result=None)
+
+    monkeypatch.setattr(parity_cli, "resolve_execution_manifest", _resolve)
+
+    resolved = parity_cli._resolve_proof_manifest(
+        manifest=None,
+        family="dreamer",
+        backend="",
+        allow_official_only=True,
+        seed_list="0,1,2,3,4,5,6,7,8,9",
+    )
+
+    assert resolved == manifest_path
+    assert captured["backend"] == "official_dreamerv3_jax_subprocess"
+    assert captured["family"] == "dreamer"
+    assert captured["mode"] == "proof_bootstrap"
+    assert captured["allow_official_only"] is True
+
+
+def test_resolve_proof_manifest_uses_tdmpc2_canonical_backend_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    import worldflux.cli._parity as parity_cli
+
+    captured: dict[str, object] = {}
+    manifest_path = tmp_path / "tdmpc2.yaml"
+
+    def _resolve(request, *, scripts_root: Path, allow_official_only: bool):
+        captured["backend"] = request.backend
+        captured["family"] = request.family
+        captured["mode"] = request.mode
+        captured["scripts_root"] = scripts_root
+        captured["allow_official_only"] = allow_official_only
+        return SimpleNamespace(manifest_path=manifest_path, early_result=None)
+
+    monkeypatch.setattr(parity_cli, "resolve_execution_manifest", _resolve)
+
+    resolved = parity_cli._resolve_proof_manifest(
+        manifest=None,
+        family="tdmpc2",
+        backend="",
+        allow_official_only=False,
+        seed_list="0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19",
+    )
+
+    assert resolved == manifest_path
+    assert captured["backend"] == "official_tdmpc2_torch_subprocess"
+    assert captured["family"] == "tdmpc2"
+    assert captured["mode"] == "proof_compare"
+    assert captured["allow_official_only"] is False
+
+
 def test_parity_proof_run_tdmpc2_without_manifest_blocks() -> None:
     result = runner.invoke(
         cli.app,
@@ -1556,6 +1690,44 @@ env = "dmcontrol/walker-run"
         result = runner.invoke(cli.app, ["train", "--config", str(toml_path)])
         assert result.exit_code == 2
         assert "blocked" in result.output.lower()
+
+    def test_train_tdmpc2_aligned_backend_remains_blocked(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        report_path = tmp_path / "alignment.json"
+        report_path.write_text('{"status":"aligned"}', encoding="utf-8")
+        monkeypatch.setenv("WORLDFLUX_TDMPC2_ALIGNMENT_REPORT", str(report_path))
+
+        toml_path = tmp_path / "worldflux.toml"
+        toml_path.write_text(
+            """\
+project_name = "aligned-train"
+model = "tdmpc2:proof_5m"
+
+[architecture]
+obs_shape = [39]
+action_dim = 4
+
+[training]
+total_steps = 2
+batch_size = 2
+device = "cpu"
+backend = "official_tdmpc2_torch_subprocess"
+backend_profile = "proof_5m"
+output_dir = "{output_dir}"
+
+[verify]
+env = "dmcontrol/walker-run"
+""".format(output_dir=str(tmp_path / "outputs")),
+            encoding="utf-8",
+        )
+
+        result = runner.invoke(cli.app, ["train", "--config", str(toml_path)])
+        assert result.exit_code == 2
+        assert "Delegated Training Result" in result.output
+        assert "official_tdmpc2_torch_subprocess" in result.output
+        assert "blocked" in result.output.lower()
+        assert "not implemented" in result.output.lower()
 
 
 # ---------------------------------------------------------------------------

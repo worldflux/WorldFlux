@@ -154,8 +154,26 @@ class Trainer:
         if self.execution_mode == "delegated":
             self._backend_handle = cast(OfficialBackendHandle, model)
             self.model = model
-            if self.config.backend == "native_torch":
-                self.config = self.config.with_updates(backend=self._backend_handle.backend)
+            resolved_backend = self.config.backend
+            if resolved_backend == "native_torch":
+                resolved_backend = self._backend_handle.backend
+
+            resolved_backend_profile = str(self.config.backend_profile).strip()
+            if not resolved_backend_profile:
+                resolved_backend_profile = str(
+                    self._backend_handle.metadata.get("backend_profile")
+                    or self._backend_handle.metadata.get("profile")
+                    or ""
+                ).strip()
+
+            if (
+                resolved_backend != self.config.backend
+                or resolved_backend_profile != self.config.backend_profile
+            ):
+                self.config = self.config.with_updates(
+                    backend=resolved_backend,
+                    backend_profile=resolved_backend_profile,
+                )
             self._training_backend = ExecutionDelegatingBackend()
             self.callbacks = CallbackList(callbacks or [])
             return

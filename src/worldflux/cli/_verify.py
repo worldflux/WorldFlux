@@ -49,6 +49,23 @@ def _was_cli_option_provided(ctx: typer.Context, param_name: str) -> bool:
     return ctx.get_parameter_source(param_name) == ParameterSource.COMMANDLINE
 
 
+def _infer_canonical_verify_backend(
+    *,
+    baseline: str,
+    target: str,
+    proof_claim: str,
+) -> tuple[str, str]:
+    proof_mode_requested = str(proof_claim).strip().lower() in {"compare", "official_only"}
+    if not proof_mode_requested:
+        return ("native_torch", "")
+
+    baseline_value = str(baseline).strip().lower()
+    target_value = str(target).strip().lower()
+    if "tdmpc2" in baseline_value or target_value.startswith("tdmpc2"):
+        return ("official_tdmpc2_torch_subprocess", "proof_5m")
+    return ("official_dreamerv3_jax_subprocess", "official_xl")
+
+
 @app.command(rich_help_panel="Quality & Evaluation")
 def verify(
     ctx: typer.Context,
@@ -137,7 +154,7 @@ def verify(
 
     effective_baseline = baseline
     effective_env = env
-    effective_backend = backend or "native_torch"
+    effective_backend = backend or ""
     effective_backend_profile = backend_profile or ""
     effective_allow_official_only = False if allow_official_only is None else allow_official_only
     effective_proof_claim = proof_claim or "compare"
@@ -157,6 +174,16 @@ def verify(
             effective_allow_official_only = config_payload.verify.allow_official_only
         if proof_claim is None:
             effective_proof_claim = config_payload.verify.proof_claim
+
+    if not str(effective_backend).strip():
+        inferred_backend, inferred_profile = _infer_canonical_verify_backend(
+            baseline=effective_baseline,
+            target=target,
+            proof_claim=effective_proof_claim,
+        )
+        effective_backend = inferred_backend
+        if not str(effective_backend_profile).strip():
+            effective_backend_profile = inferred_profile
 
     # Quality tier check mode
     if tier is not None:

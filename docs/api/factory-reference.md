@@ -49,7 +49,12 @@ way to create world models.
 
 ### Returns
 
-`WorldModel` -- Configured world model instance, placed on the specified device.
+- `backend="native_torch"`: configured local `WorldModel` instance, placed on the specified device
+- `backend!="native_torch"`: `OfficialBackendHandle` for delegated execution
+
+The public signature remains `-> WorldModel` for compatibility, but delegated
+backend requests intentionally return a handle object instead of constructing a
+local model instance.
 
 ### Raises
 
@@ -82,6 +87,13 @@ model = create_world_model(
     observation_modalities={
         "image": {"kind": "image", "shape": (3, 64, 64)},
     },
+)
+
+# Delegated backend handle for proof/runtime workflows
+handle = create_world_model(
+    "dreamerv3:official_xl",
+    backend="official_dreamerv3_jax_subprocess",
+    device="cuda",
 )
 ```
 

@@ -507,6 +507,57 @@ class TestTrainer:
         trainer.cancel(job)
         assert captured["cancelled"] == "train_dreamer_42"
 
+    def test_trainer_delegated_submit_defaults_backend_profile_from_handle(
+        self, tmp_path, monkeypatch
+    ):
+        captured: dict[str, object] = {}
+
+        class _FakeBackend:
+            def submit(self, config: dict[str, object]) -> JobHandle:
+                captured.update(config)
+                return JobHandle(
+                    job_id="train_dreamer_43",
+                    backend="official_dreamerv3_jax_subprocess",
+                    metadata={"status": "succeeded"},
+                )
+
+            def status(self, handle: JobHandle) -> JobStatus:
+                return JobStatus.COMPLETED
+
+            def logs(self, handle: JobHandle):
+                return iter(())
+
+            def cancel(self, handle: JobHandle) -> None:
+                return None
+
+        monkeypatch.setattr(
+            "worldflux.training.trainer.ExecutionDelegatingBackend",
+            lambda: _FakeBackend(),
+        )
+
+        handle = OfficialBackendHandle(
+            backend="official_dreamerv3_jax_subprocess",
+            model_id="dreamerv3:official_xl",
+            metadata={
+                "env": "atari/pong",
+                "task_filter": "atari100k_pong",
+                "backend_profile": "official_xl",
+            },
+        )
+        config = TrainingConfig(
+            total_steps=5,
+            batch_size=4,
+            sequence_length=10,
+            device="cpu",
+            output_dir=str(tmp_path / "delegated"),
+            backend="official_dreamerv3_jax_subprocess",
+        )
+
+        trainer = Trainer(handle, config, callbacks=[])
+        trainer.submit()
+
+        assert captured["backend_profile"] == "official_xl"
+
     def test_trainer_delegated_train_rejects_local_loop(self, tmp_path, monkeypatch):
         class _FakeBackend:
             def submit(self, config: dict[str, object]) -> JobHandle:

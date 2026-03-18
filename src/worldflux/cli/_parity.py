@@ -63,6 +63,17 @@ def _execution_exit_code(status: str) -> int:
     return 1
 
 
+def _resolve_default_backend(family: str, backend: str | None) -> str:
+    normalized_backend = str(backend or "").strip()
+    if normalized_backend:
+        return normalized_backend
+
+    normalized_family = str(family).strip().lower()
+    if normalized_family == "tdmpc2":
+        return "official_tdmpc2_torch_subprocess"
+    return "official_dreamerv3_jax_subprocess"
+
+
 def _resolve_proof_manifest(
     *,
     manifest: Path | None,
@@ -73,11 +84,12 @@ def _resolve_proof_manifest(
 ) -> Path:
     if manifest is not None:
         return manifest
+    resolved_backend = _resolve_default_backend(family, backend)
     seeds = [int(part.strip()) for part in seed_list.split(",") if part.strip()]
     if not seeds:
         seeds = list(range(20 if not allow_official_only else 10))
     request = BackendExecutionRequest(
-        backend=backend,
+        backend=resolved_backend,
         family=family,
         mode="proof_bootstrap" if allow_official_only else "proof_compare",
         target=None,
@@ -363,9 +375,9 @@ def parity_proof_run(
         "dreamer", "--family", help="Execution family when manifest is omitted."
     ),
     backend: str = typer.Option(
-        "official_dreamerv3_jax_subprocess",
+        "",
         "--backend",
-        help="Backend id used for manifest resolution when manifest is omitted.",
+        help="Backend id used for manifest resolution when manifest is omitted. Defaults to the family-native canonical backend.",
     ),
     allow_official_only: bool = typer.Option(
         False,
@@ -507,9 +519,9 @@ def parity_proof_combined(
         "dreamer", "--family", help="Execution family when manifest is omitted."
     ),
     backend: str = typer.Option(
-        "official_dreamerv3_jax_subprocess",
+        "",
         "--backend",
-        help="Backend id used for manifest resolution when manifest is omitted.",
+        help="Backend id used for manifest resolution when manifest is omitted. Defaults to the family-native canonical backend.",
     ),
     allow_official_only: bool = typer.Option(
         False,

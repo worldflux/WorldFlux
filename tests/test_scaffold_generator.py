@@ -64,9 +64,12 @@ def test_generate_project_creates_expected_files(tmp_path: Path) -> None:
     assert "batch_size = 16" in toml_content
     assert 'backend = "native_torch"' in toml_content
     assert 'backend_profile = ""' in toml_content
+    assert 'baseline = "official/dreamerv3"' in toml_content
     assert 'mode = "auto"' in toml_content
     assert 'proof_claim = "compare"' in toml_content
     assert "allow_official_only = false" in toml_content
+    assert 'backend = "official_dreamerv3_jax_subprocess"' in toml_content
+    assert 'backend_profile = "official_xl"' in toml_content
     assert 'source = "gym"' in toml_content
     assert "[gameplay]\nenabled = true" in toml_content
     assert "[online_collection]\nenabled = true" in toml_content
@@ -75,6 +78,11 @@ def test_generate_project_creates_expected_files(tmp_path: Path) -> None:
     assert "uv run python train.py" in readme_content
     assert "uv run python inference.py" in readme_content
     assert "Dashboard:" in readme_content
+    assert "backend-native training is not enabled through `train.py` yet." not in readme_content
+    assert "Set `training.backend` to a delegated backend id" in readme_content
+    assert "`official_dreamerv3_jax_subprocess` + `official_xl`" in readme_content
+    assert "`official_tdmpc2_torch_subprocess` + `proof_5m`" in readme_content
+    assert "alignment report is available" in readme_content
 
     dataset_content = (target / "dataset.py").read_text(encoding="utf-8")
     assert "warnings.warn(" not in dataset_content
@@ -88,6 +96,9 @@ def test_generate_project_creates_expected_files(tmp_path: Path) -> None:
     )
     assert 'backend_profile = str(training.get("backend_profile", "")).strip()' in train_content
     assert "(backend={backend}, profile={backend_profile or '-'})" in train_content
+    assert "def _env_to_task_filter(env: str) -> str:" in train_content
+    assert "model = model.with_metadata(" in train_content
+    assert "task_filter=_env_to_task_filter(verify_env)," in train_content
     assert "handle = trainer.submit()" in train_content
     assert 'print("Delegated training result:")' in train_content
     assert "backend=backend," in train_content
@@ -151,6 +162,9 @@ def test_generate_project_overwrites_when_force_enabled(tmp_path: Path) -> None:
     assert "batch_size = 24" in toml_content
     assert 'backend = "native_torch"' in toml_content
     assert 'backend_profile = ""' in toml_content
+    assert 'baseline = "official/tdmpc2"' in toml_content
+    assert 'backend = "official_tdmpc2_torch_subprocess"' in toml_content
+    assert 'backend_profile = "proof_5m"' in toml_content
     assert 'source = "gym"' in toml_content
     assert "[gameplay]\nenabled = true" in toml_content
     assert "[online_collection]\nenabled = true" in toml_content

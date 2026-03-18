@@ -134,12 +134,20 @@ class DreamerOfficialJAXSubprocessAdapter:
         checkpoint_paths = list(manifest.checkpoint_paths)
         if latest_ckpt_dir is not None:
             checkpoint_paths = sorted(
-                {*checkpoint_paths, *(str(path) for path in latest_ckpt_dir.rglob("*.pkl"))}
+                {
+                    *checkpoint_paths,
+                    *(str(path) for path in latest_ckpt_dir.iterdir() if path.is_file()),
+                }
             )
+        metrics_paths = list(manifest.metrics_paths)
+        metrics_jsonl = run_dir / "dreamerv3_logdir" / "metrics.jsonl"
+        if metrics_jsonl.exists():
+            metrics_paths = sorted({*metrics_paths, str(metrics_jsonl)})
         return ArtifactManifest(
             **{
                 **manifest.to_dict(),
                 "checkpoint_paths": checkpoint_paths,
+                "metrics_paths": metrics_paths,
             }
         )
 
@@ -157,6 +165,9 @@ class DreamerOfficialJAXSubprocessAdapter:
             else 0,
             "latest_checkpoint_dir": str(latest_ckpt_dir) if latest_ckpt_dir is not None else None,
             "agent_present": bool(latest_ckpt_dir and (latest_ckpt_dir / "agent.pkl").exists()),
+            "replay_present": bool(latest_ckpt_dir and (latest_ckpt_dir / "replay.pkl").exists()),
+            "step_present": bool(latest_ckpt_dir and (latest_ckpt_dir / "step.pkl").exists()),
+            "done_present": bool(latest_ckpt_dir and (latest_ckpt_dir / "done").exists()),
         }
 
     def artifact_requirements(self) -> dict[str, Any]:
@@ -166,7 +177,9 @@ class DreamerOfficialJAXSubprocessAdapter:
             "metrics_paths": ["dreamerv3_logdir/metrics.jsonl"],
             "checkpoint_paths": [
                 "dreamerv3_logdir/ckpt/*/agent.pkl",
+                "dreamerv3_logdir/ckpt/*/replay.pkl",
                 "dreamerv3_logdir/ckpt/*/step.pkl",
+                "dreamerv3_logdir/ckpt/*/done",
             ],
         }
 
@@ -250,12 +263,20 @@ class DreamerWorldFluxJAXSubprocessAdapter:
         checkpoint_paths = list(manifest.checkpoint_paths)
         if latest_ckpt_dir is not None:
             checkpoint_paths = sorted(
-                {*checkpoint_paths, *(str(path) for path in latest_ckpt_dir.rglob("*.pkl"))}
+                {
+                    *checkpoint_paths,
+                    *(str(path) for path in latest_ckpt_dir.iterdir() if path.is_file()),
+                }
             )
+        metrics_paths = list(manifest.metrics_paths)
+        metrics_jsonl = run_dir / "dreamerv3_logdir" / "metrics.jsonl"
+        if metrics_jsonl.exists():
+            metrics_paths = sorted({*metrics_paths, str(metrics_jsonl)})
         return ArtifactManifest(
             **{
                 **manifest.to_dict(),
                 "checkpoint_paths": checkpoint_paths,
+                "metrics_paths": metrics_paths,
             }
         )
 
@@ -273,6 +294,9 @@ class DreamerWorldFluxJAXSubprocessAdapter:
             else 0,
             "latest_checkpoint_dir": str(latest_ckpt_dir) if latest_ckpt_dir is not None else None,
             "agent_present": bool(latest_ckpt_dir and (latest_ckpt_dir / "agent.pkl").exists()),
+            "replay_present": bool(latest_ckpt_dir and (latest_ckpt_dir / "replay.pkl").exists()),
+            "step_present": bool(latest_ckpt_dir and (latest_ckpt_dir / "step.pkl").exists()),
+            "done_present": bool(latest_ckpt_dir and (latest_ckpt_dir / "done").exists()),
         }
 
     def artifact_requirements(self) -> dict[str, Any]:
@@ -282,7 +306,9 @@ class DreamerWorldFluxJAXSubprocessAdapter:
             "metrics_paths": ["dreamerv3_logdir/metrics.jsonl"],
             "checkpoint_paths": [
                 "dreamerv3_logdir/ckpt/*/agent.pkl",
+                "dreamerv3_logdir/ckpt/*/replay.pkl",
                 "dreamerv3_logdir/ckpt/*/step.pkl",
+                "dreamerv3_logdir/ckpt/*/done",
             ],
         }
 

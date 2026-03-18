@@ -12,6 +12,7 @@ import shlex
 import subprocess
 import sys
 import time
+import zipfile
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -1455,6 +1456,66 @@ def _parse_iso8601(value: Any) -> datetime | None:
         return None
 
 
+def _assemble_evidence_bundle(*, summary_path: Path, summary: dict[str, Any]) -> Path:
+    artifacts = summary.get("artifacts", {}) if isinstance(summary.get("artifacts"), dict) else {}
+    bundle_dir = summary_path.parent / "evidence_bundle"
+    bundle_dir.mkdir(parents=True, exist_ok=True)
+
+    included_paths = [
+        Path(path)
+        for path in (
+            summary_path,
+            artifacts.get("merged_runs"),
+            artifacts.get("coverage_report"),
+            artifacts.get("validity_report"),
+            artifacts.get("equivalence_report"),
+            artifacts.get("equivalence_markdown"),
+            artifacts.get("merge_summary"),
+            artifacts.get("phase_progress"),
+        )
+        if path
+    ]
+    included_paths = [path for path in included_paths if path.exists()]
+
+    provenance = bundle_dir / "provenance_summary.json"
+    provenance.write_text(
+        json.dumps(
+            {
+                "created_at": _timestamp(),
+                "summary": str(summary_path),
+                "artifacts": summary.get("artifacts", {}),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    included_paths.append(provenance)
+
+    bundle_index = bundle_dir / "bundle_index.json"
+    bundle_index.write_text(
+        json.dumps(
+            {
+                "schema_version": "parity.evidence_bundle.v1",
+                "created_at": _timestamp(),
+                "files": [str(path.resolve()) for path in included_paths],
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    included_paths.append(bundle_index)
+
+    zip_path = summary_path.parent / "evidence_bundle.zip"
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as handle:
+        for path in included_paths:
+            handle.write(path, arcname=path.relative_to(summary_path.parent))
+    return zip_path
+
+
 def _duration_seconds(started_at: Any, ended_at: Any) -> float | None:
     start = _parse_iso8601(started_at)
     end = _parse_iso8601(ended_at)
@@ -2225,6 +2286,7 @@ def _execute_phase(
             ),
         },
         "artifacts": {
+            "manifest": str(manifest_path.resolve()),
             "merged_runs": str(merged_runs),
             "coverage_report": str(coverage_report),
             "rerun_manifest": str(rerun_manifest) if rerun_manifest.exists() else "",
@@ -2233,6 +2295,7 @@ def _execute_phase(
             "equivalence_report": str(equivalence_report) if equivalence_report.exists() else "",
             "equivalence_markdown": str(equivalence_md) if equivalence_md.exists() else "",
             "merge_summary": str(merge_summary),
+            "evidence_bundle": "",
         },
         "s3_final_prefix": final_prefix,
         "errors": {
@@ -2246,6 +2309,13 @@ def _execute_phase(
     }
 
     summary_path = local_root / "orchestrator_summary.json"
+    summary["execution_result"] = normalize_distributed_proof_summary(
+        summary,
+        summary_path=summary_path,
+    ).to_dict()
+    _atomic_write_text(summary_path, json.dumps(summary, indent=2, sort_keys=True) + "\n")
+    evidence_bundle = _assemble_evidence_bundle(summary_path=summary_path, summary=summary)
+    summary["artifacts"]["evidence_bundle"] = str(evidence_bundle)
     summary["execution_result"] = normalize_distributed_proof_summary(
         summary,
         summary_path=summary_path,
