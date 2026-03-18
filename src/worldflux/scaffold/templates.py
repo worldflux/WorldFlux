@@ -87,6 +87,48 @@ def _patch_train_template(content: str) -> str:
     )
     content = _replace_exact(
         content,
+        """def resolve_model_id(config: dict) -> str:
+    model = str(config.get("model", "")).strip()
+    if model:
+        return model
+    model_type = str(config.get("model_type", "dreamer")).strip().lower()
+    if model_type.startswith("dreamer"):
+        return "dreamer:ci"
+    return "tdmpc2:ci"
+
+
+def resolve_visualization_config(config: dict[str, Any]) -> dict[str, Any]:
+""",
+        """def resolve_model_id(config: dict) -> str:
+    model = str(config.get("model", "")).strip()
+    if model:
+        return model
+    model_type = str(config.get("model_type", "dreamer")).strip().lower()
+    if model_type.startswith("dreamer"):
+        return "dreamer:ci"
+    return "tdmpc2:ci"
+
+
+def _env_to_task_filter(env: str) -> str:
+    value = str(env).strip().lower()
+    if not value:
+        return ""
+    if value.startswith("atari/"):
+        game = value.split("/", 1)[1].strip().replace("-", "_")
+        return f"atari100k_{game}" if game else ""
+    if value.startswith("dmcontrol/"):
+        return value.split("/", 1)[1].strip().replace("/", "-")
+    if value.startswith("mujoco/"):
+        return value.split("/", 1)[1].strip().replace("_", "-")
+    return value
+
+
+def resolve_visualization_config(config: dict[str, Any]) -> dict[str, Any]:
+""",
+        label="train add env helper",
+    )
+    content = _replace_exact(
+        content,
         '    device = str(training.get("device", "cpu"))\n',
         """    device = str(training.get("device", "cpu"))
     backend = str(training.get("backend", "native_torch")).strip() or "native_torch"
@@ -133,6 +175,16 @@ def _patch_train_template(content: str) -> str:
     )
 
     if backend != "native_torch":
+        verify = config.get("verify", {})
+        if not isinstance(verify, dict):
+            verify = {}
+        verify_env = str(verify.get("env", "")).strip()
+        model = model.with_metadata(
+            env=verify_env,
+            task_filter=_env_to_task_filter(verify_env),
+            profile=backend_profile,
+            backend_profile=backend_profile,
+        )
         trainer = Trainer(
             model,
             TrainingConfig(
@@ -534,6 +586,9 @@ def render_worldflux_toml(context: dict[str, Any]) -> str:
     online_enabled = "true" if online_default else "false"
 
     verify_env = _default_verify_env(environment)
+    verify_baseline = str(context.get("verify_baseline", "")).strip() or (
+        "official/tdmpc2" if model_type == "tdmpc2" else "official/dreamerv3"
+    )
 
     return (
         dedent(
@@ -589,7 +644,7 @@ def render_worldflux_toml(context: dict[str, Any]) -> str:
         open_browser = false
 
         [verify]
-        baseline = "official/dreamerv3"
+        baseline = "{verify_baseline}"
         env = "{verify_env}"
         backend = "{context.get("verify_backend", "native_torch")}"
         backend_profile = "{context.get("verify_backend_profile", "")}"
@@ -835,10 +890,17 @@ def render_readme_md(context: dict[str, Any]) -> str:
         worldflux verify --target ./outputs/checkpoint_best.pt
         ```
 
-        Stage A note:
-        backend-native training is not enabled through `train.py` yet.
-        Keep `training.backend = "native_torch"` for local training and use
-        `worldflux verify` / `worldflux parity` for official backend proof flows.
+        Delegated backend notes:
+
+        - Keep `training.backend = "native_torch"` for local Torch training.
+        - Set `training.backend` to a delegated backend id to submit through
+          `Trainer.submit()` from `train.py`.
+        - Dreamer proof-canonical delegated path:
+          `official_dreamerv3_jax_subprocess` + `official_xl`
+        - TD-MPC2 aligned proof path:
+          `official_tdmpc2_torch_subprocess` + `proof_5m`
+        - TD-MPC2 delegated/proof execution is runnable when an aligned
+          proof_5m alignment report is available. Unaligned paths remain blocked.
 
         ## Gym Data Collection (Optional)
 

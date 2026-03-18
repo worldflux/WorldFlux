@@ -875,7 +875,7 @@ class TestAutoModeResolution:
                     "status": "blocked",
                     "reason_code": "backend_unsupported",
                     "message": "blocked",
-                    "backend": "native_torch",
+                    "backend": "official_dreamerv3_jax_subprocess",
                     "family": "dreamer",
                     "mode": "proof_compare",
                     "run_id": "auto_run",
@@ -895,6 +895,62 @@ class TestAutoModeResolution:
         result = runner.invoke(app, ["verify", "--target", "./outputs"])
         assert result.exit_code == 2
         assert "BLOCKED" in result.output
+
+    def test_auto_selects_tdmpc2_canonical_backend_for_proof_compare(
+        self, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("WORLDFLUX_VERIFY_MODE", raising=False)
+        captured: dict[str, object] = {}
+
+        def _fake_run(cls, **kw):
+            captured.update(kw)
+            return VerifyResult(
+                passed=False,
+                target=str(kw["target"]),
+                baseline=str(kw["baseline"]),
+                env=str(kw["env"]),
+                demo=False,
+                elapsed_seconds=0.1,
+                stats={
+                    "execution_result": {
+                        "status": "blocked",
+                        "reason_code": "backend_unsupported",
+                        "message": "blocked",
+                        "backend": str(kw["backend"]),
+                        "family": "tdmpc2",
+                        "mode": "proof_compare",
+                        "run_id": "tdmpc2_auto_run",
+                        "manifest_path": None,
+                        "summary_path": None,
+                        "equivalence_report_json": None,
+                        "equivalence_report_md": None,
+                        "evidence_bundle": None,
+                        "artifact_manifest": None,
+                        "metrics": {},
+                        "next_action": "fix config",
+                    }
+                },
+                verdict_reason="blocked",
+            )
+
+        monkeypatch.setattr(ParityVerifier, "run", classmethod(_fake_run))
+        from worldflux.cli import app
+
+        result = runner.invoke(
+            app,
+            [
+                "verify",
+                "--target",
+                "tdmpc2:proof_5m",
+                "--baseline",
+                "official/tdmpc2",
+                "--env",
+                "dmcontrol/walker-run",
+            ],
+        )
+        assert result.exit_code == 2
+        assert captured["backend"] == "official_tdmpc2_torch_subprocess"
+        assert captured["backend_profile"] == "proof_5m"
 
     def test_auto_selects_quick_when_proof_claim_is_non_proof(
         self, runner: CliRunner, monkeypatch: pytest.MonkeyPatch

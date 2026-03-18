@@ -7,6 +7,11 @@ sidebar_label: Training API
 Training utilities for WorldFlux world models, including the `Trainer` class,
 one-liner `train` function, replay buffer, and training callbacks.
 
+`Trainer` has two modes:
+
+- local mode for native Torch models
+- delegated mode for `OfficialBackendHandle` jobs backed by external runtimes
+
 ```python
 from worldflux.training import Trainer, TrainingConfig, ReplayBuffer, train
 from worldflux.training.callbacks import (
@@ -82,7 +87,7 @@ rate scheduling, gradient accumulation, and mixed-precision training.
 ```python
 def __init__(
     self,
-    model: nn.Module,
+    model: WorldModel | nn.Module | OfficialBackendHandle,
     config: TrainingConfig | None = None,
     callbacks: list[Callback] | None = None,
     optimizer: Optimizer | None = None,
@@ -92,11 +97,15 @@ def __init__(
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `model` | `nn.Module` | required | World model to train (must implement `loss(batch)`). |
+| `model` | `WorldModel \| nn.Module \| OfficialBackendHandle` | required | Native model for local training, or delegated backend handle for external execution. |
 | `config` | `TrainingConfig \| None` | `None` | Training configuration. Uses defaults if `None`. |
 | `callbacks` | `list[Callback] \| None` | `None` | Additional callbacks for logging/checkpointing. `LoggingCallback` and `CheckpointCallback` are always included by default. |
 | `optimizer` | `Optimizer \| None` | `None` | Custom optimizer. Created from config if `None`. |
 | `scheduler` | `LRScheduler \| None` | `None` | Custom learning rate scheduler. Created from config if `None`. |
+
+When `model` is an `OfficialBackendHandle`, `Trainer` enters delegated mode and
+routes execution through `submit()`. Local loop operations such as `train()`
+remain available only for `backend="native_torch"`.
 
 ### Methods
 
@@ -120,6 +129,18 @@ Train the model.
 | `resume_from` | `str \| None` | `None` | Path to checkpoint to resume from. |
 
 **Returns:** `nn.Module` -- The trained model.
+
+#### submit / status / logs / cancel
+
+```python
+def submit(self, *, resume_from: str | None = None) -> JobHandle
+def status(self, handle: JobHandle) -> JobStatus
+def logs(self, handle: JobHandle) -> Iterator[str]
+def cancel(self, handle: JobHandle) -> None
+```
+
+Delegated execution helpers for non-native backends. `submit()` is only valid
+when the trainer was constructed from an `OfficialBackendHandle`.
 
 #### evaluate
 

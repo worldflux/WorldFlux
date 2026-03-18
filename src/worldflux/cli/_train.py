@@ -7,6 +7,7 @@ from pathlib import Path
 import typer
 
 from worldflux.config_loader import load_config
+from worldflux.core.backend_bridge import canonical_backend_profile
 
 from ._app import app, console
 from ._rich_output import key_value_panel, result_banner
@@ -87,6 +88,9 @@ def train(
     effective_steps = steps if steps is not None else cfg.training.total_steps
     effective_device = device if device is not None else cfg.training.device
     effective_output_dir = output_dir if output_dir is not None else cfg.training.output_dir
+    effective_backend_profile = str(
+        cfg.training.backend_profile
+    ).strip() or canonical_backend_profile(cfg.model, cfg.training.backend)
 
     if cloud:
         from worldflux.cloud import ModalBackend, WorldFluxCloudClient
@@ -170,7 +174,7 @@ def train(
                 "Batch size": str(cfg.training.batch_size),
                 "Device": effective_device,
                 "Backend": cfg.training.backend,
-                "Profile": cfg.training.backend_profile or "-",
+                "Profile": effective_backend_profile or "-",
                 "Output": effective_output_dir,
             },
             title="WorldFlux Train",
@@ -199,14 +203,15 @@ def train(
         device=effective_device,
         output_dir=effective_output_dir,
         backend=cfg.training.backend,
-        backend_profile=cfg.training.backend_profile,
+        backend_profile=effective_backend_profile,
     )
 
     if isinstance(model, OfficialBackendHandle):
         backend_model = model.with_metadata(
             env=cfg.verify.env,
             task_filter=_env_to_task_filter(cfg.verify.env),
-            profile=cfg.training.backend_profile,
+            profile=effective_backend_profile,
+            backend_profile=effective_backend_profile,
         )
         trainer = Trainer(backend_model, training_config)
         try:
@@ -220,10 +225,11 @@ def train(
             status = str(execution_result.get("status", "failed"))
             panel = {
                 "Backend": handle.backend,
-                "Profile": cfg.training.backend_profile or "-",
+                "Profile": effective_backend_profile or "-",
                 "Run ID": handle.job_id,
                 "Status": status,
                 "Reason": execution_result.get("reason_code", "-"),
+                "Message": execution_result.get("message", "-"),
                 "Summary": execution_result.get("summary_path", "-"),
                 "Next": execution_result.get("next_action", "-"),
             }
@@ -245,7 +251,7 @@ def train(
                 key_value_panel(
                     {
                         "Backend": handle.backend,
-                        "Profile": cfg.training.backend_profile or "-",
+                        "Profile": effective_backend_profile or "-",
                         "Run ID": handle.job_id,
                     },
                     title="Delegated Training Submitted",

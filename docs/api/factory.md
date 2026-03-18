@@ -19,6 +19,10 @@ model = create_world_model(
 )
 ```
 
+If you request a non-native backend via `backend=...`, `create_world_model()`
+returns an `OfficialBackendHandle` instead of instantiating a local PyTorch
+model. Pass that handle to `Trainer(...).submit()` or execution/parity flows.
+
 ### Parameters
 
 | Parameter | Type | Default | Description |
@@ -96,7 +100,31 @@ Use config-field names that exist on the selected config class.
 
 ### Returns
 
-A world model instance implementing the [`WorldModel` protocol](protocol.md).
+- `backend="native_torch"`: a local model implementing the [`WorldModel` protocol](protocol.md)
+- `backend!="native_torch"`: an `OfficialBackendHandle` for delegated execution
+
+### Delegated Backend Example
+
+```python
+from worldflux import create_world_model
+from worldflux.training import Trainer, TrainingConfig
+
+handle = create_world_model(
+    "dreamerv3:official_xl",
+    backend="worldflux_dreamerv3_jax_subprocess",
+    device="cuda",
+)
+
+trainer = Trainer(
+    handle,
+    TrainingConfig(
+        backend="worldflux_dreamerv3_jax_subprocess",
+        backend_profile="official_xl",
+        device="cuda",
+    ),
+)
+job = trainer.submit()
+```
 
 ---
 
