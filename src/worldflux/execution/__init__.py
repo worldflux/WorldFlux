@@ -14,6 +14,7 @@ from .contracts import (
 )
 from .executor import BackendExecutor, ParityBackedExecutor
 from .manifest_routing import ManifestResolution, resolve_execution_manifest
+from .proof_defaults import resolve_proof_backend_defaults
 from .summary_normalization import (
     normalize_distributed_proof_summary,
     normalize_dreamer_batch_status,
@@ -37,5 +38,6 @@ __all__ = [
     "ParityBackedExecutor",
     "ReasonCode",
     "TDMPC2_COMPARE_ENABLED",
+    "resolve_proof_backend_defaults",
     "resolve_execution_manifest",
 ]

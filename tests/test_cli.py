@@ -1128,6 +1128,53 @@ def test_parity_proof_run_tdmpc2_without_manifest_blocks() -> None:
     assert "tdmpc2_architecture_mismatch_open" in result.stdout
 
 
+def test_parity_proof_run_tdmpc2_resolves_canonical_backend_when_omitted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from worldflux.execution import BackendExecutionResult, ManifestResolution
+
+    captured: dict[str, object] = {}
+
+    def _fake_resolve_execution_manifest(request, *, scripts_root, allow_official_only=False):
+        captured["backend"] = request.backend
+        captured["family"] = request.family
+        captured["allow_official_only"] = allow_official_only
+        return ManifestResolution(
+            manifest_path=None,
+            early_result=BackendExecutionResult(
+                status="blocked",
+                reason_code="tdmpc2_architecture_mismatch_open",
+                message="blocked",
+                backend=request.backend,
+                family=request.family,
+                mode=request.mode,
+                proof_phase="compare",
+                run_id=request.run_id,
+                next_action="fix config",
+            ),
+        )
+
+    monkeypatch.setattr(
+        "worldflux.cli._parity.resolve_execution_manifest", _fake_resolve_execution_manifest
+    )
+
+    result = runner.invoke(
+        cli.app,
+        [
+            "parity",
+            "proof-run",
+            "--family",
+            "tdmpc2",
+            "--seed-list",
+            ",".join(str(i) for i in range(20)),
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert captured["family"] == "tdmpc2"
+    assert captured["backend"] == "official_tdmpc2_torch_subprocess"
+
+
 def test_parity_proof_report_runs_completeness_stats_and_markdown(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
