@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import math
 
 import torch
@@ -162,6 +163,9 @@ class TDMPC2WorldModel(WorldModel):
             hidden_dim=config.hidden_dim,
             num_q_networks=config.num_q_networks,
         )
+        self._target_q_ensemble = copy.deepcopy(self._q_ensemble)
+        for param in self._target_q_ensemble.parameters():
+            param.requires_grad = False
 
         # Policy (for MPC warm-start)
         self._policy = PolicyHead(
@@ -366,6 +370,34 @@ class TDMPC2WorldModel(WorldModel):
             raise ValueError("TD-MPC2 requires 'latent' in State")
         return self._reward_head(z, action).squeeze(-1)
 
+    def reference_profile(self) -> dict[str, object]:
+        """Return a compact alignment summary for docs/tooling."""
+        return {
+            "family": "tdmpc2",
+            "preset": self.config.model_name,
+            "training_tier": self.config.training_tier,
+            "parity_profile": self.config.parity_profile,
+            "gamma": self.config.gamma,
+            "target_q_tau": self.config.target_q_tau,
+            "num_q_networks": self.config.num_q_networks,
+            "loss_scales": {
+                "consistency": self.config.consistency_loss_coef,
+                "reward": self.config.reward_loss_coef,
+                "td": self.config.td_loss_coef,
+                "policy": self.config.policy_loss_coef,
+            },
+        }
+
+    def _soft_update_target_q(self) -> None:
+        """EMA update for target Q ensemble."""
+        tau = self.config.target_q_tau
+        with torch.no_grad():
+            for target_param, online_param in zip(
+                self._target_q_ensemble.parameters(),
+                self._q_ensemble.parameters(),
+            ):
+                target_param.data.mul_(1 - tau).add_(online_param.data, alpha=tau)
+
     def loss(self, batch: Batch) -> LossOutput:
         """
         TD-MPC2 loss computation.
@@ -447,16 +479,30 @@ class TDMPC2WorldModel(WorldModel):
 
             with torch.no_grad():
                 z_next = z_targets[:, t]  # No gradient for target
-                state_next = State(tensors={"latent": z_next}, meta={"latent_type": "simnorm"})
                 next_action = self._policy(z_next)
-                q_next = self.predict_q(state_next, next_action).min(dim=0)[0]
+                q_next = self._target_q_ensemble(z_next, next_action).squeeze(-1).min(dim=0)[0]
                 target = rewards[:, t + 1] + gamma * q_next
 
             td_loss = td_loss + F.mse_loss(q_values.mean(dim=0), target)
 
         components["td"] = td_loss / max(seq_len - 1, 1)
 
-        total = components["consistency"] + components["reward"] + components["td"]
+        policy_loss = torch.tensor(0.0, device=device)
+        for t in range(seq_len - 1):
+            z_t = z_all[:, t].detach()
+            policy_action = self._policy(z_t)
+            q_pi = self._q_ensemble(z_t, policy_action).squeeze(-1).min(dim=0)[0]
+            policy_loss = policy_loss - q_pi.mean()
+
+        components["policy"] = policy_loss / max(seq_len - 1, 1)
+
+        total = (
+            self.config.consistency_loss_coef * components["consistency"]
+            + self.config.reward_loss_coef * components["reward"]
+            + self.config.td_loss_coef * components["td"]
+            + self.config.policy_loss_coef * components["policy"]
+        )
+        self._soft_update_target_q()
         metrics = {k: v.item() for k, v in components.items()}
         return LossOutput(loss=total, components=components, metrics=metrics)
 

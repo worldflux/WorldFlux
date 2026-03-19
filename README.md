@@ -243,6 +243,13 @@ docs/tooling:
 - `dreamerv3:size12m` through `dreamerv3:size200m` -> `reference`
 - `dreamerv3:official_xl` -> `proof`
 
+Reference-family TD-MPC2 profiles expose the same tier vocabulary:
+
+- `tdmpc2:ci` -> `compatibility`
+- `tdmpc2:5m`, `tdmpc2:19m`, `tdmpc2:48m`, `tdmpc2:317m` -> `reference`
+- `tdmpc2:proof_5m` -> `proof`
+- `tdmpc2:5m_legacy` -> `compatibility`
+
 This table lists commonly used presets. For the full catalog (including CI, experimental, and
 skeleton families), run:
 

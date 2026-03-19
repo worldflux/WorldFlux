@@ -629,6 +629,17 @@ class TDMPC2Config(WorldModelConfig):
     # TD learning
     gamma: float = 0.99
 
+    # Alignment/reference metadata
+    training_tier: str = "reference"
+    parity_profile: str = ""
+
+    # Reference-fidelity training knobs
+    target_q_tau: float = 0.01
+    consistency_loss_coef: float = 1.0
+    reward_loss_coef: float = 1.0
+    td_loss_coef: float = 1.0
+    policy_loss_coef: float = 1.0
+
     # TD-MPC2 is implicit by default
     use_decoder: bool = False
 
@@ -702,6 +713,20 @@ class TDMPC2Config(WorldModelConfig):
                 config_name=self.model_name,
             )
 
+        valid_training_tiers = {"compatibility", "reference", "proof"}
+        if self.training_tier not in valid_training_tiers:
+            raise ConfigurationError(
+                "training_tier must be one of "
+                f"{sorted(valid_training_tiers)}, got {self.training_tier!r}",
+                config_name=self.model_name,
+            )
+
+        if not (0 < self.target_q_tau <= 1):
+            raise ConfigurationError(
+                f"target_q_tau must be in (0, 1], got {self.target_q_tau}",
+                config_name=self.model_name,
+            )
+
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> TDMPC2Config:
         """Create configuration from dictionary."""
@@ -730,13 +755,31 @@ class TDMPC2Config(WorldModelConfig):
             ValueError: If the size preset is not recognized.
         """
         presets: dict[str, dict[str, Any]] = {
-            "ci": {"latent_dim": 32, "hidden_dim": 32, "num_q_networks": 2},
-            "5m": {"latent_dim": 256, "hidden_dim": 256},
-            "proof_5m": {"latent_dim": 256, "hidden_dim": 256},
-            "5m_legacy": {"latent_dim": 256, "hidden_dim": 256},
-            "19m": {"latent_dim": 512, "hidden_dim": 512},
-            "48m": {"latent_dim": 512, "hidden_dim": 1024},
-            "317m": {"latent_dim": 1024, "hidden_dim": 2048},
+            "ci": {
+                "latent_dim": 32,
+                "hidden_dim": 32,
+                "num_q_networks": 2,
+                "training_tier": "compatibility",
+            },
+            "5m": {"latent_dim": 256, "hidden_dim": 256, "training_tier": "reference"},
+            "proof_5m": {
+                "latent_dim": 256,
+                "hidden_dim": 256,
+                "training_tier": "proof",
+                "parity_profile": "proof_5m",
+            },
+            "5m_legacy": {
+                "latent_dim": 256,
+                "hidden_dim": 256,
+                "training_tier": "compatibility",
+            },
+            "19m": {"latent_dim": 512, "hidden_dim": 512, "training_tier": "reference"},
+            "48m": {"latent_dim": 512, "hidden_dim": 1024, "training_tier": "reference"},
+            "317m": {
+                "latent_dim": 1024,
+                "hidden_dim": 2048,
+                "training_tier": "reference",
+            },
         }
         if size not in presets:
             raise ValueError(f"Unknown size: {size}. Available: {list(presets.keys())}")
