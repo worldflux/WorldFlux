@@ -200,6 +200,22 @@ class TestHubResolution:
 
 
 class TestComponentOverrides:
+    def test_list_component_slots_returns_public_copy(self):
+        slots = WorldModelRegistry.list_component_slots()
+        assert "action_conditioner" in slots
+        assert slots["action_conditioner"] == ("action_conditioner", "action_conditioner")
+
+    def test_describe_composable_support_reports_family_slots(self):
+        support = WorldModelRegistry.describe_composable_support(
+            "tdmpc2:ci",
+            obs_shape=(4,),
+            action_dim=2,
+        )
+        assert support["model_type"] == "TDMPC2WorldModel"
+        assert support["supports"]["action_conditioner"] is True
+        assert support["supports"]["rollout_executor"] is True
+        assert support["supports"]["decoder"] is True
+
     def test_apply_component_overrides_rejects_unknown_slot(self):
         model = WorldModelRegistry.from_pretrained("tdmpc2:ci", obs_shape=(4,), action_dim=2)
         with pytest.raises(ConfigurationError, match="Unknown component slot"):
