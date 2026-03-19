@@ -945,3 +945,53 @@ class EvalCallback(Callback):
             epoch=int(trainer.state.epoch),
             step=step,
         )
+
+
+class CallbackAdapter(Callback):
+    """Bridge existing Callback instances to the EventBus system.
+
+    Wraps a traditional Callback and translates its hook invocations into
+    EventBus events, providing backward compatibility while allowing new
+    code to subscribe exclusively via the EventBus.
+
+    Args:
+        event_bus: The EventBus to subscribe to.
+        callback: The legacy Callback instance to adapt.
+    """
+
+    def __init__(
+        self,
+        event_bus: Any,
+        callback: Callback,
+    ) -> None:
+        from worldflux.core.events import EventTypes
+
+        self._bus = event_bus
+        self._callback = callback
+        self._subscriptions: list[Any] = []
+
+        # Map EventBus events to Callback hooks
+        hook_map = {
+            EventTypes.TRAIN_BEGIN: callback.on_train_begin,
+            EventTypes.TRAIN_END: callback.on_train_end,
+            EventTypes.EPOCH_BEGIN: callback.on_epoch_begin,
+            EventTypes.EPOCH_END: callback.on_epoch_end,
+            EventTypes.STEP_BEGIN: callback.on_step_begin,
+            EventTypes.STEP_END: callback.on_step_end,
+        }
+
+        for event_type, hook_fn in hook_map.items():
+            # Only subscribe if the callback actually overrides the hook
+            base_fn = getattr(Callback, hook_fn.__name__, None)
+            if hook_fn.__func__ is not base_fn:  # type: ignore[attr-defined]
+                sub = event_bus.subscribe(
+                    event_type,
+                    lambda event, fn=hook_fn: fn(event.data.get("trainer")),
+                )
+                self._subscriptions.append(sub)
+
+    def detach(self) -> None:
+        """Remove all subscriptions from the event bus."""
+        for sub in self._subscriptions:
+            self._bus.unsubscribe(sub)
+        self._subscriptions.clear()
