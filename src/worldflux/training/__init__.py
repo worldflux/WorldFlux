@@ -13,6 +13,7 @@ from .callbacks import (
 )
 from .config import TrainingConfig
 from .data import ReplayBuffer, TokenSequenceProvider, TrajectoryDataset, TransitionArrayProvider
+from .distributed import build_launch_config
 from .replay_backends import MemoryReplayBackend, ParquetReplayBackend, ReplayBackend
 from .report import HealthSignal, LossCurveSummary, TrainingReport
 from .scheduling import LocalClock, RatioUpdateScheduler
@@ -24,6 +25,7 @@ __all__ = [
     "Trainer",
     "TrainingConfig",
     "ReplayBuffer",
+    "build_launch_config",
     "ReplayBackend",
     "MemoryReplayBackend",
     "ParquetReplayBackend",

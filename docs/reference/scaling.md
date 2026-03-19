@@ -30,6 +30,10 @@ batch = backend.sample(batch_size=8, seq_len=16)
 
 ## Near-Term Roadmap
 
+- `TrainingConfig(distributed_mode="ddp", distributed_world_size=N)` now exposes
+  the first normalized launch surface for native distributed training work.
+- `build_launch_config(...)` returns the normalized launch description used by
+  upcoming distributed trainer entry points.
 - add distributed training entry points
 - add throughput and memory profiling
 - extend replay backends beyond in-memory reconstruction
