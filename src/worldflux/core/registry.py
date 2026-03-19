@@ -648,31 +648,181 @@ class WorldModelRegistry:
             return cls._instantiate_component(override, model)
         return override
 
+    _MAX_NESTING_DEPTH: int = 3
+
     @classmethod
     def apply_component_overrides(
         cls,
         model: WorldModel,
         component_overrides: dict[str, object],
     ) -> None:
-        """Apply component overrides to a world model instance."""
+        """Apply component overrides to a world model instance.
+
+        Supports dot-notation for nested component overrides (up to 3 levels)
+        and callable factory functions as override values.
+
+        Examples::
+
+            # Top-level override
+            apply_component_overrides(model, {"observation_encoder": MyEncoder})
+
+            # Nested override (dot notation)
+            apply_component_overrides(model, {"dynamics_model.gru_cell": CustomGRU})
+
+            # Factory function override
+            apply_component_overrides(model, {
+                "observation_encoder": lambda config: MyEncoder(config.hidden_dim)
+            })
+        """
         for slot, override in component_overrides.items():
-            slot_meta = cls._component_slots.get(slot)
-            if slot_meta is None:
-                raise ConfigurationError(
-                    f"Unknown component slot '{slot}'. "
-                    f"Available: {sorted(cls._component_slots.keys())}"
-                )
-            cls._assert_component_override_supported(model, slot)
-            attr_name, expected_type = slot_meta
-            built_component = cls.build_component(
-                override,
-                expected_component_type=expected_type,
-                model=model,
+            if "." in slot:
+                cls._apply_nested_override(model, slot, override)
+            else:
+                cls._apply_top_level_override(model, slot, override)
+
+    @classmethod
+    def _apply_top_level_override(cls, model: WorldModel, slot: str, override: object) -> None:
+        """Apply a top-level component override."""
+        slot_meta = cls._component_slots.get(slot)
+        if slot_meta is None:
+            raise ConfigurationError(
+                f"Unknown component slot '{slot}'. "
+                f"Available: {sorted(cls._component_slots.keys())}"
             )
-            setattr(model, attr_name, built_component)
-            if slot == "rollout_engine":
-                # Keep deprecated alias and new slot in sync.
-                setattr(model, "rollout_executor", built_component)
+        cls._assert_component_override_supported(model, slot)
+        attr_name, expected_type = slot_meta
+
+        # Support callable factory functions
+        if callable(override) and not isinstance(override, type):
+            config = getattr(model, "config", None)
+            override = override(config)
+
+        built_component = cls.build_component(
+            override,
+            expected_component_type=expected_type,
+            model=model,
+        )
+
+        # Validate __requires__ if present on the component
+        cls._validate_requires(built_component, model)
+
+        setattr(model, attr_name, built_component)
+        if slot == "rollout_engine":
+            # Keep deprecated alias and new slot in sync.
+            setattr(model, "rollout_executor", built_component)
+
+    @classmethod
+    def _apply_nested_override(cls, model: WorldModel, dotted_path: str, override: object) -> None:
+        """Apply a nested component override using dot notation.
+
+        Args:
+            model: The world model instance.
+            dotted_path: Dot-separated path (e.g. "dynamics_model.gru_cell").
+            override: The override value (class, instance, or factory callable).
+
+        Raises:
+            ConfigurationError: If the path is invalid, too deep, or the
+                target attribute does not exist.
+        """
+        parts = dotted_path.split(".")
+        if len(parts) > cls._MAX_NESTING_DEPTH:
+            raise ConfigurationError(
+                f"Nested override path '{dotted_path}' exceeds maximum depth "
+                f"of {cls._MAX_NESTING_DEPTH}. Simplify the component hierarchy."
+            )
+
+        # Resolve the top-level slot
+        top_slot = parts[0]
+        slot_meta = cls._component_slots.get(top_slot)
+        if slot_meta is None:
+            raise ConfigurationError(
+                f"Unknown top-level component slot '{top_slot}' in path '{dotted_path}'. "
+                f"Available: {sorted(cls._component_slots.keys())}"
+            )
+        attr_name = slot_meta[0]
+
+        # Walk to the parent of the target attribute
+        current = getattr(model, attr_name, None)
+        if current is None:
+            raise ConfigurationError(
+                f"Cannot apply nested override '{dotted_path}': "
+                f"top-level slot '{top_slot}' is None. "
+                "Set the top-level component first."
+            )
+
+        for i, part in enumerate(parts[1:-1], start=1):
+            next_obj = getattr(current, part, None)
+            if next_obj is None:
+                traversed = ".".join(parts[: i + 1])
+                raise ConfigurationError(
+                    f"Cannot apply nested override '{dotted_path}': "
+                    f"'{traversed}' resolved to None."
+                )
+            current = next_obj
+
+        # Apply the override to the final attribute
+        target_attr = parts[-1]
+        if not hasattr(current, target_attr):
+            raise ConfigurationError(
+                f"Cannot apply nested override '{dotted_path}': "
+                f"'{'.'.join(parts[:-1])}' has no attribute '{target_attr}'."
+            )
+
+        # Support callable factory functions
+        if callable(override) and not isinstance(override, type):
+            config = getattr(model, "config", None)
+            override = override(config)
+
+        # Instantiate class overrides
+        if isinstance(override, type):
+            override = cls._instantiate_component(override, model)
+
+        # Validate __requires__ if present
+        cls._validate_requires(override, model)
+
+        setattr(current, target_attr, override)
+
+    @staticmethod
+    def _validate_requires(component: object, model: WorldModel) -> None:
+        """Check __requires__ declarations on a component.
+
+        If a component declares ``__requires__`` as a dict mapping
+        parameter names to types, this method verifies that the model's
+        config provides those parameters with the expected types.
+
+        Args:
+            component: The component instance to check.
+            model: The model providing the config.
+
+        Raises:
+            ConfigurationError: If required parameters are missing or
+                have incorrect types.
+        """
+        requires = getattr(component, "__requires__", None)
+        if not isinstance(requires, dict) or not requires:
+            return
+
+        config = getattr(model, "config", None)
+        if config is None:
+            raise ConfigurationError(
+                f"Component {type(component).__name__} declares __requires__ "
+                f"but model has no config."
+            )
+
+        for param_name, expected_type in requires.items():
+            value = getattr(config, param_name, None)
+            if value is None:
+                raise ConfigurationError(
+                    f"Component {type(component).__name__} requires config "
+                    f"parameter '{param_name}' (type {expected_type.__name__}), "
+                    f"but it is not present in the model config."
+                )
+            if not isinstance(value, expected_type):
+                raise ConfigurationError(
+                    f"Component {type(component).__name__} requires "
+                    f"'{param_name}' to be {expected_type.__name__}, "
+                    f"got {type(value).__name__}."
+                )
 
     @classmethod
     def _canonical_component_slot(cls, slot: str) -> str:
