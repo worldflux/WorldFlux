@@ -16,7 +16,7 @@ import torch
 
 from worldflux import create_world_model
 from worldflux.training import Trainer, TrainingConfig
-from worldflux.training.replay import ReplayBuffer
+from worldflux.training.data import ReplayBuffer
 
 # ---------------------------------------------------------------------------
 # Helpers
