@@ -30,12 +30,13 @@ _APP_EXPORTS = {
     "WIZARD_STEPS",
     "WIZARD_TOTAL",
     "app",
+    "config_app",
     "console",
     "models_app",
     "parity_app",
     "parity_campaign_app",
 }
-_COMMAND_APP_EXPORTS = {"app", "models_app", "parity_app", "parity_campaign_app"}
+_COMMAND_APP_EXPORTS = {"app", "config_app", "models_app", "parity_app", "parity_campaign_app"}
 _EXPORT_GROUPS: dict[str, tuple[str, ...]] = {
     "worldflux.bootstrap_env": ("ensure_init_dependencies",),
     "worldflux.parity": (
@@ -122,6 +123,12 @@ def _ensure_commands_registered() -> Any:
     import_module("worldflux.cli._train")
     app_module.app.add_typer(app_module.models_app, name="models", rich_help_panel="Model Catalog")
     import_module("worldflux.cli._models")
+    app_module.app.add_typer(
+        app_module.config_app,
+        name="config",
+        rich_help_panel="Model Catalog",
+    )
+    import_module("worldflux.cli._config_cmd")
     import_module("worldflux.cli._eval")
     app_module.app.add_typer(
         app_module.parity_app,

@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import warnings
 from dataclasses import asdict, dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args, get_origin
 
 from .exceptions import ConfigurationError
 
@@ -215,6 +216,52 @@ class WorldModelConfig:
                 f"dtype must be 'float32', 'float16', or 'bfloat16', got {self.dtype!r}",
                 config_name=self.model_name,
             )
+
+    # ------------------------------------------------------------------
+    # API-05: JSON Schema generation
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def json_schema(cls) -> dict[str, Any]:
+        """Generate a JSON Schema (Draft 2020-12) for this config class.
+
+        The schema is derived from :mod:`dataclasses` field metadata -
+        types, defaults, and Enum members are all translated.
+
+        Returns:
+            A JSON-serializable dict conforming to JSON Schema Draft 2020-12.
+        """
+        properties: dict[str, Any] = {}
+        required: list[str] = []
+
+        for f in dataclasses.fields(cls):
+            prop = _field_to_json_schema(f)
+            properties[f.name] = prop
+            # Fields without defaults are required
+            if (
+                f.default is dataclasses.MISSING and f.default_factory is dataclasses.MISSING  # type: ignore[arg-type]
+            ):
+                required.append(f.name)
+
+        schema: dict[str, Any] = {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "title": cls.__name__,
+            "type": "object",
+            "properties": properties,
+        }
+        if required:
+            schema["required"] = required
+
+        doc = cls.__doc__
+        if doc:
+            # Take the first non-empty line as the description.
+            for line in doc.strip().splitlines():
+                line = line.strip()
+                if line:
+                    schema["description"] = line
+                    break
+
+        return schema
 
     def to_dict(self) -> dict[str, Any]:
         """Convert configuration to dictionary for serialization."""
@@ -1148,3 +1195,118 @@ class GANSkeletonConfig(WorldModelConfig):
         preset = presets[size]
         preset.update(kwargs)
         return cls(model_name=size, **preset)
+
+
+# ---------------------------------------------------------------------------
+# JSON Schema helpers (API-05)
+# ---------------------------------------------------------------------------
+
+
+def _python_type_to_json_type(tp: type | None) -> dict[str, Any]:
+    """Map a Python type annotation to a JSON Schema type descriptor."""
+    if tp is None:
+        return {"type": "string"}
+
+    # Handle basic types
+    if tp is int:
+        return {"type": "integer"}
+    if tp is float:
+        return {"type": "number"}
+    if tp is bool:
+        return {"type": "boolean"}
+    if tp is str:
+        return {"type": "string"}
+
+    # Enum
+    if isinstance(tp, type) and issubclass(tp, Enum):
+        return {"enum": [e.value for e in tp]}
+
+    # Generic aliases (Optional, tuple, dict, etc.)
+    origin = get_origin(tp)
+    args = get_args(tp)
+
+    # Union / Optional (X | None)
+    if origin is type(int | str):  # types.UnionType (PEP 604)
+        non_none = [a for a in args if a is not type(None)]
+        if len(non_none) == 1:
+            base = _python_type_to_json_type(non_none[0])
+            return {**base, "default": None}
+        return {}
+
+    # typing.Union
+    try:
+        import typing
+
+        if origin is typing.Union:
+            non_none = [a for a in args if a is not type(None)]
+            if len(non_none) == 1:
+                base = _python_type_to_json_type(non_none[0])
+                return {**base, "default": None}
+            return {}
+    except Exception:
+        pass
+
+    if origin is tuple:
+        if args:
+            if len(args) == 2 and args[1] is Ellipsis:
+                return {"type": "array", "items": _python_type_to_json_type(args[0])}
+            return {
+                "type": "array",
+                "items": [_python_type_to_json_type(a) for a in args],
+                "minItems": len(args),
+                "maxItems": len(args),
+            }
+        return {"type": "array"}
+
+    if origin is dict:
+        schema: dict[str, Any] = {"type": "object"}
+        if args and len(args) == 2:
+            schema["additionalProperties"] = _python_type_to_json_type(args[1])
+        return schema
+
+    if origin is list:
+        schema = {"type": "array"}
+        if args:
+            schema["items"] = _python_type_to_json_type(args[0])
+        return schema
+
+    return {"type": "string"}
+
+
+def _field_to_json_schema(f: dataclasses.Field[Any]) -> dict[str, Any]:
+    """Convert a single dataclass field to a JSON Schema property."""
+    prop = _python_type_to_json_type(f.type if not isinstance(f.type, str) else None)
+
+    # Resolve string annotations for known types
+    if isinstance(f.type, str):
+        simple_map: dict[str, dict[str, Any]] = {
+            "int": {"type": "integer"},
+            "float": {"type": "number"},
+            "bool": {"type": "boolean"},
+            "str": {"type": "string"},
+        }
+        prop = simple_map.get(f.type, prop)
+
+        if "LatentType" in f.type:
+            prop = {"enum": [e.value for e in LatentType]}
+        elif "DynamicsType" in f.type:
+            prop = {"enum": [e.value for e in DynamicsType]}
+        elif "tuple" in f.type:
+            prop = {"type": "array"}
+        elif "dict" in f.type:
+            prop = {"type": "object"}
+
+    # Default value
+    if f.default is not dataclasses.MISSING:
+        default = f.default
+        if isinstance(default, Enum):
+            default = default.value
+        prop["default"] = default
+    elif f.default_factory is not dataclasses.MISSING:  # type: ignore[arg-type]
+        try:
+            default = f.default_factory()  # type: ignore[misc]
+            prop["default"] = default
+        except Exception:
+            pass
+
+    return prop
