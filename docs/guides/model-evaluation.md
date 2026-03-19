@@ -23,6 +23,26 @@ report = run_eval_suite(model, suite="quick")
 print(report.all_passed)
 ```
 
+## Quick Verification Tiers
+
+For checkpoint-oriented verification flows, `worldflux.verify.quick.quick_verify`
+now distinguishes lightweight execution tiers:
+
+| Tier | Purpose |
+| --- | --- |
+| `synthetic` | default compatibility path using synthetic rollouts |
+| `offline` | checkpoint verification against bundled baseline statistics without parity tooling |
+| `real_env_smoke` | smoke-oriented path reserved for short real-environment verification loops |
+
+Example:
+
+```python
+from worldflux.verify.quick import quick_verify
+
+result = quick_verify("./outputs", env="atari/pong", tier="offline")
+print(result.stats["verification_tier"])
+```
+
 ## Metrics Reference
 
 - **reconstruction_fidelity**: Measures encode → decode round-trip MSE

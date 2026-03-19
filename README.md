@@ -126,6 +126,15 @@ worldflux init my-world-model
 worldflux doctor
 ```
 
+### Tiered Quick Verification
+
+`quick_verify` supports lightweight verification tiers for checkpoint-centric
+workflows:
+
+- `synthetic`: default compatibility path
+- `offline`: baseline-backed quick verification without parity tooling
+- `real_env_smoke`: reserved short-horizon smoke tier for real-environment checks
+
 ### Build Docs Locally
 
 ```bash

@@ -32,6 +32,14 @@ class QualityTier(str, Enum):
     PRODUCTION = "production"  # reference-level thresholds
 
 
+class QuickVerifyTier(str, Enum):
+    """Execution tier for quick verification."""
+
+    SYNTHETIC = "synthetic"
+    OFFLINE = "offline"
+    REAL_ENV_SMOKE = "real_env_smoke"
+
+
 @dataclass(frozen=True)
 class QualityCheckResult:
     """Result of a quality tier check."""
@@ -134,10 +142,24 @@ def _compute_drop_ratios(
     return [(baseline_mean - s) / abs(baseline_mean) for s in scores]
 
 
+def _normalize_quick_verify_tier(tier: str | QuickVerifyTier) -> QuickVerifyTier:
+    if isinstance(tier, QuickVerifyTier):
+        return tier
+    normalized = str(tier).strip().lower()
+    for candidate in QuickVerifyTier:
+        if candidate.value == normalized:
+            return candidate
+    raise ValueError(
+        "Unknown verification tier: "
+        f"{tier!r}. Expected one of {[candidate.value for candidate in QuickVerifyTier]}"
+    )
+
+
 def quick_verify(
     target: str,
     *,
     env: str = "atari/pong",
+    tier: str | QuickVerifyTier = QuickVerifyTier.SYNTHETIC,
     episodes: int = 10,
     horizon: int = 15,
     device: str = "cpu",
@@ -169,6 +191,7 @@ def quick_verify(
     from worldflux.parity.stats import non_inferiority_test
 
     start = time.monotonic()
+    verification_tier = _normalize_quick_verify_tier(tier)
 
     # Load baseline statistics
     baselines = _load_baselines(baseline_path)
@@ -191,12 +214,16 @@ def quick_verify(
     action_dim = int(getattr(config, "action_dim", 6))
 
     # Run evaluation
+    eval_horizon = int(horizon)
+    if verification_tier == QuickVerifyTier.REAL_ENV_SMOKE:
+        # Keep smoke runs deliberately short until a real-env runner is introduced.
+        eval_horizon = min(eval_horizon, 5)
     scores = _evaluate_model(
         model,
         obs_shape=obs_shape,
         action_dim=action_dim,
         episodes=episodes,
-        horizon=horizon,
+        horizon=eval_horizon,
         device=device,
     )
 
@@ -216,6 +243,7 @@ def quick_verify(
     passed = ni_result.pass_non_inferiority
 
     stats = {
+        "verification_tier": verification_tier.value,
         "mean_drop_ratio": ni_result.mean_drop_ratio,
         "ci_upper_ratio": ni_result.ci_upper_ratio,
         "ci_lower_ratio": ni_result.ci_lower_ratio,
@@ -225,6 +253,7 @@ def quick_verify(
         "scores": scores,
         "baseline_mean": baseline_mean,
         "baseline_std": float(baseline.get("std", 0.0)),
+        "evaluation_horizon": eval_horizon,
     }
 
     return QuickVerifyResult(
@@ -237,7 +266,8 @@ def quick_verify(
         elapsed_seconds=round(elapsed, 3),
         protocol_version=PROTOCOL_VERSION,
         stats=stats,
-        verdict_reason=ni_result.verdict_reason or "synthetic smoke workload only",
+        verdict_reason=ni_result.verdict_reason
+        or f"{verification_tier.value} quick verification workload only",
     )
 
 
