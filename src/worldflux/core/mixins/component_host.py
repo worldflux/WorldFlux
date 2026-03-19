@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Component host mixin for the 5-layer pluggable architecture."""
 
 from __future__ import annotations

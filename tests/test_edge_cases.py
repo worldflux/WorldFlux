@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Edge case tests for WorldFlux OSS robustness."""
 
 import pytest

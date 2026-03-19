@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Scaffold template asset. Generated from sample-dreamer."""
 
 from __future__ import annotations

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Paper-reported baseline scores for upstream algorithms."""
 
 from __future__ import annotations

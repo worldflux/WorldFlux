@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Theme-aware Rich rendering helpers shared across all CLI commands."""
 
 from __future__ import annotations

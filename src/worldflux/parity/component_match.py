@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Component-level deterministic match testing between official and WorldFlux."""
 
 from __future__ import annotations

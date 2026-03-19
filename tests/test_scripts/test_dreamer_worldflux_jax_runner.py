@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Tests for the WorldFlux Dreamer JAX proof runner."""
 
 from __future__ import annotations

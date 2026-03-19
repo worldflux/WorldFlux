@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Freeze tests for public API symbols and core signatures."""
 
 from __future__ import annotations

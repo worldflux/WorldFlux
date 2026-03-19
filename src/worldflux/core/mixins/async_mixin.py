@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Async execution mixin for WorldModel."""
 
 from __future__ import annotations

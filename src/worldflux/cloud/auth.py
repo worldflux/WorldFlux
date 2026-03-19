@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Credential helpers for WorldFlux Cloud authentication."""
 
 from __future__ import annotations

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Specification types for observations, actions, tokens, and capabilities."""
 
 from __future__ import annotations

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """WorldFlux-owned DreamerV3 JAX runtime entrypoints."""
 
 from .runtime import (

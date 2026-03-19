@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Tests for parity equivalence report schemas and markdown rendering."""
 
 from __future__ import annotations

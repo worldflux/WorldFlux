@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Policy checks for current public documentation wording and links."""
 
 from __future__ import annotations

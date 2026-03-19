@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """The ``eval`` command — run evaluation metrics on a world model."""
 
 from __future__ import annotations

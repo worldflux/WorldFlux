@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Tests for real-environment path in worldflux native online runner."""
 
 from __future__ import annotations

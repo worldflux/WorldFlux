@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Tests for TD-MPC2 component-level match verification."""
 
 from __future__ import annotations

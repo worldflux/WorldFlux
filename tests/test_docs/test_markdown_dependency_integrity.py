@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Documentation integrity checks against implementation contracts."""
 
 from __future__ import annotations

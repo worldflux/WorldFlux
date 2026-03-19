@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Compare parity run scores against published paper baselines."""
 
 from __future__ import annotations

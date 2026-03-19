@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Module entrypoint that bridges WorldFlux runtime to vendored DreamerV3 modules."""
 
 from __future__ import annotations

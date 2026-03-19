@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Execution contracts and executor implementations for backend-native flows."""
 
 from .backend_policy import (

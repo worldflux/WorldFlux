@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Local JSONL telemetry helpers for WASR-style product metrics."""
 
 from __future__ import annotations

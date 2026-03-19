@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Tests for diffusion scheduler and sampler behavior."""
 
 from __future__ import annotations

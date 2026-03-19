@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Tests for two-stage proof wait guard in AWS parity orchestrator."""
 
 from __future__ import annotations

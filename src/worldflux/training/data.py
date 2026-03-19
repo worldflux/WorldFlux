@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Data storage and sampling for world model training."""
 
 from __future__ import annotations

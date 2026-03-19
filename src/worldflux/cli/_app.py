@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """App definition, constants, and root callback for WorldFlux CLI."""
 
 from __future__ import annotations

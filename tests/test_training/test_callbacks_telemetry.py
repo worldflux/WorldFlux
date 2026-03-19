@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Tests for telemetry-oriented training callbacks."""
 
 from __future__ import annotations

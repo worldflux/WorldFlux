@@ -35,6 +35,13 @@ repos:
 
   - repo: local
     hooks:
+      - id: spdx-header-check
+        name: spdx-header-check
+        entry: bash -lc 'ROOT="$(git rev-parse --show-toplevel)"; cd "$ROOT"; python3 scripts/add_spdx_headers.py --check'
+        language: system
+        pass_filenames: false
+        types: [python]
+        files: ^(src/worldflux|tests)/
       - id: ci-fast-gate
         name: ci-fast-gate
         entry: bash -lc 'ROOT="$(git rev-parse --show-toplevel)"; cd "$ROOT"; uv run --project "$ROOT" python scripts/run_local_ci_gate.py --profile fast'

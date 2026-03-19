@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Tests for trainer instant profile mode and runtime metrics."""
 
 from __future__ import annotations

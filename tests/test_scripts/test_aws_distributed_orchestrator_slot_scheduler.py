@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Tests for slot-level scheduler behavior in AWS parity orchestrator."""
 
 from __future__ import annotations

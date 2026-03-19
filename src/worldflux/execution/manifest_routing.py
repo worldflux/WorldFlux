@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Single-source manifest routing for verify/parity execution."""
 
 from __future__ import annotations

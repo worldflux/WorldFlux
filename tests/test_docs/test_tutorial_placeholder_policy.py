@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Checks for tutorial placeholder publication policy."""
 
 from __future__ import annotations

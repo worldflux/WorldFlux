@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """V-JEPA2-style predictive representation world model.
 
 .. warning::
