@@ -134,6 +134,12 @@ class Trainer:
         # Event bus (optional, near-zero overhead when unused)
         self.event_bus: Any = None
 
+        # Resilience components (opt-in, None by default)
+        self.circuit_breaker: Any = None
+        self.nan_recovery: Any = None
+        self.amp_fallback: Any = None
+        self.batch_retry: Any = None
+
         # Gradient accumulation counter
         self._accumulation_step = 0
 
