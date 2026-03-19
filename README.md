@@ -63,6 +63,7 @@ trajectory = model.rollout(state, actions)  # imagine 15 steps ahead
 - **Pluggable 5-layer core**: optional `component_overrides` for encoder/dynamics/conditioner/decoder/rollout
 - **Training Infrastructure**: Complete training loop with callbacks, checkpointing, and logging
 - **Type Safe**: Full type annotations and mypy compatibility
+- **Reference Tiers**: DreamerV3 profiles now distinguish `compatibility`, `reference`, and `proof` roles for docs/tooling alignment
 
 ## Installation
 
@@ -234,6 +235,13 @@ trained_model.save_pretrained("./my_model")
 > **Experimental** models implement the full API but do not carry the same
 > parity workflow coverage and may return `None` for some predictions
 > (e.g. rewards).
+
+Reference-family Dreamer profiles additionally expose alignment metadata for
+docs/tooling:
+
+- `dreamer:ci` -> `compatibility`
+- `dreamerv3:size12m` through `dreamerv3:size200m` -> `reference`
+- `dreamerv3:official_xl` -> `proof`
 
 This table lists commonly used presets. For the full catalog (including CI, experimental, and
 skeleton families), run:

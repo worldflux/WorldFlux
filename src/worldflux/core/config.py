@@ -375,6 +375,10 @@ class DreamerV3Config(WorldModelConfig):
 
     use_symlog: bool = True
 
+    # Alignment metadata for docs/tooling.
+    reference_tier: str = "reference"
+    parity_profile: str = ""
+
     # Twohot categorical reward prediction (DreamerV3 paper)
     use_twohot: bool = True
     reward_num_bins: int = 255
@@ -499,36 +503,42 @@ class DreamerV3Config(WorldModelConfig):
                 "stoch_classes": 4,
                 "hidden_dim": 32,
                 "cnn_depth": 8,
+                "reference_tier": "compatibility",
             },
             "size12m": {
                 "deter_dim": 2048,
                 "stoch_discrete": 16,
                 "stoch_classes": 16,
                 "hidden_dim": 256,
+                "reference_tier": "reference",
             },
             "size25m": {
                 "deter_dim": 4096,
                 "stoch_discrete": 32,
                 "stoch_classes": 16,
                 "hidden_dim": 512,
+                "reference_tier": "reference",
             },
             "size50m": {
                 "deter_dim": 4096,
                 "stoch_discrete": 32,
                 "stoch_classes": 32,
                 "hidden_dim": 640,
+                "reference_tier": "reference",
             },
             "size100m": {
                 "deter_dim": 8192,
                 "stoch_discrete": 32,
                 "stoch_classes": 32,
                 "hidden_dim": 768,
+                "reference_tier": "reference",
             },
             "size200m": {
                 "deter_dim": 8192,
                 "stoch_discrete": 32,
                 "stoch_classes": 32,
                 "hidden_dim": 1024,
+                "reference_tier": "reference",
             },
             "official_xl": {
                 "deter_dim": 8192,
@@ -536,6 +546,8 @@ class DreamerV3Config(WorldModelConfig):
                 "stoch_classes": 64,
                 "hidden_dim": 1024,
                 "cnn_depth": 64,
+                "reference_tier": "proof",
+                "parity_profile": "official_xl",
             },
         }
         if size not in presets:
