@@ -651,3 +651,194 @@ def render_campaign_summary(summary: dict[str, Any]) -> str:
 def build_command_preview(command: str) -> str:
     """Return shell command preview with safe quoting for logs."""
     return " ".join(shlex.quote(part) for part in shlex.split(command))
+
+
+# ---------------------------------------------------------------------------
+# ML-02: MultiSeedCampaign - High-level orchestration for multi-seed runs
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class JobHandle:
+    """Lightweight handle for a launched campaign job."""
+
+    task: str
+    seed: int
+    source: str
+    status: str = "pending"
+    result_path: str | None = None
+
+
+@dataclass
+class AggregatedResult:
+    """Per-task aggregated scores across multiple seeds."""
+
+    task: str
+    source: str
+    seeds: list[int]
+    scores: list[float]
+    mean: float
+    std: float
+    median: float
+    iqr_low: float
+    iqr_high: float
+    ci_low: float
+    ci_high: float
+
+
+@dataclass
+class ParityReport:
+    """Report comparing WorldFlux and oracle aggregated results."""
+
+    suite_id: str
+    family: str
+    seeds: list[int]
+    worldflux_results: list[AggregatedResult]
+    oracle_results: list[AggregatedResult]
+    generated_at_utc: str
+
+
+class MultiSeedCampaign:
+    """Orchestrator for multi-seed parity campaigns.
+
+    Wraps the lower-level campaign machinery to provide a simple interface
+    for launching campaigns with multiple seeds, aggregating results, and
+    generating parity reports.
+
+    Parameters
+    ----------
+    spec:
+        Campaign specification loaded via ``load_campaign_spec``.
+    seeds:
+        List of random seeds to evaluate.  Defaults to ``[0, 1, 2, 3, 4]``.
+    device:
+        Device string passed through to command templates.
+    mode:
+        One of ``"worldflux"``, ``"oracle"``, or ``"both"``.
+    workdir:
+        Working directory for subprocess execution.
+    """
+
+    def __init__(
+        self,
+        spec: CampaignSpec,
+        seeds: list[int] | None = None,
+        device: str = "cpu",
+        mode: str = "both",
+        workdir: Path | None = None,
+    ) -> None:
+        self.spec = spec
+        self.seeds = seeds if seeds is not None else [0, 1, 2, 3, 4]
+        self.device = device
+        self.mode = mode
+        self.workdir = workdir or Path.cwd()
+        self._jobs: list[JobHandle] = []
+        self._summary: dict[str, Any] | None = None
+
+    def launch_all(self, *, dry_run: bool = False) -> list[JobHandle]:
+        """Launch all task/seed combinations and return job handles.
+
+        For infrastructure validation pass ``dry_run=True`` to print the
+        commands without executing them.
+        """
+        seeds_tuple = tuple(sorted(set(self.seeds)))
+        options = CampaignRunOptions(
+            mode=self.mode,
+            seeds=seeds_tuple,
+            device=self.device,
+            output=None,
+            oracle_output=None,
+            resume=False,
+            dry_run=dry_run,
+            workdir=self.workdir,
+        )
+
+        self._summary = run_campaign(self.spec, options)
+
+        # Build job handles from the campaign spec
+        selected_modes = ("oracle", "worldflux") if self.mode == "both" else (self.mode,)
+        self._jobs = []
+        for source_name in selected_modes:
+            for task in self.spec.tasks:
+                for seed in seeds_tuple:
+                    handle = JobHandle(
+                        task=task,
+                        seed=seed,
+                        source=source_name,
+                        status="completed" if not dry_run else "dry_run",
+                    )
+                    self._jobs.append(handle)
+
+        return list(self._jobs)
+
+    def aggregate_results(self) -> list[AggregatedResult]:
+        """Aggregate scores across seeds for each task/source combination.
+
+        Reads the canonical output files produced by ``launch_all()`` and
+        computes mean, std, median, IQR, and bootstrap 95% CI.
+        """
+        from .stats import aggregate_scores
+
+        if self._summary is None:
+            raise ParityError("No campaign results available. Call launch_all() first.")
+
+        results: list[AggregatedResult] = []
+        rows = self._summary.get("rows", [])
+
+        for row in rows:
+            source_name = row.get("source", "unknown")
+            output_path = Path(row.get("output_path", ""))
+
+            if not output_path.exists():
+                continue
+
+            raw = json.loads(output_path.read_text(encoding="utf-8"))
+            score_entries = raw.get("scores", [])
+
+            # Group scores by task
+            task_scores: dict[str, list[tuple[int, float]]] = {}
+            for entry in score_entries:
+                task = entry["task"]
+                seed = entry["seed"]
+                score = entry["score"]
+                task_scores.setdefault(task, []).append((seed, score))
+
+            for task in sorted(task_scores):
+                pairs = task_scores[task]
+                seeds = [s for s, _ in pairs]
+                scores = [v for _, v in pairs]
+
+                agg = aggregate_scores(scores, confidence=0.95)
+                results.append(
+                    AggregatedResult(
+                        task=task,
+                        source=source_name,
+                        seeds=seeds,
+                        scores=scores,
+                        mean=agg.mean,
+                        std=agg.std,
+                        median=agg.median,
+                        iqr_low=agg.iqr_low,
+                        iqr_high=agg.iqr_high,
+                        ci_low=agg.ci_low,
+                        ci_high=agg.ci_high,
+                    )
+                )
+
+        return results
+
+    def generate_report(self) -> ParityReport:
+        """Generate a structured parity report from aggregated results."""
+        aggregated = self.aggregate_results()
+
+        worldflux_results = [r for r in aggregated if r.source == "worldflux"]
+        oracle_results = [r for r in aggregated if r.source == "oracle"]
+
+        return ParityReport(
+            suite_id=self.spec.suite_id,
+            family=self.spec.family,
+            seeds=list(sorted(set(self.seeds))),
+            worldflux_results=worldflux_results,
+            oracle_results=oracle_results,
+            generated_at_utc=_utc_now_iso(),
+        )
