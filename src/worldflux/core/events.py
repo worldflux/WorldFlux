@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Event bus system for extensible event-driven architecture.
 
 Provides a publish/subscribe event system that supplements the existing

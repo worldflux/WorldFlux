@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Error recovery framework for training resilience.
 
 Provides circuit breaker patterns, NaN recovery, mixed precision fallback,

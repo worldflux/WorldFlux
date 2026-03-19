@@ -72,6 +72,26 @@ def train(
         "--override",
         help="Path(s) to YAML/JSON override file(s), applied in order on top of base config.",
     ),
+    use_ddp: bool = typer.Option(
+        False,
+        "--use-ddp",
+        help="Enable DistributedDataParallel multi-GPU training.",
+    ),
+    num_envs: int = typer.Option(
+        1,
+        "--num-envs",
+        help="Number of parallel environments for vectorized data collection.",
+    ),
+    env_mode: str = typer.Option(
+        "auto",
+        "--env-mode",
+        help="Vectorized env mode: sync, async, or auto.",
+    ),
+    profile: bool = typer.Option(
+        False,
+        "--profile",
+        help="Enable performance profiling with torch.profiler trace output.",
+    ),
 ) -> None:
     """Train a world model using worldflux.toml configuration.
 
@@ -212,6 +232,10 @@ def train(
         output_dir=effective_output_dir,
         backend=cfg.training.backend,
         backend_profile=effective_backend_profile,
+        use_ddp=use_ddp,
+        num_envs=num_envs,
+        env_mode=env_mode,
+        profile=profile,
     )
 
     if isinstance(model, OfficialBackendHandle):
@@ -276,21 +300,41 @@ def train(
     )
     console.print(f"[wf.ok]Training data ready:[/wf.ok] {len(data)} transitions")
 
-    trainer = Trainer(model, training_config)
-    console.print(f"[wf.info]Starting training for {effective_steps:,} steps...[/wf.info]")
+    if use_ddp:
+        from worldflux.training.distributed import DDPTrainer
 
-    try:
-        trainer.train(data, resume_from=resume_from)
-    except (RuntimeError, KeyboardInterrupt) as exc:
-        if isinstance(exc, KeyboardInterrupt):
-            console.print("\n[wf.caution]Training interrupted by user.[/wf.caution]")
-        else:
-            console.print(f"[wf.fail]Training failed:[/wf.fail] {exc}")
-            raise typer.Exit(code=1) from None
+        ddp_trainer = DDPTrainer(model, training_config)
+        console.print(
+            f"[wf.info]Starting DDP training for {effective_steps:,} steps "
+            f"(rank {ddp_trainer.rank}/{ddp_trainer.world_size})...[/wf.info]"
+        )
+        try:
+            ddp_trainer.train(data, resume_from=resume_from)
+        except (RuntimeError, KeyboardInterrupt) as exc:
+            if isinstance(exc, KeyboardInterrupt):
+                console.print("\n[wf.caution]Training interrupted by user.[/wf.caution]")
+            else:
+                console.print(f"[wf.fail]DDP training failed:[/wf.fail] {exc}")
+                raise typer.Exit(code=1) from None
+        finally:
+            ddp_trainer.cleanup()
+        trainer = ddp_trainer._trainer  # For runtime profile access
+    else:
+        trainer = Trainer(model, training_config)
+        console.print(f"[wf.info]Starting training for {effective_steps:,} steps...[/wf.info]")
 
-    profile = trainer.runtime_profile()
-    elapsed = profile.get("elapsed_sec")
-    throughput = profile.get("throughput_steps_per_sec")
+        try:
+            trainer.train(data, resume_from=resume_from)
+        except (RuntimeError, KeyboardInterrupt) as exc:
+            if isinstance(exc, KeyboardInterrupt):
+                console.print("\n[wf.caution]Training interrupted by user.[/wf.caution]")
+            else:
+                console.print(f"[wf.fail]Training failed:[/wf.fail] {exc}")
+                raise typer.Exit(code=1) from None
+
+    rt_profile = trainer.runtime_profile()
+    elapsed = rt_profile.get("elapsed_sec")
+    throughput = rt_profile.get("throughput_steps_per_sec")
     final_step = trainer.state.global_step
 
     summary_lines = [
