@@ -15,6 +15,47 @@ from .state import State
 
 
 @dataclass(frozen=True)
+class ValidationResult:
+    """Result of a component validation check.
+
+    Attributes:
+        valid: Whether the validation passed.
+        errors: List of error descriptions for failed checks.
+        suggestions: List of suggestions for fixing errors.
+    """
+
+    valid: bool
+    errors: list[str] = field(default_factory=list)
+    suggestions: list[str] = field(default_factory=list)
+
+    def merge(self, other: ValidationResult) -> ValidationResult:
+        """Merge two validation results."""
+        return ValidationResult(
+            valid=self.valid and other.valid,
+            errors=[*self.errors, *other.errors],
+            suggestions=[*self.suggestions, *other.suggestions],
+        )
+
+
+@runtime_checkable
+class ComponentValidator(Protocol):
+    """Runtime-checkable protocol for component validation.
+
+    Components that implement this protocol can participate in the
+    component validation framework, which checks input/output
+    compatibility at model assembly time.
+    """
+
+    def validate_input(self, input_spec: dict[str, Any]) -> ValidationResult:
+        """Validate that input_spec is compatible with this component."""
+        ...
+
+    def validate_output(self, output: Any, expected_spec: dict[str, Any]) -> ValidationResult:
+        """Validate that output matches expected_spec."""
+        ...
+
+
+@dataclass(frozen=True)
 class ComponentSpec:
     """Lightweight metadata for component registration and introspection."""
 
