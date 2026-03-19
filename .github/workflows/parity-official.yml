@@ -98,6 +98,20 @@ jobs:
             fi
           } >> "${GITHUB_STEP_SUMMARY}"
 
+      - name: Pre-flight CUDA/JAX compatibility check
+        id: preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "### Pre-flight environment check" >> "${GITHUB_STEP_SUMMARY}"
+          uv run python scripts/preflight_parity_env.py --backend auto --json \
+            | tee /tmp/preflight.json >> "${GITHUB_STEP_SUMMARY}" || true
+          VERDICT=$(python -c "import json; print(json.load(open('/tmp/preflight.json'))['verdict'])" 2>/dev/null || echo "unknown")
+          echo "verdict=${VERDICT}" >> "${GITHUB_OUTPUT}"
+          if [ "${VERDICT}" = "fail" ]; then
+            echo "::warning::Pre-flight check failed. Parity run may encounter GPU/JAX issues."
+          fi
+
       - name: Resolve AWS authentication mode
         id: auth
         shell: bash
