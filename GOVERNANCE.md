@@ -12,6 +12,7 @@
 - Public API-affecting changes require tests and documentation updates.
 - Breaking changes require explicit changelog entries and migration notes.
 - Release gates in CI must stay green before merge to `main`.
+- Release operations follow `docs/operations/release-runbook.md`.
 
 ## Access and Permissions
 
@@ -19,3 +20,4 @@
 - Changes to workflows and release automation require maintainer review.
 - Access grants and removals are tracked in repository settings and documented in
   maintainer discussions.
+- Current technical priorities are tracked in `docs/roadmap.md`.

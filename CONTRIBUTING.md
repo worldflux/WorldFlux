@@ -131,6 +131,7 @@ uv run pytest tests/ --cov=worldflux --cov-report=html
    - Provide a clear description of the changes
    - Reference any related issues
    - Request review from maintainers
+   - Check `docs/roadmap.md` for current priority areas before proposing broad new work
 
 ## Commit Messages
 
@@ -210,5 +211,6 @@ When reporting issues, please include:
 
 - Open an issue for bugs or feature requests
 - Start a discussion for questions or ideas
+- Check `docs/operations/release-runbook.md` and `docs/roadmap.md` if your work touches release-critical paths
 
 Thank you for contributing!
