@@ -193,12 +193,20 @@ def _load_export(name: str) -> Any:
 
 
 def __getattr__(name: str) -> object:
+    if name == "core":
+        module = import_module("worldflux.core")
+        globals()[name] = module
+        return module
     if name == "training":
         module = import_module("worldflux.training")
         globals()[name] = module
         return module
     if name == "execution":
         module = import_module("worldflux.execution")
+        globals()[name] = module
+        return module
+    if name == "verify":
+        module = import_module("worldflux.verify")
         globals()[name] = module
         return module
     if name in _EXPORTS:
@@ -219,7 +227,9 @@ def __getattr__(name: str) -> object:
 
 
 def __dir__() -> list[str]:
-    return sorted(set(__all__) | set(_DEPRECATED_IMPORTS) | {"execution", "training"})
+    return sorted(
+        set(__all__) | set(_DEPRECATED_IMPORTS) | {"core", "execution", "training", "verify"}
+    )
 
 
 def _public_api_stability_for(name: str) -> str:
