@@ -41,7 +41,7 @@ jobs:
             .venv
 
       - name: Upload SBOM artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sbom-cyclonedx
           path: sbom-cyclonedx.json
@@ -94,7 +94,7 @@ jobs:
             worldflux-scan:${{ github.sha }}
 
       - name: Upload container SBOM
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: container-sbom-cyclonedx
           path: container-sbom.json
