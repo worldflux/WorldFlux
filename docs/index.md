@@ -1,7 +1,7 @@
 # WorldFlux
 
 <div align="center">
-<img src="/img/logo.svg" alt="WorldFlux Logo" width="180" />
+<img src="assets/logo.svg" alt="WorldFlux Logo" width="180" />
 </div>
 
 **Unified Interface for World Models in Reinforcement Learning**
