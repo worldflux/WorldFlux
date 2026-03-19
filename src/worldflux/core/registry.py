@@ -467,6 +467,39 @@ class WorldModelRegistry:
         return dict(cls._catalog)
 
     @classmethod
+    def list_component_slots(cls) -> dict[str, tuple[str, str]]:
+        """Return a copy of the supported component slot registry."""
+        return dict(cls._component_slots)
+
+    @classmethod
+    def describe_composable_support(
+        cls,
+        model_or_name: WorldModel | str,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        """Return family support metadata for public docs/tooling."""
+        if isinstance(model_or_name, str):
+            model = cls.from_pretrained(model_or_name, **kwargs)
+        else:
+            model = model_or_name
+
+        declared = set(getattr(model, "composable_support", set()))
+        canonical_slots = sorted(
+            {cls._canonical_component_slot(slot) for slot in cls._component_slots}
+        )
+        supports = {
+            slot: (
+                slot in declared or any(cls._canonical_component_slot(x) == slot for x in declared)
+            )
+            for slot in canonical_slots
+        }
+        return {
+            "model_type": type(model).__name__,
+            "declared": sorted(declared),
+            "supports": supports,
+        }
+
+    @classmethod
     def register_component(
         cls,
         component_id: str,

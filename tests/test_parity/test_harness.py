@@ -76,6 +76,8 @@ def test_run_suite_generates_pass_result(tmp_path: Path) -> None:
     assert payload["stats"]["pass_non_inferiority"] is True
     assert payload["evaluation_manifest"]["runner"] == "worldflux.parity.run_suite"
     assert payload["artifact_integrity"]["suite_sha256"]
+    assert payload["evidence_bundle"]["bundle_kind"] == "parity_run"
+    assert payload["evidence_bundle"]["artifacts"]["run_json"] == str(run_output)
     assert payload["suite_lock_ref"]["suite_id"] == "test_suite"
     assert "PASS:" in payload["stats"]["verdict_reason"]
 
@@ -142,6 +144,8 @@ def test_aggregate_and_report(tmp_path: Path) -> None:
 
     assert aggregate_path.exists()
     assert aggregate["run_count"] == 1
+    assert aggregate["evidence_bundle"]["bundle_kind"] == "parity_aggregate"
+    assert aggregate["evidence_bundle"]["artifacts"]["aggregate_json"] == str(aggregate_path)
     assert "verdict_reason" in aggregate["suites"][0]
     markdown = render_markdown_report(aggregate)
     assert "WorldFlux Parity Report" in markdown

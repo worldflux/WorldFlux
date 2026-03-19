@@ -21,3 +21,4 @@
 ## Release Responsibility
 
 - The Release Manager approves version bumps, tag creation, and final publish jobs.
+- New maintainers should complete `docs/operations/maintainer-onboarding.md`.

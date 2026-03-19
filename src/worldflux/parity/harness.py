@@ -44,6 +44,41 @@ def _resolve_output_path(suite_id: str, output_path: Path | None) -> Path:
     return Path("reports/parity/runs") / f"{suite_id}.json"
 
 
+def _run_evidence_bundle(
+    *,
+    run_output_path: Path,
+    suite_id: str,
+) -> dict[str, Any]:
+    return {
+        "bundle_kind": "parity_run",
+        "suite_id": suite_id,
+        "artifacts": {
+            "run_json": str(run_output_path),
+        },
+    }
+
+
+def _aggregate_evidence_bundle(
+    *,
+    aggregate_output_path: Path | None,
+    run_paths: list[Path],
+) -> dict[str, Any]:
+    artifacts: dict[str, Any] = {
+        "run_jsons": [str(path) for path in run_paths],
+    }
+    if aggregate_output_path is not None:
+        artifacts["aggregate_json"] = str(aggregate_output_path)
+        aggregate_dir = aggregate_output_path.parent
+        dashboard_path = aggregate_dir / "dashboard.html"
+        report_md_path = aggregate_dir / "report.md"
+        artifacts["dashboard_html"] = str(dashboard_path)
+        artifacts["report_md"] = str(report_md_path)
+    return {
+        "bundle_kind": "parity_aggregate",
+        "artifacts": artifacts,
+    }
+
+
 def _override_source(
     source: SourceSpec,
     *,
@@ -276,6 +311,8 @@ def run_suite(
     lock_path = (upstream_lock_path or DEFAULT_UPSTREAM_LOCK_PATH).resolve()
     lock_payload = _load_upstream_lock(lock_path)
 
+    out_path = _resolve_output_path(suite.suite_id, output_path)
+
     result = {
         "schema_version": RUN_SCHEMA_VERSION,
         "generated_at_utc": generated_at_utc,
@@ -340,6 +377,10 @@ def run_suite(
         },
         "pairs": pairs,
         "pass": passed,
+        "evidence_bundle": _run_evidence_bundle(
+            run_output_path=out_path,
+            suite_id=suite.suite_id,
+        ),
     }
 
     try:
@@ -369,7 +410,6 @@ def run_suite(
     except (ImportError, TypeError, ValueError, KeyError):  # pragma: no cover - optional enrichment
         pass
 
-    out_path = _resolve_output_path(suite.suite_id, output_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return result
@@ -494,6 +534,10 @@ def aggregate_runs(
         "families": families,
         "suites": sorted(suite_rows, key=lambda row: str(row["suite_id"])),
         "run_paths": [str(path) for path in run_paths],
+        "evidence_bundle": _aggregate_evidence_bundle(
+            aggregate_output_path=output_path,
+            run_paths=run_paths,
+        ),
     }
 
     if output_path is not None:

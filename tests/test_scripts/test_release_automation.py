@@ -87,3 +87,10 @@ def test_dockerfile_oci_version_matches_pyproject() -> None:
     version = pyproject["project"]["version"]
     dockerfile = (repo_root / "Dockerfile").read_text(encoding="utf-8")
     assert f'org.opencontainers.image.version="{version}"' in dockerfile
+
+
+def test_release_workflow_renders_parity_dashboard() -> None:
+    release = (Path(__file__).resolve().parents[2] / ".github/workflows/release.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "render_parity_dashboard.py" in release

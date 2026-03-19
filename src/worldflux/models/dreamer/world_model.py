@@ -385,6 +385,21 @@ class DreamerV3WorldModel(WorldModel):
             device = self.device
         return self.rssm.initial_state(batch_size, device)
 
+    def reference_profile(self) -> dict[str, object]:
+        """Return a compact alignment summary for docs/tooling."""
+        return {
+            "family": "dreamerv3",
+            "preset": self.config.model_name,
+            "reference_tier": self.config.reference_tier,
+            "parity_profile": self.config.parity_profile,
+            "learning_rate": self.config.learning_rate,
+            "grad_clip": self.config.grad_clip,
+            "loss_scales": dict(self.config.loss_scales),
+            "kl_free": self.config.kl_free,
+            "use_symlog": self.config.use_symlog,
+            "use_twohot": self.config.use_twohot,
+        }
+
     def loss(self, batch: Batch) -> LossOutput:
         """Compute training losses."""
         obs = batch.obs

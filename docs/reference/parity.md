@@ -105,6 +105,21 @@ This emits:
 - `component_match_report.json` when required by the suite
 - `evidence_bundle.zip`
 
+Legacy and aggregate parity flows now also expose a lightweight evidence-bundle
+index in JSON outputs:
+
+- run artifacts expose `evidence_bundle.bundle_kind == "parity_run"`
+- aggregate artifacts expose `evidence_bundle.bundle_kind == "parity_aggregate"`
+- aggregate evidence bundles may point to:
+  - `aggregate_json`
+  - `dashboard_html`
+  - `report_md`
+  - the underlying `run_jsons`
+
+The release workflow renders `reports/parity/dashboard.html` from
+`reports/parity/aggregate.json` and uploads the parity evidence directory as an
+artifact.
+
 ### Final Verdict Keys
 
 For official proof claims, check `equivalence_report.json`:

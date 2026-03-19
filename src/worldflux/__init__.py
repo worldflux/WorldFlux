@@ -166,6 +166,23 @@ _DEPRECATED_IMPORTS: dict[str, tuple[str, str]] = {
     ),
 }
 
+# Public API stability tiers consumed by docs/tooling.
+# Default tier for exported symbols is "stable" unless explicitly overridden.
+_PUBLIC_API_STABILITY_OVERRIDES: dict[str, str] = {
+    "execution": "experimental",
+    "OfficialBackendHandle": "experimental",
+    "resolve_backend_execution": "experimental",
+    "WorldModelRegistry": "experimental",
+    "AutoWorldModel": "experimental",
+    "AutoConfig": "experimental",
+    "DreamerV3WorldModel": "experimental",
+    "TDMPC2WorldModel": "experimental",
+    "JEPABaseWorldModel": "experimental",
+    "VJEPA2WorldModel": "experimental",
+    "TokenWorldModel": "experimental",
+    "DiffusionWorldModel": "experimental",
+}
+
 
 def _load_export(name: str) -> Any:
     module_path = _EXPORTS[name]
@@ -176,12 +193,20 @@ def _load_export(name: str) -> Any:
 
 
 def __getattr__(name: str) -> object:
+    if name == "core":
+        module = import_module("worldflux.core")
+        globals()[name] = module
+        return module
     if name == "training":
         module = import_module("worldflux.training")
         globals()[name] = module
         return module
     if name == "execution":
         module = import_module("worldflux.execution")
+        globals()[name] = module
+        return module
+    if name == "verify":
+        module = import_module("worldflux.verify")
         globals()[name] = module
         return module
     if name in _EXPORTS:
@@ -202,7 +227,13 @@ def __getattr__(name: str) -> object:
 
 
 def __dir__() -> list[str]:
-    return sorted(set(__all__) | set(_DEPRECATED_IMPORTS) | {"execution", "training"})
+    return sorted(
+        set(__all__) | set(_DEPRECATED_IMPORTS) | {"core", "execution", "training", "verify"}
+    )
+
+
+def _public_api_stability_for(name: str) -> str:
+    return _PUBLIC_API_STABILITY_OVERRIDES.get(name, "stable")
 
 
 try:

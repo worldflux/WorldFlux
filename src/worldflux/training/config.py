@@ -66,6 +66,8 @@ class TrainingConfig:
     mixed_precision: bool = False
     backend: str = "native_torch"
     backend_profile: str = ""
+    distributed_mode: str = "none"
+    distributed_world_size: int = 1
 
     # Data loading
     num_workers: int = 0
@@ -149,6 +151,14 @@ class TrainingConfig:
             )
         if not str(self.backend).strip():
             raise ConfigurationError("backend must not be empty")
+        if self.distributed_mode not in ("none", "ddp"):
+            raise ConfigurationError(
+                f"distributed_mode must be 'none' or 'ddp', got {self.distributed_mode!r}"
+            )
+        if self.distributed_world_size < 1:
+            raise ConfigurationError(
+                "distributed_world_size must be >= 1, " f"got {self.distributed_world_size}"
+            )
 
     def to_dict(self) -> dict[str, Any]:
         """Convert config to dictionary."""
