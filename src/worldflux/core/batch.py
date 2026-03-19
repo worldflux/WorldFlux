@@ -152,9 +152,24 @@ class Batch:
             strict_layout=self.strict_layout,
         )
 
-    def to(self, device: torch.device | str) -> Batch:
+    def to(self, device: torch.device | str, non_blocking: bool = True) -> Batch:
+        """Transfer all tensors to the given device.
+
+        Args:
+            device: Target device.
+            non_blocking: Use non-blocking transfers for GPU (default True).
+                Enables overlap of data transfer with computation.
+        """
         device_obj = torch.device(device) if isinstance(device, str) else device
-        return self._apply_tensor_fn(lambda t: t.to(device_obj))
+
+        def _transfer(t: Tensor) -> Tensor:
+            if t.device == device_obj:
+                return t
+            if device_obj.type == "cuda":
+                t = t.contiguous()
+            return t.to(device_obj, non_blocking=non_blocking)
+
+        return self._apply_tensor_fn(_transfer)
 
     def detach(self) -> Batch:
         return self._apply_tensor_fn(lambda t: t.detach())

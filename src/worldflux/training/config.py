@@ -64,14 +64,32 @@ class TrainingConfig:
     device: str = "auto"
     seed: int = 42
     mixed_precision: bool = False
+    mixed_precision_dtype: str = "float16"  # "float16" | "bfloat16"
     backend: str = "native_torch"
     backend_profile: str = ""
     distributed_mode: str = "none"
     distributed_world_size: int = 1
 
+    # DDP (DistributedDataParallel) settings
+    use_ddp: bool = False
+    ddp_backend: str = "nccl"  # nccl (GPU) / gloo (CPU)
+    ddp_find_unused_params: bool = False
+    ddp_gradient_as_bucket_view: bool = True
+    ddp_broadcast_buffers: bool = True
+    rank: int | None = None
+    world_size: int | None = None
+    local_rank: int | None = None
+
     # Data loading
     num_workers: int = 0
     prefetch_factor: int = 2
+    pin_memory: bool = True
+    persistent_workers: bool = True
+    prefetch_batches: int = 2
+
+    # Vectorized environments
+    num_envs: int = 1
+    env_mode: str = "auto"  # "sync" | "async" | "auto"
 
     # Advanced options
     optimizer: str = "adamw"
@@ -81,11 +99,18 @@ class TrainingConfig:
     # Gradient accumulation
     gradient_accumulation_steps: int = 1
 
+    # Gradient checkpointing
+    use_gradient_checkpointing: bool = False
+    checkpoint_layers: list[str] = field(default_factory=list)
+
     # Quality check after training
     auto_quality_check: bool = True
 
     # torch.compile support (PyTorch 2.0+)
     compile_model: bool = False
+
+    # Profiling
+    profile: bool = False
 
     # Reserved for future trainer-level model patching. Currently unsupported by Trainer.
     model_overrides: dict[str, Any] = field(default_factory=dict)
@@ -157,7 +182,26 @@ class TrainingConfig:
             )
         if self.distributed_world_size < 1:
             raise ConfigurationError(
-                "distributed_world_size must be >= 1, " f"got {self.distributed_world_size}"
+                f"distributed_world_size must be >= 1, got {self.distributed_world_size}"
+            )
+        if self.ddp_backend not in ("nccl", "gloo"):
+            raise ConfigurationError(
+                f"ddp_backend must be 'nccl' or 'gloo', got {self.ddp_backend!r}"
+            )
+        if self.mixed_precision_dtype not in ("float16", "bfloat16"):
+            raise ConfigurationError(
+                f"mixed_precision_dtype must be 'float16' or 'bfloat16', "
+                f"got {self.mixed_precision_dtype!r}"
+            )
+        if self.num_envs < 1:
+            raise ConfigurationError(f"num_envs must be >= 1, got {self.num_envs}")
+        if self.env_mode not in ("sync", "async", "auto"):
+            raise ConfigurationError(
+                f"env_mode must be 'sync', 'async', or 'auto', got {self.env_mode!r}"
+            )
+        if self.prefetch_batches < 0:
+            raise ConfigurationError(
+                f"prefetch_batches must be non-negative, got {self.prefetch_batches}"
             )
 
     def to_dict(self) -> dict[str, Any]:
@@ -184,11 +228,18 @@ class TrainingConfig:
         return cls.from_dict(d)
 
     def resolve_device(self) -> str:
-        """Resolve 'auto' device to actual device."""
+        """Resolve 'auto' device to actual device.
+
+        Priority: CUDA > MPS (Apple Silicon) > CPU.
+        """
         if self.device == "auto":
             import torch
 
-            return "cuda" if torch.cuda.is_available() else "cpu"
+            if torch.cuda.is_available():
+                return "cuda"
+            if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+                return "mps"
+            return "cpu"
         return self.device
 
     def with_updates(self, **kwargs: Any) -> TrainingConfig:

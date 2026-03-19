@@ -12,8 +12,16 @@ from .callbacks import (
     TrainingReportCallback,
 )
 from .config import TrainingConfig
-from .data import ReplayBuffer, TokenSequenceProvider, TrajectoryDataset, TransitionArrayProvider
-from .distributed import build_launch_config
+from .data import (
+    PrefetchBatchProvider,
+    ReplayBuffer,
+    ThreadSafeReplayBuffer,
+    TokenSequenceProvider,
+    TrajectoryDataset,
+    TransitionArrayProvider,
+)
+from .distributed import DDPTrainer, FSDPTrainer, build_launch_config
+from .profiling import PerformanceMonitor, TorchProfilerWrapper
 from .replay_backends import MemoryReplayBackend, ParquetReplayBackend, ReplayBackend
 from .report import HealthSignal, LossCurveSummary, TrainingReport
 from .scheduling import LocalClock, RatioUpdateScheduler
@@ -25,7 +33,11 @@ __all__ = [
     "Trainer",
     "TrainingConfig",
     "ReplayBuffer",
+    "ThreadSafeReplayBuffer",
+    "PrefetchBatchProvider",
     "build_launch_config",
+    "DDPTrainer",
+    "FSDPTrainer",
     "ReplayBackend",
     "MemoryReplayBackend",
     "ParquetReplayBackend",
@@ -50,4 +62,7 @@ __all__ = [
     "LossCurveSummary",
     "LocalClock",
     "RatioUpdateScheduler",
+    # Profiling
+    "PerformanceMonitor",
+    "TorchProfilerWrapper",
 ]

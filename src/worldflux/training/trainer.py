@@ -34,6 +34,7 @@ from worldflux.utils import set_seed
 from .backend import ExecutionDelegatingBackend, JobHandle, JobStatus, LocalBackend, TrainingBackend
 from .callbacks import Callback, CallbackList, CheckpointCallback, LoggingCallback
 from .config import TrainingConfig
+from .profiling import PerformanceMonitor
 from .run_manifest import CHECKPOINT_SCHEMA_VERSION, write_run_manifest
 
 if TYPE_CHECKING:
@@ -144,6 +145,9 @@ class Trainer:
         # Mixed precision
         self.scaler: torch.amp.GradScaler | None = None
 
+        # Performance monitoring (SCALE-06)
+        self.perf_monitor = PerformanceMonitor(enabled=self.config.profile)
+
         # Create output directory
         os.makedirs(self.config.output_dir, exist_ok=True)
 
@@ -222,12 +226,22 @@ class Trainer:
         self.callbacks = CallbackList(default_callbacks)
 
         if self.config.mixed_precision and self.device.type == "cuda":
-            self.scaler = torch.amp.GradScaler("cuda")
+            # bfloat16 does not need GradScaler (no loss scaling required)
+            if self.config.mixed_precision_dtype == "bfloat16":
+                logger.info("Using bfloat16 mixed precision (no GradScaler).")
+            else:
+                self.scaler = torch.amp.GradScaler("cuda")
+        elif self.config.mixed_precision and self.device.type == "mps":
+            logger.info("mixed_precision=True on MPS device; using autocast without GradScaler.")
         elif self.config.mixed_precision:
             logger.info(
                 "mixed_precision=True requested on non-CUDA device %s; GradScaler disabled.",
                 self.device.type,
             )
+
+        # Apply gradient checkpointing if requested (SCALE-05)
+        if self.config.use_gradient_checkpointing:
+            self._apply_gradient_checkpointing()
 
         contract_fn = getattr(self.model, "io_contract", None)
         if callable(contract_fn):
@@ -244,6 +258,60 @@ class Trainer:
             except ValidationError as e:
                 raise TrainingError(f"Invalid model I/O contract: {e}") from e
             self.io_contract = maybe_contract
+
+    def _apply_gradient_checkpointing(self) -> None:
+        """Enable gradient checkpointing on supported model components.
+
+        Auto-selects checkpoint targets per model type:
+        - DreamerV3: RSSM sequence processing
+        - TD-MPC2: multi-step dynamics rollout
+        """
+        local_model = self._local_model()
+
+        # Check for user-specified layers
+        target_layers = self.config.checkpoint_layers
+
+        if target_layers:
+            applied = 0
+            for name, module in local_model.named_modules():
+                if name in target_layers:
+                    if hasattr(module, "enable_gradient_checkpointing"):
+                        module.enable_gradient_checkpointing()
+                        applied += 1
+                    else:
+                        # Apply generic torch checkpoint flag
+                        module._use_gradient_checkpointing = True
+                        applied += 1
+            logger.info("Gradient checkpointing applied to %d specified layers.", applied)
+            return
+
+        # Auto-select based on model type
+        # DreamerV3: checkpoint RSSM
+        rssm = getattr(local_model, "rssm", None)
+        if rssm is not None:
+            if hasattr(rssm, "enable_gradient_checkpointing"):
+                rssm.enable_gradient_checkpointing()
+                logger.info("Gradient checkpointing enabled for RSSM.")
+            else:
+                rssm._use_gradient_checkpointing = True
+                logger.info("Gradient checkpointing flag set on RSSM.")
+            return
+
+        # TD-MPC2: checkpoint dynamics module
+        dynamics = getattr(local_model, "dynamics", None)
+        if dynamics is not None:
+            if hasattr(dynamics, "enable_gradient_checkpointing"):
+                dynamics.enable_gradient_checkpointing()
+                logger.info("Gradient checkpointing enabled for dynamics module.")
+            else:
+                dynamics._use_gradient_checkpointing = True
+                logger.info("Gradient checkpointing flag set on dynamics module.")
+            return
+
+        logger.warning(
+            "Gradient checkpointing requested but no supported model component "
+            "(rssm, dynamics) found. Set checkpoint_layers explicitly."
+        )
 
     def _require_local_mode(self, operation: str) -> None:
         if self.execution_mode != "local":
@@ -541,6 +609,9 @@ class Trainer:
         if self.state.ttfi_sec is not None:
             logger.info(f"Time to first iteration: {self.state.ttfi_sec:.3f}s")
 
+        # Log profiling summary if profiling was enabled
+        self.perf_monitor.log_summary()
+
         # Auto quality check
         if self.config.auto_quality_check:
             self._run_quality_check()
@@ -640,61 +711,75 @@ class Trainer:
                         "Consider reducing learning rate or enabling gradient clipping."
                     )
 
+    def _resolve_amp_dtype(self) -> torch.dtype:
+        """Resolve the AMP autocast dtype from config."""
+        dtype_str = self.config.mixed_precision_dtype
+        if dtype_str == "bfloat16":
+            return torch.bfloat16
+        return torch.float16
+
     def _forward_backward(self, batch: Batch, accum_steps: int) -> Any:
         """Run forward pass, check losses, and backward pass. Returns LossOutput."""
-        use_amp = self.config.mixed_precision and self.scaler is not None
+        use_amp = self.config.mixed_precision
+        use_scaler = use_amp and self.scaler is not None
         local_model = self._local_model()
         loss_model = cast(Any, local_model)
         scaler = self.scaler
+        amp_dtype = self._resolve_amp_dtype()
 
-        if use_amp:
-            assert scaler is not None
-            with torch.amp.autocast(device_type=self.device.type):
+        with self.perf_monitor.measure("forward_ms"):
+            if use_amp:
+                with torch.amp.autocast(device_type=self.device.type, dtype=amp_dtype):
+                    loss_out = loss_model.loss(batch)
+                    loss = loss_out.loss / accum_steps
+            else:
                 loss_out = loss_model.loss(batch)
                 loss = loss_out.loss / accum_steps
-        else:
-            loss_out = loss_model.loss(batch)
-            loss = loss_out.loss / accum_steps
 
         # Check for NaN/Inf in losses before backward
         self._check_for_nan_inf(
             {"loss": loss_out.loss, **loss_out.components}, self.state.global_step
         )
 
-        if use_amp:
-            assert scaler is not None
-            scaler.scale(loss).backward()
-        else:
-            loss.backward()
+        with self.perf_monitor.measure("backward_ms"):
+            if use_scaler:
+                assert scaler is not None
+                scaler.scale(loss).backward()
+            else:
+                loss.backward()
 
         return loss_out
 
     def _optimizer_step(self) -> None:
         """Unscale gradients, check them, clip, and step the optimizer."""
-        use_amp = self.config.mixed_precision and self.scaler is not None
+        use_scaler = self.config.mixed_precision and self.scaler is not None
         local_model = self._local_model()
         optimizer = self._require_optimizer()
 
-        if use_amp:
-            scaler = self.scaler
-            assert scaler is not None
-            if self.config.grad_clip > 0:
-                scaler.unscale_(optimizer)
+        with self.perf_monitor.measure("optimizer_step_ms"):
+            if use_scaler:
+                scaler = self.scaler
+                assert scaler is not None
+                if self.config.grad_clip > 0:
+                    scaler.unscale_(optimizer)
+                    self._check_gradients(self.state.global_step)
+                    torch.nn.utils.clip_grad_norm_(
+                        local_model.parameters(),
+                        self.config.grad_clip,
+                    )
+                scaler.step(optimizer)
+                scaler.update()
+            else:
                 self._check_gradients(self.state.global_step)
-                torch.nn.utils.clip_grad_norm_(
-                    local_model.parameters(),
-                    self.config.grad_clip,
-                )
-            scaler.step(optimizer)
-            scaler.update()
-        else:
-            self._check_gradients(self.state.global_step)
-            if self.config.grad_clip > 0:
-                torch.nn.utils.clip_grad_norm_(
-                    local_model.parameters(),
-                    self.config.grad_clip,
-                )
-            optimizer.step()
+                if self.config.grad_clip > 0:
+                    torch.nn.utils.clip_grad_norm_(
+                        local_model.parameters(),
+                        self.config.grad_clip,
+                    )
+                optimizer.step()
+
+        # Track GPU memory after optimizer step
+        self.perf_monitor.record_gpu_memory()
 
     def _train_step(self, data: BatchProvider | Any) -> dict[str, float]:
         """
@@ -713,7 +798,8 @@ class Trainer:
         is_accumulating = self._accumulation_step < accum_steps - 1
 
         # Sample batch
-        batch = self._next_batch(data)
+        with self.perf_monitor.measure("batch_load_ms"):
+            batch = self._next_batch(data)
 
         # Only zero gradients at the start of accumulation cycle
         if self._accumulation_step == 0:
