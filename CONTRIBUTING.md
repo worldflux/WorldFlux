@@ -161,6 +161,64 @@ fix(dreamer): correct KL divergence computation
 docs(readme): add training examples
 ```
 
+## Developer Certificate of Origin (DCO)
+
+WorldFlux requires all contributors to sign off on their commits to certify
+that they have the right to submit the work under the project's Apache 2.0
+license. This is enforced via the
+[Developer Certificate of Origin (DCO)](https://developercertificate.org/).
+
+### How to Sign Off
+
+Add a `Signed-off-by` line to your commit message using `git commit -s`:
+
+```bash
+git commit -s -m "feat(training): add learning rate warmup"
+```
+
+This produces a commit message like:
+
+```
+feat(training): add learning rate warmup
+
+Signed-off-by: Your Name <your.email@example.com>
+```
+
+The sign-off certifies that you wrote the code or have the right to submit it,
+as described in the [DCO](https://developercertificate.org/).
+
+### Configuring Git for Automatic Sign-Off
+
+To avoid forgetting `-s`, you can create a Git alias:
+
+```bash
+git config --global alias.cs "commit -s"
+```
+
+Then use `git cs -m "your message"` instead of `git commit`.
+
+### Fixing Missing Sign-Offs
+
+If you forgot to sign off on a commit, you can amend it:
+
+```bash
+# Amend the most recent commit
+git commit --amend -s --no-edit
+
+# For older commits, use interactive rebase
+git rebase HEAD~N --signoff
+```
+
+### DCO Bot
+
+Pull requests are checked by the
+[DCO Bot](https://github.com/apps/dco) GitHub App. PRs with unsigned commits
+will be marked as failing until all commits include a valid `Signed-off-by`
+line.
+
+> **Note**: The DCO Bot GitHub App must be installed on the repository by an
+> admin. See <https://github.com/apps/dco> for installation.
+
 ## Adding New Models
 
 To add a new world model implementation:
