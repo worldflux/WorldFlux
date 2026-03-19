@@ -35,6 +35,7 @@ _EXPORT_GROUPS: dict[str, tuple[str, ...]] = {
     "worldflux.factory": (
         "MODEL_ALIASES",
         "MODEL_CATALOG",
+        "WorldModelBuilder",
         "create_world_model",
         "get_config",
         "get_model_info",
@@ -251,6 +252,7 @@ __all__ = [
     "list_models",
     "get_model_info",
     "get_config",
+    "WorldModelBuilder",
     "MODEL_ALIASES",
     "MODEL_CATALOG",
     "execution",

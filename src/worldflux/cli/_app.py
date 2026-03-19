@@ -30,6 +30,10 @@ parity_app = typer.Typer(
 )
 parity_campaign_app = typer.Typer(help="Run reproducible parity campaigns.")
 models_app = typer.Typer(help="Browse and inspect model presets.")
+config_app = typer.Typer(
+    help="Inspect, compare, validate, and export model configurations.",
+    rich_markup_mode="rich",
+)
 
 parity_app.add_typer(parity_campaign_app, name="campaign")
 

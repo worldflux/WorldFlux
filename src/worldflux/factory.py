@@ -26,6 +26,7 @@ Example:
 
 from __future__ import annotations
 
+import dataclasses
 import warnings
 from typing import Any, cast
 
@@ -37,6 +38,7 @@ from .core.backend_bridge import (
 )
 from .core.backend_handle import OfficialBackendHandle
 from .core.config import WorldModelConfig
+from .core.exceptions import ConfigurationError
 from .core.model import WorldModel
 from .core.registry import ConfigRegistry, WorldModelRegistry
 from .core.spec import ModelMaturity
@@ -290,6 +292,92 @@ def _bootstrap_factory_registry() -> None:
     _FACTORY_BOOTSTRAPPED = True
 
 
+# HuggingFace Hub kwargs that are NOT config fields and should be excluded
+# from strict validation.
+_HF_HUB_KWARGS: frozenset[str] = frozenset(
+    {
+        "revision",
+        "token",
+        "cache_dir",
+        "local_files_only",
+        "force_download",
+        "allow_patterns",
+        "ignore_patterns",
+    }
+)
+
+# Internal factory kwargs that are consumed before reaching config.
+_FACTORY_INTERNAL_KWARGS: frozenset[str] = frozenset(
+    {
+        "backend",
+        "action_type",
+    }
+)
+
+
+def _levenshtein(a: str, b: str) -> int:
+    """Compute the Levenshtein (edit) distance between two strings."""
+    if len(a) < len(b):
+        return _levenshtein(b, a)
+    if len(b) == 0:
+        return len(a)
+    prev_row = list(range(len(b) + 1))
+    for i, ca in enumerate(a):
+        curr_row = [i + 1]
+        for j, cb in enumerate(b):
+            cost = 0 if ca == cb else 1
+            curr_row.append(
+                min(
+                    curr_row[j] + 1,  # insert
+                    prev_row[j + 1] + 1,  # delete
+                    prev_row[j] + cost,  # replace
+                )
+            )
+        prev_row = curr_row
+    return prev_row[-1]
+
+
+def _validate_kwargs(kwargs: dict[str, Any], config_cls: type) -> None:
+    """Validate kwargs keys against dataclass fields of *config_cls*.
+
+    Raises :class:`ConfigurationError` for unknown keys, with "Did you mean?"
+    suggestions when the Levenshtein distance to a valid field is <= 2.
+
+    HuggingFace Hub kwargs (``revision``, ``token``, etc.) and internal
+    factory kwargs (``backend``) are silently excluded from validation.
+    """
+    valid_fields = {f.name for f in dataclasses.fields(config_cls)}
+    excluded = _HF_HUB_KWARGS | _FACTORY_INTERNAL_KWARGS
+
+    for key in kwargs:
+        if key in excluded:
+            continue
+        if key not in valid_fields:
+            suggestions = sorted(f for f in valid_fields if _levenshtein(key, f) <= 2)
+            msg = f"Unknown parameter '{key}' for {config_cls.__name__}."
+            if suggestions:
+                msg += f" Did you mean: {', '.join(suggestions)}?"
+            raise ConfigurationError(msg)
+
+
+def _resolve_config_class(model_identifier: str) -> type:
+    """Return the Config class for a model identifier like ``dreamerv3:size12m``.
+
+    Falls back to :class:`WorldModelConfig` when no specific class is
+    registered.
+    """
+    if ":" not in model_identifier:
+        return WorldModelConfig
+    model_type = model_identifier.split(":", 1)[0].lower()
+    alias_map = {"dreamerv3": "dreamer", "tdmpc": "tdmpc2"}
+    model_type = alias_map.get(model_type, model_type)
+    # Ensure model modules are imported so config classes are registered.
+    if not ConfigRegistry._registry:
+        WorldModelRegistry._load_builtin_models()
+    config_class = ConfigRegistry._registry.get(model_type, WorldModelConfig)
+    return config_class
+
+
 def _resolved_catalog() -> dict[str, dict[str, Any]]:
     """Return the current catalog view, including dynamically registered entries."""
     _bootstrap_factory_registry()
@@ -385,6 +473,11 @@ def create_world_model(
 
     # Resolve aliases
     resolved_model = WorldModelRegistry.resolve_alias(model)
+
+    # Validate kwargs before consuming them (API-01: strict validation)
+    config_cls = _resolve_config_class(resolved_model)
+    _validate_kwargs(kwargs, config_cls)
+
     backend_name = normalize_backend_hint(str(kwargs.pop("backend", NATIVE_TORCH_BACKEND)))
 
     # Build kwargs
@@ -568,3 +661,125 @@ def get_config(
 
     # Create config from size preset
     return ConfigRegistry.from_pretrained(resolved, **config_kwargs)
+
+
+# ---------------------------------------------------------------------------
+# API-04: Builder Pattern (Fluent API)
+# ---------------------------------------------------------------------------
+
+
+class WorldModelBuilder:
+    """Fluent builder for creating world models.
+
+    Provides a step-by-step, method-chaining API as an alternative to the
+    single-call :func:`create_world_model`.  Each setter validates its
+    argument eagerly so errors surface at the point of misconfiguration.
+
+    Example::
+
+        model = (
+            WorldModelBuilder("dreamerv3:size12m")
+            .with_obs_shape((3, 64, 64))
+            .with_action_dim(6)
+            .with_device("cuda")
+            .with_component("observation_encoder", MyEncoder)
+            .build()
+        )
+    """
+
+    def __init__(self, model: str) -> None:
+        if not model or not isinstance(model, str):
+            raise ConfigurationError("model identifier must be a non-empty string.")
+        self._model = model
+        self._obs_shape: tuple[int, ...] | None = None
+        self._action_dim: int | None = None
+        self._observation_modalities: dict[str, dict[str, Any]] | None = None
+        self._action_spec: dict[str, Any] | None = None
+        self._device: str = "cpu"
+        self._api_version: str = "v3"
+        self._component_overrides: dict[str, object] = {}
+        self._extra_kwargs: dict[str, Any] = {}
+
+    # -- Setters (return self for chaining) ---------------------------------
+
+    def with_obs_shape(self, obs_shape: tuple[int, ...]) -> WorldModelBuilder:
+        """Set observation shape, e.g. ``(3, 64, 64)``."""
+        if not isinstance(obs_shape, tuple) or len(obs_shape) == 0:
+            raise ConfigurationError("obs_shape must be a non-empty tuple of ints.")
+        if any(not isinstance(d, int) or d <= 0 for d in obs_shape):
+            raise ConfigurationError(
+                f"obs_shape dimensions must be positive integers, got {obs_shape}."
+            )
+        self._obs_shape = obs_shape
+        return self
+
+    def with_action_dim(self, action_dim: int) -> WorldModelBuilder:
+        """Set action dimension."""
+        if not isinstance(action_dim, int) or action_dim <= 0:
+            raise ConfigurationError(f"action_dim must be a positive integer, got {action_dim}.")
+        self._action_dim = action_dim
+        return self
+
+    def with_device(self, device: str) -> WorldModelBuilder:
+        """Set target device (``'cpu'``, ``'cuda'``, ``'cuda:0'``, etc.)."""
+        if not isinstance(device, str) or not device:
+            raise ConfigurationError("device must be a non-empty string.")
+        self._device = device
+        return self
+
+    def with_api_version(self, api_version: str) -> WorldModelBuilder:
+        """Set API version (``'v3'`` or ``'v0.2'``)."""
+        if api_version not in {"v0.2", "v3"}:
+            raise ConfigurationError(
+                f"Unsupported api_version: {api_version}. Expected 'v0.2' or 'v3'."
+            )
+        self._api_version = api_version
+        return self
+
+    def with_observation_modalities(
+        self, modalities: dict[str, dict[str, Any]]
+    ) -> WorldModelBuilder:
+        """Set multi-modal observation specification."""
+        if not isinstance(modalities, dict) or len(modalities) == 0:
+            raise ConfigurationError("observation_modalities must be a non-empty dict.")
+        self._observation_modalities = modalities
+        return self
+
+    def with_action_spec(self, action_spec: dict[str, Any]) -> WorldModelBuilder:
+        """Set action specification override."""
+        if not isinstance(action_spec, dict):
+            raise ConfigurationError("action_spec must be a dict.")
+        self._action_spec = action_spec
+        return self
+
+    def with_component(self, slot: str, component: object) -> WorldModelBuilder:
+        """Override a component slot (e.g. ``'observation_encoder'``)."""
+        if not isinstance(slot, str) or not slot:
+            raise ConfigurationError("component slot must be a non-empty string.")
+        self._component_overrides[slot] = component
+        return self
+
+    def with_config(self, **kwargs: Any) -> WorldModelBuilder:
+        """Pass arbitrary model-specific config overrides."""
+        self._extra_kwargs.update(kwargs)
+        return self
+
+    # -- Terminal operation --------------------------------------------------
+
+    def build(self) -> WorldModel:
+        """Build and return the configured :class:`WorldModel`.
+
+        Delegates to :func:`create_world_model` with all accumulated
+        parameters.
+        """
+        return create_world_model(
+            self._model,
+            obs_shape=self._obs_shape,
+            action_dim=self._action_dim,
+            observation_modalities=self._observation_modalities,
+            action_spec=self._action_spec,
+            component_overrides=self._component_overrides or None,
+            device=self._device,
+            api_version=self._api_version,
+            **self._extra_kwargs,
+        )
