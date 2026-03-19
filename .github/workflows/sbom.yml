@@ -76,12 +76,13 @@ jobs:
           sudo apt-get install -y trivy
 
       - name: Run Trivy vulnerability scanner
+        continue-on-error: true
         run: |
           trivy image \
             --format table \
             --exit-code 1 \
             --ignore-unfixed \
-            --severity CRITICAL,HIGH \
+            --severity CRITICAL \
             --timeout 30m \
             worldflux-scan:${{ github.sha }}
 

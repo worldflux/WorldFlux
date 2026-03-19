@@ -1,4 +1,4 @@
-FROM python:3.11.11-slim AS builder
+FROM python:3.11-slim AS builder
 
 WORKDIR /build
 
@@ -9,7 +9,7 @@ RUN pip install --no-cache-dir build && \
     python -m build --wheel --outdir /build/dist && \
     pip wheel --no-cache-dir --wheel-dir /build/wheels /build/dist/worldflux-*.whl
 
-FROM python:3.11.11-slim
+FROM python:3.11-slim
 
 LABEL maintainer="WorldFlux Contributors"
 LABEL org.opencontainers.image.source="https://github.com/worldflux/WorldFlux"
