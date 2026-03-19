@@ -34,6 +34,7 @@ from worldflux.utils import set_seed
 from .backend import ExecutionDelegatingBackend, JobHandle, JobStatus, LocalBackend, TrainingBackend
 from .callbacks import Callback, CallbackList, CheckpointCallback, LoggingCallback
 from .config import TrainingConfig
+from .run_manifest import CHECKPOINT_SCHEMA_VERSION, write_run_manifest
 
 if TYPE_CHECKING:
     from worldflux.core.model import WorldModel
@@ -535,6 +536,7 @@ class Trainer:
 
         # Save final checkpoint
         self.save_checkpoint(os.path.join(self.config.output_dir, "checkpoint_final.pt"))
+        write_run_manifest(trainer=self, output_dir=self.config.output_dir)
 
         if self.state.ttfi_sec is not None:
             logger.info(f"Time to first iteration: {self.state.ttfi_sec:.3f}s")
@@ -790,6 +792,7 @@ class Trainer:
         local_model = self._local_model()
         optimizer = self._require_optimizer()
         checkpoint = {
+            "checkpoint_schema_version": CHECKPOINT_SCHEMA_VERSION,
             "model_state_dict": local_model.state_dict(),
             "optimizer_state_dict": optimizer.state_dict(),
             "global_step": self.state.global_step,
