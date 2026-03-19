@@ -55,6 +55,7 @@ trajectory = model.rollout(state, actions)  # imagine 15 steps ahead
 ## Features
 
 - **Unified API**: Common interface across model families
+- **API Stability Tiers**: Public surfaces can be classified as stable or experimental via a generated manifest
 - **v3-first API**: `create_world_model()` defaults to `api_version="v3"` (strict contracts enabled)
 - **Universal Payload Layer**: `ActionPayload` / `ConditionPayload` for polymorphic conditioning
 - **Planner Contract**: planners return `ActionPayload` with `extras["wf.planner.horizon"]`
