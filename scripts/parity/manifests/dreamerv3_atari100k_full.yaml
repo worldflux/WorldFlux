@@ -1,0 +1,70 @@
+schema_version: worldflux.parity.campaign.v1
+suite_id: dreamerv3_atari100k_full
+family: dreamerv3
+default_step: 400000
+default_seeds: [0, 1, 2, 3, 4]
+
+tasks:
+  - alien
+  - amidar
+  - assault
+  - asterix
+  - bank_heist
+  - boxing
+  - breakout
+  - chopper_command
+  - crazy_climber
+  - demon_attack
+  - freeway
+  - frostbite
+  - gopher
+  - hero
+  - james_bond
+  - kangaroo
+  - krull
+  - kung_fu_master
+  - ms_pacman
+  - pong
+  - private_eye
+  - qbert
+  - road_runner
+  - seaquest
+  - up_n_down
+  - jamesbond
+
+sources:
+  oracle:
+    adapter: official_dreamerv3
+    repo: https://github.com/danijar/dreamerv3
+    input_path: null
+    input_format: null
+    command_template: >-
+      python3 scripts/parity/wrappers/official_dreamerv3.py
+      --repo-root third_party/dreamerv3_official
+      --task-id {task}
+      --seed {seed}
+      --steps 400000
+      --device {device}
+      --run-dir reports/parity/tmp/{suite_id}/oracle/{task}/seed_{seed}
+      --metrics-out {pair_output}
+    result_format: canonical_json
+    env:
+      JAX_PLATFORM_NAME: gpu
+
+  worldflux:
+    adapter: worldflux_dreamerv3_jax_subprocess
+    command_template: >-
+      python3 scripts/parity/wrappers/worldflux_dreamerv3_jax.py
+      --repo-root .
+      --task-id {task}
+      --seed {seed}
+      --steps 400000
+      --device {device}
+      --eval-interval 10000
+      --run-dir reports/parity/tmp/{suite_id}/worldflux/{task}/seed_{seed}
+      --metrics-out {pair_output}
+      --policy-mode parity_candidate
+      --dreamer-policy-impl auto
+      --dreamer-model-profile official_xl
+    result_format: canonical_json
+    env: {}

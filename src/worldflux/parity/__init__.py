@@ -9,6 +9,7 @@ from .backend_adapters import (
     BackendAdapterRegistry,
     DreamerOfficialJAXSubprocessAdapter,
     DreamerWorldFluxJAXSubprocessAdapter,
+    NativeTorchReferenceAdapter,
     TDMPC2OfficialTorchSubprocessAdapter,
     get_backend_adapter_registry,
 )
@@ -20,8 +21,11 @@ from .backend_contract import (
 )
 from .badge import generate_badge_svg, save_badge
 from .campaign import (
+    AggregatedResult,
     CampaignRunOptions,
     CampaignSpec,
+    MultiSeedCampaign,
+    ParityReport,
     export_campaign_source,
     load_campaign_spec,
     parse_seed_csv,
@@ -36,6 +40,18 @@ from .paper_baselines import (
     PaperBaseline,
 )
 from .paper_comparison import PaperComparisonReport, PaperDelta, compare_against_paper
+from .stats import (
+    AggregatedScores,
+    EffectSizeResult,
+    FDRCorrectionResult,
+    MannWhitneyResult,
+    WelchTTestResult,
+    aggregate_scores,
+    benjamini_hochberg,
+    cohens_d,
+    mann_whitney_u_test,
+    welch_t_test,
+)
 
 __all__ = [
     "run_suite",
@@ -63,8 +79,24 @@ __all__ = [
     "BackendRunSpec",
     "DreamerOfficialJAXSubprocessAdapter",
     "DreamerWorldFluxJAXSubprocessAdapter",
+    "NativeTorchReferenceAdapter",
     "TDMPC2OfficialTorchSubprocessAdapter",
     "discover_artifacts",
     "get_backend_adapter_registry",
     "stable_recipe_hash",
+    # ML-02: Multi-seed campaign
+    "MultiSeedCampaign",
+    "AggregatedResult",
+    "ParityReport",
+    # ML-05: Extended statistics
+    "welch_t_test",
+    "mann_whitney_u_test",
+    "cohens_d",
+    "benjamini_hochberg",
+    "aggregate_scores",
+    "WelchTTestResult",
+    "MannWhitneyResult",
+    "EffectSizeResult",
+    "FDRCorrectionResult",
+    "AggregatedScores",
 ]

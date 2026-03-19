@@ -399,10 +399,106 @@ class TDMPC2OfficialTorchSubprocessAdapter:
         }
 
 
+class NativeTorchReferenceAdapter:
+    """Self-parity adapter: WorldFlux native PyTorch vs native PyTorch.
+
+    Used as a fallback when the JAX backend is unavailable (ML-06). Both
+    the "oracle" and "worldflux" sides run the WorldFlux native PyTorch
+    implementation with different seeds, allowing verification that the
+    training pipeline is internally consistent without requiring JAX.
+
+    Select via ``--backend native_torch_reference``.
+    """
+
+    adapter_id = "native_torch_reference"
+    backend_kind = "torch_native"
+
+    def prepare_run(
+        self,
+        *,
+        recipe: dict[str, Any],
+        env_spec: dict[str, Any],
+        seed: int,
+        run_dir: Path,
+        repo_root: Path,
+        python_executable: str,
+        device: str,
+    ) -> BackendRunSpec:
+        recipe_hash = stable_recipe_hash(recipe)
+        task_id = str(env_spec.get("task_id", ""))
+        steps = int(recipe.get("steps", 100_000))
+        family = str(env_spec.get("family", recipe.get("family", "dreamerv3")))
+
+        # Determine the preset based on family
+        preset = "dreamer:ci" if "dreamer" in family else "tdmpc2:ci"
+
+        command = [
+            python_executable,
+            "-m",
+            "worldflux.training.ddp_entry",
+            "--preset",
+            preset,
+            "--task-id",
+            task_id,
+            "--seed",
+            str(seed),
+            "--steps",
+            str(steps),
+            "--device",
+            device,
+            "--run-dir",
+            str(run_dir.resolve()),
+            "--metrics-out",
+            str((run_dir / "metrics.json").resolve()),
+        ]
+        return BackendRunSpec(
+            adapter_id=self.adapter_id,
+            backend_kind=self.backend_kind,
+            recipe_hash=recipe_hash,
+            command=command,
+            cwd=str(repo_root.resolve()),
+        )
+
+    def collect_artifacts(
+        self,
+        *,
+        run_dir: Path,
+        source_commit: str | None = None,
+        eval_protocol_hash: str | None = None,
+        command_argv: list[str] | None = None,
+        recipe: dict[str, Any] | None = None,
+    ) -> ArtifactManifest:
+        return discover_artifacts(
+            run_root=run_dir,
+            backend_kind=self.backend_kind,
+            adapter_id=self.adapter_id,
+            recipe_hash=stable_recipe_hash(dict(recipe or {})),
+            command_argv=list(command_argv or []),
+            source_commit=source_commit,
+            eval_protocol_hash=eval_protocol_hash,
+        )
+
+    def monitor_run(self, *, run_dir: Path) -> dict[str, Any]:
+        metrics = run_dir / "metrics.json"
+        return {
+            "backend_kind": self.backend_kind,
+            "adapter_id": self.adapter_id,
+            "metrics_present": metrics.exists(),
+            "checkpoint_present": any(run_dir.glob("*.pt")),
+        }
+
+    def artifact_requirements(self) -> dict[str, Any]:
+        return {
+            "score_paths": ["metrics.json"],
+            "checkpoint_paths": ["**/*.pt"],
+        }
+
+
 _DEFAULT_REGISTRY = BackendAdapterRegistry()
 _DEFAULT_REGISTRY.register(DreamerOfficialJAXSubprocessAdapter())
 _DEFAULT_REGISTRY.register(DreamerWorldFluxJAXSubprocessAdapter())
 _DEFAULT_REGISTRY.register(TDMPC2OfficialTorchSubprocessAdapter())
+_DEFAULT_REGISTRY.register(NativeTorchReferenceAdapter())
 
 
 def get_backend_adapter_registry() -> BackendAdapterRegistry:
@@ -414,6 +510,7 @@ __all__ = [
     "BackendAdapterRegistry",
     "DreamerOfficialJAXSubprocessAdapter",
     "DreamerWorldFluxJAXSubprocessAdapter",
+    "NativeTorchReferenceAdapter",
     "get_backend_adapter_registry",
     "TDMPC2OfficialTorchSubprocessAdapter",
 ]

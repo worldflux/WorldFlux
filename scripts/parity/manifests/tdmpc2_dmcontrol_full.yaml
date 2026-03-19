@@ -1,0 +1,54 @@
+schema_version: worldflux.parity.campaign.v1
+suite_id: tdmpc2_dmcontrol_full
+family: tdmpc2
+default_step: 1000000
+default_seeds: [0, 1, 2]
+
+tasks:
+  - dog-run
+  - dog-stand
+  - dog-trot
+  - dog-walk
+  - humanoid-run
+  - humanoid-stand
+  - humanoid-walk
+  - walker-run
+  - walker-stand
+  - walker-walk
+  - cheetah-run
+  - hopper-hop
+  - hopper-stand
+  - quadruped-run
+  - quadruped-walk
+
+sources:
+  oracle:
+    adapter: official_tdmpc2
+    repo: https://github.com/nicklashansen/tdmpc2
+    input_path: null
+    input_format: null
+    command_template: >-
+      python3 scripts/parity/wrappers/official_tdmpc2.py
+      --repo-root third_party/tdmpc2_official
+      --task-id {task}
+      --seed {seed}
+      --steps 1000000
+      --device {device}
+      --run-dir reports/parity/tmp/{suite_id}/oracle/{task}/seed_{seed}
+      --metrics-out {pair_output}
+    result_format: canonical_json
+    env: {}
+
+  worldflux:
+    adapter: worldflux_tdmpc2
+    command_template: >-
+      python3 -m worldflux.training.ddp_entry
+      --preset tdmpc2:proof_5m
+      --task-id {task}
+      --seed {seed}
+      --steps 1000000
+      --device {device}
+      --run-dir reports/parity/tmp/{suite_id}/worldflux/{task}/seed_{seed}
+      --metrics-out {pair_output}
+    result_format: canonical_json
+    env: {}
