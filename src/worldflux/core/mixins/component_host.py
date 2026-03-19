@@ -54,18 +54,24 @@ class ComponentHostMixin:
         self.rollout_executor = None
         self.composable_support = set()
 
-    def swap_component(self, slot: str, component: Any) -> Any:
+    def swap_component(self, slot: str, component: Any, *, validate: bool = True) -> Any:
         """Replace a component slot and return the previous occupant.
+
+        After swapping, the model's ``validate()`` method is called
+        automatically (if available) to verify compatibility. Set
+        ``validate=False`` to skip this check in performance-critical paths.
 
         Args:
             slot: Name of the slot (e.g. ``"observation_encoder"``).
             component: New component instance, or ``None`` to clear.
+            validate: If True, run validation after swap. Default True.
 
         Returns:
             The previous component that occupied the slot.
 
         Raises:
             ValueError: If ``slot`` is not a recognized component slot.
+            ConfigurationError: If validation fails after swap.
         """
         valid_slots = {
             "observation_encoder",
@@ -84,4 +90,11 @@ class ComponentHostMixin:
             self.composable_support.add(slot)
         else:
             self.composable_support.discard(slot)
+
+        # Post-swap validation
+        if validate and component is not None:
+            validate_fn = getattr(self, "validate", None)
+            if callable(validate_fn):
+                validate_fn(raise_on_error=True)
+
         return previous

@@ -515,6 +515,11 @@ def create_world_model(
     if component_overrides:
         WorldModelRegistry.apply_component_overrides(world_model, component_overrides)
 
+    # Validate component composition (optional, non-fatal for backward compat)
+    validate_fn = getattr(world_model, "validate", None)
+    if callable(validate_fn):
+        world_model.validate(raise_on_error=True)
+
     # Move to device
     if hasattr(world_model, "to"):
         world_model = world_model.to(torch.device(device))

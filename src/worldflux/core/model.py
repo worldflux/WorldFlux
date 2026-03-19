@@ -29,11 +29,13 @@ from .interfaces import (
     AsyncDynamicsModel,
     AsyncObservationEncoder,
     AsyncRolloutExecutor,
+    ComponentValidator,
     Decoder,
     DynamicsModel,
     ObservationEncoder,
     RolloutEngine,
     RolloutExecutor,
+    ValidationResult,
 )
 from .output import LossOutput, ModelOutput
 from .payloads import (
@@ -385,6 +387,114 @@ class WorldModel(nn.Module, ABC):
             required_batch_keys=("obs",),
             required_state_keys=(),
         )
+
+    def validate(self, *, raise_on_error: bool = True) -> ValidationResult:
+        """Validate component composition and inter-component compatibility.
+
+        Checks that all attached components satisfy the ModelIOContract and
+        that shape dimensions are compatible between adjacent components
+        (e.g. encoder output dim matches dynamics input dim).
+
+        This method is called automatically by ``create_world_model()`` and
+        ``swap_component()``. It can be skipped in performance-critical paths
+        by not calling it explicitly.
+
+        Args:
+            raise_on_error: If True, raise ConfigurationError on validation
+                failure. If False, return the ValidationResult silently.
+
+        Returns:
+            A ValidationResult summarizing all checks.
+
+        Raises:
+            ConfigurationError: If raise_on_error is True and validation fails.
+        """
+        from .exceptions import ConfigurationError
+
+        errors: list[str] = []
+        suggestions: list[str] = []
+
+        # Component protocol checks
+        slot_protocol_map: list[tuple[str, type, str]] = [
+            ("observation_encoder", ObservationEncoder, "ObservationEncoder"),
+            ("action_conditioner", ActionConditioner, "ActionConditioner"),
+            ("dynamics_model", DynamicsModel, "DynamicsModel"),
+            ("decoder_module", Decoder, "Decoder"),
+            ("rollout_executor", RolloutExecutor, "RolloutExecutor"),
+        ]
+
+        for slot_name, protocol_type, protocol_name in slot_protocol_map:
+            component = getattr(self, slot_name, None)
+            if component is None:
+                continue
+            if not isinstance(component, protocol_type):
+                errors.append(
+                    f"Component in slot '{slot_name}' ({type(component).__name__}) "
+                    f"does not satisfy {protocol_name} protocol."
+                )
+                suggestions.append(
+                    f"Ensure '{slot_name}' implements the {protocol_name} protocol methods."
+                )
+
+        # Cross-component shape compatibility checks
+        config = getattr(self, "config", None)
+        if config is not None:
+            encoder = getattr(self, "observation_encoder", None)
+            dynamics = getattr(self, "dynamics_model", None)
+
+            if encoder is not None and dynamics is not None:
+                encoder_output_dim = getattr(encoder, "output_dim", None)
+                dynamics_input_dim = getattr(dynamics, "input_dim", None)
+                if (
+                    encoder_output_dim is not None
+                    and dynamics_input_dim is not None
+                    and encoder_output_dim != dynamics_input_dim
+                ):
+                    errors.append(
+                        f"Shape mismatch: encoder output_dim={encoder_output_dim} "
+                        f"!= dynamics input_dim={dynamics_input_dim}."
+                    )
+                    suggestions.append(
+                        "Ensure the encoder output dimension matches the dynamics model "
+                        "input dimension, or use an adapter to bridge the gap."
+                    )
+
+        # ComponentValidator checks for components that implement the protocol
+        for slot_name, _, _ in slot_protocol_map:
+            component = getattr(self, slot_name, None)
+            if component is None:
+                continue
+            if isinstance(component, ComponentValidator):
+                contract = self.io_contract()
+                input_spec = {
+                    "obs_shape": tuple(getattr(config, "obs_shape", ()))
+                    if config is not None
+                    else (),
+                    "action_dim": int(getattr(config, "action_dim", 0))
+                    if config is not None
+                    else 0,
+                }
+                result = component.validate_input(input_spec)
+                if not result.valid:
+                    errors.extend(result.errors)
+                    suggestions.extend(result.suggestions)
+
+        # Validate the IO contract itself
+        try:
+            contract = self.io_contract()
+            contract.validate()
+        except Exception as e:
+            errors.append(f"IO contract validation failed: {e}")
+            suggestions.append("Check that the model's io_contract() returns a valid contract.")
+
+        valid = len(errors) == 0
+        result = ValidationResult(valid=valid, errors=errors, suggestions=suggestions)
+
+        if not valid and raise_on_error:
+            detail = "; ".join(errors)
+            raise ConfigurationError(f"Component validation failed: {detail}")
+
+        return result
 
     def encode(
         self,

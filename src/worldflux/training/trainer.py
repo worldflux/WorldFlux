@@ -133,6 +133,15 @@ class Trainer:
         # Training state
         self.state = TrainingState()
 
+        # Event bus (optional, near-zero overhead when unused)
+        self.event_bus: Any = None
+
+        # Resilience components (opt-in, None by default)
+        self.circuit_breaker: Any = None
+        self.nan_recovery: Any = None
+        self.amp_fallback: Any = None
+        self.batch_retry: Any = None
+
         # Gradient accumulation counter
         self._accumulation_step = 0
 
@@ -470,6 +479,14 @@ class Trainer:
         """Register a callback after trainer construction."""
         self.callbacks.append(callback)
 
+    def _publish_event(self, event_type: str, **data: Any) -> None:
+        """Publish an event if the event bus is available and enabled."""
+        if self.event_bus is None:
+            return
+        from worldflux.core.events import Event
+
+        self.event_bus.publish(Event(event_type=event_type, data=data, source="trainer"))
+
     def train(
         self,
         data: BatchProvider | Any,
@@ -507,12 +524,20 @@ class Trainer:
         self.state.ttfi_sec = None
 
         self.callbacks.on_train_begin(self)
+        self._publish_event("train.begin", trainer=self, total_steps=total_steps)
 
         try:
             while self.state.global_step < total_steps and not self.state.should_stop:
+                self._publish_event("step.begin", trainer=self, step=self.state.global_step)
                 try:
                     self._train_step(data)
                 except RuntimeError as e:
+                    self._publish_event(
+                        "training.error",
+                        trainer=self,
+                        step=self.state.global_step,
+                        error=str(e),
+                    )
                     raise TrainingError(
                         f"Training step failed at step {self.state.global_step}: {e}"
                     ) from e
@@ -524,6 +549,12 @@ class Trainer:
 
                 # Callbacks
                 self.callbacks.on_step_end(self)
+                self._publish_event(
+                    "step.end",
+                    trainer=self,
+                    step=self.state.global_step,
+                    metrics=self.state.metrics,
+                )
 
                 # Check for early stopping
                 if self.state.should_stop:
@@ -535,6 +566,7 @@ class Trainer:
 
         self.state.train_end_time = time.time()
         self.callbacks.on_train_end(self)
+        self._publish_event("train.end", trainer=self, step=self.state.global_step)
 
         # Save final checkpoint
         self.save_checkpoint(os.path.join(self.config.output_dir, "checkpoint_final.pt"))
@@ -663,11 +695,21 @@ class Trainer:
             {"loss": loss_out.loss, **loss_out.components}, self.state.global_step
         )
 
+        self._publish_event(
+            "loss.computed",
+            trainer=self,
+            step=self.state.global_step,
+            loss=loss_out.loss.item(),
+            components={k: v.item() for k, v in loss_out.components.items()},
+        )
+
         if use_amp:
             assert scaler is not None
             scaler.scale(loss).backward()
         else:
             loss.backward()
+
+        self._publish_event("backward.complete", trainer=self, step=self.state.global_step)
 
         return loss_out
 
@@ -687,6 +729,12 @@ class Trainer:
                     local_model.parameters(),
                     self.config.grad_clip,
                 )
+                self._publish_event(
+                    "gradients.clipped",
+                    trainer=self,
+                    step=self.state.global_step,
+                    max_norm=self.config.grad_clip,
+                )
             scaler.step(optimizer)
             scaler.update()
         else:
@@ -696,7 +744,15 @@ class Trainer:
                     local_model.parameters(),
                     self.config.grad_clip,
                 )
+                self._publish_event(
+                    "gradients.clipped",
+                    trainer=self,
+                    step=self.state.global_step,
+                    max_norm=self.config.grad_clip,
+                )
             optimizer.step()
+
+        self._publish_event("optimizer.stepped", trainer=self, step=self.state.global_step)
 
     def _train_step(self, data: BatchProvider | Any) -> dict[str, float]:
         """

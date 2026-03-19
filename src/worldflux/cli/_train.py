@@ -67,6 +67,11 @@ def train(
         "--gpu",
         help="Cloud GPU override (for example: a10g, a100, h100).",
     ),
+    override: list[Path] | None = typer.Option(
+        None,
+        "--override",
+        help="Path(s) to YAML/JSON override file(s), applied in order on top of base config.",
+    ),
 ) -> None:
     """Train a world model using worldflux.toml configuration.
 
@@ -74,6 +79,7 @@ def train(
       worldflux train
       worldflux train --steps 50000 --device cuda
       worldflux train --cloud --gpu a100
+      worldflux train --override experiment.yaml
     """
     from worldflux.core.backend_handle import OfficialBackendHandle
     from worldflux.factory import create_world_model
