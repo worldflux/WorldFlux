@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import json
 import warnings
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from enum import Enum
 from pathlib import Path
 from typing import Any
+
+from typing_extensions import Self
 
 from .exceptions import ConfigurationError
 
@@ -296,6 +298,168 @@ class WorldModelConfig:
             f"action_dim={self.action_dim}, "
             f"hidden_dim={self.hidden_dim})"
         )
+
+    def with_overrides(self, **kwargs: Any) -> Self:
+        """Return a new config instance with the given overrides applied.
+
+        The original instance is not modified (immutable pattern).
+        Type validation is performed on override values.
+
+        Args:
+            **kwargs: Field names and their override values. None values
+                are treated as "unspecified" and preserve the base value.
+
+        Returns:
+            A new config instance of the same type with overrides applied.
+
+        Raises:
+            ConfigurationError: If an override key is not a valid field or
+                its value type is incompatible.
+        """
+        field_names = {f.name for f in fields(self)}
+        current = asdict(self)
+
+        for key, value in kwargs.items():
+            if key not in field_names:
+                raise ConfigurationError(
+                    f"Unknown config field: {key!r}. " f"Valid fields: {sorted(field_names)}",
+                    config_name=self.model_name,
+                )
+            if value is None:
+                continue
+            existing = current.get(key)
+            if existing is not None:
+                self._check_type_compatibility(key, existing, value)
+            if isinstance(existing, dict) and isinstance(value, dict):
+                merged = dict(existing)
+                _deep_merge(merged, value)
+                current[key] = merged
+            else:
+                current[key] = value
+
+        return self.__class__.from_dict(current)  # type: ignore[return-value]
+
+    @classmethod
+    def merge(cls, base: WorldModelConfig, *overlays: dict[str, Any]) -> WorldModelConfig:
+        """Create a new config by sequentially applying overlay dicts to base.
+
+        Args:
+            base: The base configuration to start from.
+            *overlays: One or more dicts of overrides to apply in order.
+                None values in overlays are skipped (base value preserved).
+
+        Returns:
+            A new config with all overlays applied sequentially.
+
+        Raises:
+            ConfigurationError: If overlay values have incompatible types.
+        """
+        result = base
+        for overlay in overlays:
+            filtered = {k: v for k, v in overlay.items() if v is not None}
+            if filtered:
+                result = result.with_overrides(**filtered)
+        return result
+
+    @classmethod
+    def from_yaml(cls, path: Path | str) -> WorldModelConfig:
+        """Load configuration from a YAML file.
+
+        Requires the ``pyyaml`` package. Useful for experiment configs
+        where YAML is more readable than JSON.
+
+        Args:
+            path: Path to the YAML configuration file.
+
+        Returns:
+            A new config instance loaded from the YAML file.
+
+        Raises:
+            FileNotFoundError: If the YAML file does not exist.
+            ConfigurationError: If YAML parsing or config validation fails.
+        """
+        filepath = Path(path)
+        if not filepath.exists():
+            raise FileNotFoundError(f"YAML config file not found: {filepath}")
+
+        try:
+            import yaml  # type: ignore[import-untyped]
+        except ModuleNotFoundError as exc:
+            raise ConfigurationError(
+                "YAML config loading requires the 'pyyaml' package. "
+                "Install with: uv pip install pyyaml"
+            ) from exc
+
+        try:
+            with open(filepath, encoding="utf-8") as f:
+                data = yaml.safe_load(f)
+        except yaml.YAMLError as e:
+            raise ConfigurationError(
+                f"Invalid YAML in config file {filepath}: {e}",
+                config_name=str(filepath),
+            ) from e
+
+        if not isinstance(data, dict):
+            raise ConfigurationError(
+                f"YAML config must be a mapping, got {type(data).__name__}",
+                config_name=str(filepath),
+            )
+
+        return cls.from_dict(data)
+
+    @staticmethod
+    def _check_type_compatibility(key: str, existing: Any, new: Any) -> None:
+        """Validate that the new value type is compatible with the existing one."""
+        if isinstance(existing, bool):
+            if not isinstance(new, bool):
+                raise ConfigurationError(
+                    f"Type mismatch for config field {key!r}: "
+                    f"expected bool, got {type(new).__name__} ({new!r})"
+                )
+            return
+        if isinstance(existing, int) and not isinstance(existing, bool):
+            if not isinstance(new, int | float):
+                raise ConfigurationError(
+                    f"Type mismatch for config field {key!r}: "
+                    f"expected numeric, got {type(new).__name__} ({new!r})"
+                )
+            return
+        if isinstance(existing, float):
+            if not isinstance(new, int | float):
+                raise ConfigurationError(
+                    f"Type mismatch for config field {key!r}: "
+                    f"expected numeric, got {type(new).__name__} ({new!r})"
+                )
+            return
+        if isinstance(existing, str):
+            if not isinstance(new, str):
+                raise ConfigurationError(
+                    f"Type mismatch for config field {key!r}: "
+                    f"expected str, got {type(new).__name__} ({new!r})"
+                )
+            return
+        if isinstance(existing, tuple):
+            if not isinstance(new, tuple | list):
+                raise ConfigurationError(
+                    f"Type mismatch for config field {key!r}: "
+                    f"expected tuple/list, got {type(new).__name__} ({new!r})"
+                )
+            return
+        if isinstance(existing, dict):
+            if not isinstance(new, dict):
+                raise ConfigurationError(
+                    f"Type mismatch for config field {key!r}: "
+                    f"expected dict, got {type(new).__name__} ({new!r})"
+                )
+
+
+def _deep_merge(base: dict[str, Any], overlay: dict[str, Any]) -> None:
+    """Recursively merge overlay into base dict in-place."""
+    for key, value in overlay.items():
+        if key in base and isinstance(base[key], dict) and isinstance(value, dict):
+            _deep_merge(base[key], value)
+        else:
+            base[key] = value
 
 
 @dataclass
