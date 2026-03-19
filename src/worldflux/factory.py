@@ -369,6 +369,9 @@ def _resolve_config_class(model_identifier: str) -> type:
     model_type = model_identifier.split(":", 1)[0].lower()
     alias_map = {"dreamerv3": "dreamer", "tdmpc": "tdmpc2"}
     model_type = alias_map.get(model_type, model_type)
+    # Ensure model modules are imported so config classes are registered.
+    if not ConfigRegistry._registry:
+        WorldModelRegistry._load_builtin_models()
     config_class = ConfigRegistry._registry.get(model_type, WorldModelConfig)
     return config_class
 
