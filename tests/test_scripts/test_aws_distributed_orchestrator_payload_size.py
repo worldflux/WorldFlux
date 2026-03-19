@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Tests that SSM command payloads stay within the 10 KB delivery limit."""
 
 from __future__ import annotations

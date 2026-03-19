@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Tests for DreamerV3 official batch monitor."""
 
 from __future__ import annotations

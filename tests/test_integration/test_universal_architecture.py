@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Smoke tests for universal-architecture model families."""
 
 from __future__ import annotations

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Parity verification runner for end-user model validation."""
 
 from __future__ import annotations

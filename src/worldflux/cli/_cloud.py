@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Experimental cloud commands: login, jobs, logs, pull."""
 
 from __future__ import annotations

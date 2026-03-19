@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Parity harness orchestration for run/aggregate/report flows."""
 
 from __future__ import annotations

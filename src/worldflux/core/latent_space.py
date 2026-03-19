@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Latent space implementations for different world model architectures."""
 
 from __future__ import annotations

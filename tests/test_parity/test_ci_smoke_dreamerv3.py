@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """CI smoke tests for DreamerV3 training loop validation."""
 
 from __future__ import annotations

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Parity campaign orchestration for repeatable oracle vs WorldFlux experiments."""
 
 from __future__ import annotations

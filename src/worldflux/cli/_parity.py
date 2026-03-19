@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Parity commands: run, aggregate, report, proof-run, proof-report, proof, badge, campaign."""
 
 from __future__ import annotations

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Synthetic smoke verification for pip-install users.
 
 Provides model verification without requiring a source checkout or

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Mixins for WorldModel optional capabilities."""
 
 from __future__ import annotations

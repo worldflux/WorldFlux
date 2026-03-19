@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Recurrent State-Space Model for DreamerV3."""
 
 from __future__ import annotations

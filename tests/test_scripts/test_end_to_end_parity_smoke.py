@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """End-to-end parity smoke test with mock adapters."""
 
 from __future__ import annotations

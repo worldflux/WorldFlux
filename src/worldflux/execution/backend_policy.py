@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Source-of-truth policy flags and status helpers for execution routing."""
 
 from __future__ import annotations

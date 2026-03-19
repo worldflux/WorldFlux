@@ -324,6 +324,10 @@ uv run python examples/train_dreamer.py --data trajectories.npz --steps 100000
 - [API Reference](https://worldflux.ai/api/factory/) - Contract and symbol-level docs
 - [Reference](https://worldflux.ai/reference/benchmarks/) - Operational and quality docs
 
+## Roadmap
+
+See [ROADMAP.md](ROADMAP.md) for planned milestones and the path to v1.0.
+
 ## Community
 
 Join our [Discord](https://discord.gg/ZUBn9UEp2z) to discuss world models, get help, and connect with other researchers and developers.

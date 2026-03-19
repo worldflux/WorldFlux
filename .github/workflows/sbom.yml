@@ -1,0 +1,90 @@
+name: SBOM
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  sbom-generate:
+    name: Generate CycloneDX SBOM
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
+
+      - name: Install project dependencies
+        run: uv sync
+
+      - name: Generate CycloneDX SBOM
+        run: |
+          uv run --with cyclonedx-bom cyclonedx-py environment \
+            --of json \
+            -o sbom-cyclonedx.json \
+            .venv
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-cyclonedx
+          path: sbom-cyclonedx.json
+          retention-days: 90
+
+      - name: Attach SBOM to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: sbom-cyclonedx.json
+
+  trivy-container:
+    name: Container Scan (Trivy)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build --tag worldflux-scan:${{ github.sha }} .
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: worldflux-scan:${{ github.sha }}
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+          timeout: 30m
+
+      - name: Run Trivy SBOM scanner (container)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: worldflux-scan:${{ github.sha }}
+          format: cyclonedx
+          output: container-sbom.json
+
+      - name: Upload container SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: container-sbom-cyclonedx
+          path: container-sbom.json
+          retention-days: 90

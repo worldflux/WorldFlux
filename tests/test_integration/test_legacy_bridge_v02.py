@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Integration tests for v0.2 legacy bridge compatibility."""
 
 from __future__ import annotations

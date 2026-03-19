@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Numerical stability tests for WorldFlux.
 
 These tests verify that mathematical operations remain stable

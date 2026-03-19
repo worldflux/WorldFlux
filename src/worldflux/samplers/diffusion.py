@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Diffusion sampling utilities with a simple scheduler abstraction."""
 
 from __future__ import annotations

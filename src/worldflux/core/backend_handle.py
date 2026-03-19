@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Metadata handle for official backend-native execution in parity/proof flows."""
 
 from __future__ import annotations

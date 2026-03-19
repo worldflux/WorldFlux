@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Statistical utilities for non-inferiority parity checks."""
 
 from __future__ import annotations

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Runtime helpers for WorldFlux-managed DreamerV3 JAX subprocess execution."""
 
 from __future__ import annotations

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Optional PyArrow Plasma adapter for State transport.
 
 This module is import-safe without pyarrow installed. Users should guard usage via

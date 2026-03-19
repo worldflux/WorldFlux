@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Parity badge SVG generator for embedding in README files.
 
 Produces shields.io-style flat badges showing model family, parity status,

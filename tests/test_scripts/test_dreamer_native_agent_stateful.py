@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Unit tests for stateful Dreamer parity runtime behavior."""
 
 from __future__ import annotations

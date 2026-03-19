@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Backend adapter registry for proof/parity execution."""
 
 from __future__ import annotations

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Integration tests for planner <-> dynamics decoupling invariants."""
 
 from __future__ import annotations

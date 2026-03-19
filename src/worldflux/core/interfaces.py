@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Pluggable component interfaces for universal world model composition."""
 
 from __future__ import annotations

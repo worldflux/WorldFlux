@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Unified worldflux.toml configuration loader.
 
 Parses ``worldflux.toml`` into structured types consumed by

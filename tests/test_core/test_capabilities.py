@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Tests for capability helpers."""
 
 from worldflux.core.config import DreamerV3Config, JEPABaseConfig, TDMPC2Config

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Training configuration for WorldFlux."""
 
 from __future__ import annotations

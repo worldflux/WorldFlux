@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 WorldFlux Contributors
 """Training backend abstraction for local and future cloud execution.
 
 Phase 1 provides :class:`LocalBackend` for single-machine training.
