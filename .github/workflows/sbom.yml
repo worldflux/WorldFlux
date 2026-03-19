@@ -55,6 +55,8 @@ jobs:
 
   trivy-container:
     name: Container Scan (Trivy)
+    # Only run on pushes to main and releases, not on PRs
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
@@ -65,22 +67,30 @@ jobs:
       - name: Build Docker image
         run: docker build --tag worldflux-scan:${{ github.sha }} .
 
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@0.31.0
-        with:
-          image-ref: worldflux-scan:${{ github.sha }}
-          format: table
-          exit-code: "1"
-          ignore-unfixed: true
-          severity: CRITICAL,HIGH
-          timeout: 30m
+      - name: Install Trivy
+        run: |
+          sudo apt-get install -y wget apt-transport-https gnupg lsb-release
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo gpg --dearmor -o /usr/share/keyrings/trivy.gpg
+          echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update
+          sudo apt-get install -y trivy
 
-      - name: Run Trivy SBOM scanner (container)
-        uses: aquasecurity/trivy-action@0.31.0
-        with:
-          image-ref: worldflux-scan:${{ github.sha }}
-          format: cyclonedx
-          output: container-sbom.json
+      - name: Run Trivy vulnerability scanner
+        run: |
+          trivy image \
+            --format table \
+            --exit-code 1 \
+            --ignore-unfixed \
+            --severity CRITICAL,HIGH \
+            --timeout 30m \
+            worldflux-scan:${{ github.sha }}
+
+      - name: Generate container SBOM
+        run: |
+          trivy image \
+            --format cyclonedx \
+            --output container-sbom.json \
+            worldflux-scan:${{ github.sha }}
 
       - name: Upload container SBOM
         uses: actions/upload-artifact@v4
