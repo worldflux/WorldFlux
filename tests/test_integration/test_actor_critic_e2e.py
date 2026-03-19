@@ -30,14 +30,16 @@ def _make_replay_buffer(
     n_episodes: int = 4,
 ) -> ReplayBuffer:
     """Create a small replay buffer with random data for testing."""
+    import numpy as np
+
     buf = ReplayBuffer(capacity=1000, obs_shape=obs_shape, action_dim=action_dim)
     for _ in range(n_episodes):
-        obs = torch.randn(seq_len, *obs_shape)
-        actions = torch.randn(seq_len, action_dim)
-        rewards = torch.randn(seq_len)
-        dones = torch.zeros(seq_len)
+        obs = np.random.randn(seq_len, *obs_shape).astype(np.float32)
+        actions = np.random.randn(seq_len, action_dim).astype(np.float32)
+        rewards = np.random.randn(seq_len).astype(np.float32)
+        dones = np.zeros(seq_len, dtype=np.float32)
         dones[-1] = 1.0
-        buf.add_trajectory(obs, actions, rewards, dones)
+        buf.add_episode(obs, actions, rewards, dones)
     return buf
 
 
@@ -91,7 +93,7 @@ class TestActorCriticE2E:
             learning_rate=1e-4,
             device="cpu",
             log_interval=50,
-            save_interval=0,
+            save_interval=1000,
             auto_quality_check=False,
         )
         trainer = Trainer(ac_model, config)
@@ -112,7 +114,7 @@ class TestActorCriticE2E:
             learning_rate=1e-4,
             device="cpu",
             log_interval=100,
-            save_interval=0,
+            save_interval=1000,
             auto_quality_check=False,
         )
         trainer = Trainer(ac_model, config)
@@ -143,7 +145,7 @@ class TestActorCriticE2E:
             learning_rate=1e-4,
             device="cpu",
             log_interval=100,
-            save_interval=0,
+            save_interval=1000,
             auto_quality_check=False,
         )
         trainer = Trainer(ac_model, config)
@@ -167,7 +169,7 @@ class TestActorCriticE2E:
             learning_rate=1e-4,
             device="cpu",
             log_interval=100,
-            save_interval=0,
+            save_interval=1000,
             auto_quality_check=False,
         )
         trainer = Trainer(ac_model, config)
@@ -205,7 +207,7 @@ class TestActorCriticE2E:
             learning_rate=1e-4,
             device="cpu",
             log_interval=100,
-            save_interval=0,
+            save_interval=1000,
             auto_quality_check=False,
         )
         trainer = Trainer(model, config)

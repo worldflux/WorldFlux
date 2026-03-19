@@ -153,7 +153,7 @@ class TrainingConfig:
             )
         if self.learning_rate <= 0:
             raise ConfigurationError(f"learning_rate must be positive, got {self.learning_rate}")
-        if self.grad_clip < 0:
+        if self.grad_clip is not None and self.grad_clip < 0:
             raise ConfigurationError(f"grad_clip must be non-negative, got {self.grad_clip}")
         if self.weight_decay < 0:
             raise ConfigurationError(f"weight_decay must be non-negative, got {self.weight_decay}")
