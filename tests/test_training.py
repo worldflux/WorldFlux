@@ -161,7 +161,7 @@ class TestTrainingConfig:
 
         config = TrainingConfig(device="auto")
         device = config.resolve_device()
-        assert device in ["cuda", "cpu"]
+        assert device in ["cuda", "mps", "cpu"]
 
     def test_with_updates(self):
         config = TrainingConfig(total_steps=1000)
