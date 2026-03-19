@@ -52,11 +52,23 @@ jobs:
             --output-json reports/release/verification-report.json \
             --output-md reports/release/verification-report.md
 
+      - name: Render parity dashboard
+        run: |
+          uv run python scripts/render_parity_dashboard.py \
+            reports/parity/aggregate.json \
+            --output reports/parity/dashboard.html
+
       - name: Upload verification report
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: verification-report
           path: reports/release/
+
+      - name: Upload parity evidence artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: parity-evidence
+          path: reports/parity/
 
   build:
     needs: verify
