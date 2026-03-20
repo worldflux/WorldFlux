@@ -158,7 +158,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
         python-version: ["3.10", "3.11"]
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
@@ -168,8 +168,14 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Run pip install -> init -> train -> verify smoke
+      - name: Run pip install -> init -> train -> verify smoke (POSIX)
+        if: runner.os != 'Windows'
         run: scripts/e2e/pip_flow_smoke.sh
+
+      - name: Run pip install -> init -> train -> verify smoke (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: scripts/e2e/pip_flow_smoke.ps1
 
   security:
     runs-on: ubuntu-latest

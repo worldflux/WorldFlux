@@ -67,13 +67,14 @@ def _start_wizard_resize_guard() -> None:
     global _wizard_max_rendered_width, _wizard_resize_pending, _wizard_prev_sigwinch
     _wizard_max_rendered_width = 0
     _wizard_resize_pending = False
-    _wizard_prev_sigwinch = signal.getsignal(signal.SIGWINCH)
-    signal.signal(signal.SIGWINCH, _on_wizard_resize)
+    if hasattr(signal, "SIGWINCH"):
+        _wizard_prev_sigwinch = signal.getsignal(signal.SIGWINCH)
+        signal.signal(signal.SIGWINCH, _on_wizard_resize)
 
 
 def _stop_wizard_resize_guard() -> None:
     global _wizard_prev_sigwinch
-    if _wizard_prev_sigwinch is not None:
+    if _wizard_prev_sigwinch is not None and hasattr(signal, "SIGWINCH"):
         signal.signal(signal.SIGWINCH, _wizard_prev_sigwinch)
         _wizard_prev_sigwinch = None
 
@@ -246,8 +247,10 @@ def _arrow_select(
         prev_plain_lines = new_plain
         sys.stdout.flush()
 
-    old_handler = signal.getsignal(signal.SIGWINCH)
-    signal.signal(signal.SIGWINCH, _on_resize)
+    old_handler = None
+    if hasattr(signal, "SIGWINCH"):
+        old_handler = signal.getsignal(signal.SIGWINCH)
+        signal.signal(signal.SIGWINCH, _on_resize)
     try:
         _draw_header()
         _draw(selected)
@@ -276,7 +279,8 @@ def _arrow_select(
                 _draw(selected, erase=True)
                 tty.setraw(fd)
     finally:
-        signal.signal(signal.SIGWINCH, old_handler)
+        if hasattr(signal, "SIGWINCH") and old_handler is not None:
+            signal.signal(signal.SIGWINCH, old_handler)
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
     return options[selected]["value"]
