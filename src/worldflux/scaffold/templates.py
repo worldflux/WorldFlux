@@ -841,7 +841,7 @@ def render_readme_md(context: dict[str, Any]) -> str:
         Verify your trained model:
 
         ```bash
-        worldflux verify --target ./outputs
+        worldflux verify --target ./outputs --mode quick
         ```
 
         Run inference or imagination checks:
@@ -885,10 +885,13 @@ def render_readme_md(context: dict[str, Any]) -> str:
         Run parity verification against a baseline:
 
         ```bash
+        # Newcomer-safe local verification
+        worldflux verify --target ./outputs/checkpoint_best.pt --mode quick
+
         # Demo mode (instant synthetic results for presentations; not proof)
         worldflux verify --target ./outputs/checkpoint_best.pt --demo --mode proof
 
-        # Real verification (requires parity suite)
+        # Proof-mode verification (advanced; requires parity/proof prerequisites)
         worldflux verify --target ./outputs/checkpoint_best.pt
         ```
 
