@@ -50,9 +50,10 @@ Fix Dreamer objective alignment, TD-MPC2 terminal handling, and target update
 side effects.
 
 TD-MPC2 terminal handling and target-update side-effect coverage now have
-explicit regression tests in-repo; Dreamer objective alignment remains the
-remaining Phase 1 correctness item that still needs closure before stronger
-reference-family training claims.
+explicit regression tests in-repo. Dreamer image-objective alignment is tracked
+via a dedicated regression task and should be considered closed only when the
+CNN reconstruction path is covered by regression tests and alignment docs are
+updated in the same task.
 
 ## 5. Requirements
 

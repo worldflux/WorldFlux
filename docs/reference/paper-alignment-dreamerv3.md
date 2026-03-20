@@ -21,6 +21,8 @@ WorldFlux currently encodes the following DreamerV3-aligned defaults in code:
 
 - world-model learning rate: `1e-4`
 - gradient clipping: `1000.0`
+- CNN/image reconstruction keeps raw observation targets; vector/MLP
+  reconstruction may use `symlog`
 - KL split:
   - dynamics: `0.5`
   - representation: `0.1`

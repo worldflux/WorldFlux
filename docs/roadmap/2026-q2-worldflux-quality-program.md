@@ -38,8 +38,8 @@ Current focus inside this phase:
 
 - keep the newcomer `init -> train -> verify --mode quick` path aligned across
   CLI, scaffolded helpers, and docs
-- finish the remaining Dreamer objective-alignment work before making stronger
-  reference-family training claims
+- keep Dreamer reference-family correctness guarded by explicit regression tests
+  before making stronger training claims
 
 ## Phase 2: Production and Quality Hardening (Days 36-60)
 
