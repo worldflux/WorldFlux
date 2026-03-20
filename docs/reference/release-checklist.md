@@ -8,6 +8,14 @@ Canonical local validation command:
 uv run python scripts/run_release_dry_run.py --tag vX.Y.Z --profile full
 ```
 
+Release authority sources:
+
+- `pyproject.toml` defines the package version that must match the release tag.
+- `CHANGELOG.md` defines the release-ready notes for that version.
+- `docs/operations/release-runbook.md` defines the operator sequence for publish.
+- `docs/roadmap/2026-q2-worldflux-quality-program.md` defines the current
+  quality-program source of truth for release-hardening work.
+
 ## CI and Quality Gates
 
 - [ ] Lint passes: `uvx ruff check src/ tests/ examples/ benchmarks/ scripts/`

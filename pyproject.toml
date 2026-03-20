@@ -126,6 +126,8 @@ Homepage = "https://github.com/worldflux/WorldFlux"
 Documentation = "https://worldflux.ai/"
 Repository = "https://github.com/worldflux/WorldFlux"
 Changelog = "https://github.com/worldflux/WorldFlux/blob/main/CHANGELOG.md"
+"Release Checklist" = "https://github.com/worldflux/WorldFlux/blob/main/docs/reference/release-checklist.md"
+Roadmap = "https://github.com/worldflux/WorldFlux/blob/main/docs/roadmap/2026-q2-worldflux-quality-program.md"
 Issues = "https://github.com/worldflux/WorldFlux/issues"
 
 [tool.setuptools.packages.find]
