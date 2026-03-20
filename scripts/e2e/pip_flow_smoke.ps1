@@ -17,7 +17,11 @@ function Invoke-CommandChecked {
         [string]$ErrorMessage
     )
 
-    & $Command[0] $Command[1..($Command.Length - 1)]
+    if ($Command.Length -le 1) {
+        & $Command[0]
+    } else {
+        & $Command[0] $Command[1..($Command.Length - 1)]
+    }
     if ($LASTEXITCODE -ne 0) {
         throw $ErrorMessage
     }
@@ -31,7 +35,7 @@ Write-Host "[e2e] root: $rootDir"
 Write-Host "[e2e] work: $($workDir.FullName)"
 
 try {
-    Invoke-CommandChecked -Command ($pythonCmd + @("-m", "venv", (Join-Path $workDir.FullName "venv"))) -ErrorMessage "[e2e] failed to create virtual environment"
+    Invoke-CommandChecked -Command (@($pythonCmd) + @("-m", "venv", (Join-Path $workDir.FullName "venv"))) -ErrorMessage "[e2e] failed to create virtual environment"
 
     . (Join-Path $workDir.FullName "venv\Scripts\Activate.ps1")
 
