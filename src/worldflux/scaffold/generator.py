@@ -177,7 +177,7 @@ def _validate_context(context: dict[str, Any]) -> None:
     context["verify_backend"] = verify_backend or default_verify_backend
     verify_backend_profile = str(context.get("verify_backend_profile", "")).strip()
     context["verify_backend_profile"] = verify_backend_profile or default_verify_profile
-    context["verify_mode"] = str(context.get("verify_mode", "auto")).strip() or "auto"
+    context["verify_mode"] = str(context.get("verify_mode", "quick")).strip() or "quick"
     context["verify_proof_claim"] = (
         str(context.get("verify_proof_claim", "compare")).strip() or "compare"
     )

@@ -67,7 +67,7 @@ def test_generate_project_creates_expected_files(tmp_path: Path) -> None:
     assert 'backend = "native_torch"' in toml_content
     assert 'backend_profile = ""' in toml_content
     assert 'baseline = "official/dreamerv3"' in toml_content
-    assert 'mode = "auto"' in toml_content
+    assert 'mode = "quick"' in toml_content
     assert 'proof_claim = "compare"' in toml_content
     assert "allow_official_only = false" in toml_content
     assert 'backend = "official_dreamerv3_jax_subprocess"' in toml_content
@@ -81,6 +81,7 @@ def test_generate_project_creates_expected_files(tmp_path: Path) -> None:
     assert "uv run python inference.py" in readme_content
     assert "Dashboard:" in readme_content
     assert "backend-native training is not enabled through `train.py` yet." not in readme_content
+    assert "worldflux verify --target ./outputs --mode quick" in readme_content
     assert "Set `training.backend` to a delegated backend id" in readme_content
     assert "`official_dreamerv3_jax_subprocess` + `official_xl`" in readme_content
     assert "`official_tdmpc2_torch_subprocess` + `proof_5m`" in readme_content

@@ -346,7 +346,10 @@ def train(
     if throughput is not None:
         summary_lines.append(f"[wf.label]Throughput:[/wf.label]  {throughput:.1f} steps/s")
     summary_lines.append("")
-    summary_lines.append("Next: worldflux verify --target " + effective_output_dir)
+    verify_next = "worldflux verify --target " + effective_output_dir
+    if str(cfg.verify.mode).strip().lower() == "quick":
+        verify_next += " --mode quick"
+    summary_lines.append("Next: " + verify_next)
 
     console.print(
         result_banner(
