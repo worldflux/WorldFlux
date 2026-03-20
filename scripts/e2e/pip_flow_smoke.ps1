@@ -104,6 +104,7 @@ try {
     Write-Host "[e2e] pip flow smoke passed"
 }
 finally {
+    Set-Location $rootDir
     if (Test-Path $workDir.FullName) {
         Remove-Item -Recurse -Force $workDir.FullName
     }
