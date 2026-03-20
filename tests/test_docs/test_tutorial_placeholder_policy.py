@@ -18,10 +18,18 @@ def test_placeholder_tutorials_are_published_and_link_to_supported_docs() -> Non
     assert "Placeholder tutorial pages remain published" in policy
 
     for path in (
-        "docs/tutorials/train-first-model.md",
         "docs/tutorials/dreamer-vs-tdmpc2.md",
         "docs/tutorials/reproduce-dreamer-tdmpc2.md",
     ):
         text = _read(path)
         assert "Tutorial Temporarily Unavailable" in text
         assert "getting-started/quickstart.md" in text or "../getting-started/quickstart.md" in text
+
+
+def test_train_first_model_is_a_real_supported_tutorial() -> None:
+    text = _read("docs/tutorials/train-first-model.md")
+    assert "Tutorial Temporarily Unavailable" not in text
+    assert "worldflux init" in text
+    assert "worldflux train" in text
+    assert "worldflux verify --target ./outputs --mode quick" in text
+    assert "inference.py" in text

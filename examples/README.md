@@ -9,6 +9,9 @@ Choose the right example for your use case.
 | [`quickstart_cpu_success.py`](quickstart_cpu_success.py) | Official CPU-first success path with machine-checkable criteria | CPU only |
 | [`worldflux_quickstart.ipynb`](worldflux_quickstart.ipynb) | Interactive Colab notebook | CPU or GPU |
 
+If you want the first scaffolded end-to-end path after these, use
+[`docs/tutorials/train-first-model.md`](../docs/tutorials/train-first-model.md).
+
 ## Training
 
 | Example | Description | Requirements |
