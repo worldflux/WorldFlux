@@ -1711,6 +1711,171 @@ output_dir = "{output_dir}"
         assert result.exit_code == 0
         assert "Training Complete" in result.output
 
+    def test_train_uses_project_scaffold_runtime_when_available(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        from worldflux import Batch
+
+        toml_path = tmp_path / "worldflux.toml"
+        toml_path.write_text(
+            """\
+project_name = "scaffold-runtime"
+environment = "atari"
+model = "dreamer:ci"
+model_type = "dreamer"
+
+[architecture]
+obs_shape = [3, 64, 64]
+action_dim = 6
+hidden_dim = 32
+
+[training]
+total_steps = 2
+batch_size = 2
+sequence_length = 5
+learning_rate = 3e-4
+device = "cpu"
+output_dir = "{output_dir}"
+
+[gameplay]
+enabled = true
+fps = 8
+max_frames = 64
+
+[visualization]
+enabled = true
+host = "127.0.0.1"
+port = 8765
+refresh_ms = 250
+history_max_points = 32
+open_browser = false
+""".format(output_dir=str(tmp_path / "outputs")),
+            encoding="utf-8",
+        )
+        (tmp_path / "dashboard").mkdir()
+
+        calls = {"build_training_data": 0, "dashboard_started": 0, "target_steps": None}
+
+        class _Provider:
+            def sample(self, batch_size: int, seq_len: int | None = None, device: str = "cpu"):
+                assert seq_len is not None
+                return Batch(
+                    obs=torch.randn(batch_size, seq_len, 3, 64, 64, device=device),
+                    actions=torch.randn(batch_size, seq_len, 6, device=device),
+                    rewards=torch.randn(batch_size, seq_len, device=device),
+                    terminations=torch.zeros(batch_size, seq_len, device=device),
+                )
+
+        class _FakeDatasetModule:
+            @staticmethod
+            def build_training_data(
+                model_config,
+                frame_callback=None,
+                phase_callback=None,
+            ):
+                del model_config, frame_callback, phase_callback
+                calls["build_training_data"] += 1
+                return _Provider(), (lambda: None), "offline"
+
+        class _FakeMetricBuffer:
+            def __init__(self, max_points: int):
+                self.max_points = max_points
+
+            def set_gameplay_available(self, available: bool) -> None:
+                del available
+
+            def set_phase(self, phase: str, detail: str | None = None) -> None:
+                del phase, detail
+
+            def set_status(self, status: str, error: str | None = None) -> None:
+                del status, error
+
+            def set_target_steps(self, total_steps: int) -> None:
+                calls["target_steps"] = total_steps
+
+        class _FakeGameplayBuffer:
+            def __init__(self, max_frames: int, fps: int):
+                self.max_frames = max_frames
+                self.fps = fps
+
+            def set_phase(self, phase: str, detail: str | None = None) -> None:
+                del phase, detail
+
+            def set_status(self, status: str) -> None:
+                del status
+
+            def append_frame(self, *args, **kwargs) -> None:
+                del args, kwargs
+
+        class _FakeDashboardServer:
+            def __init__(self, **kwargs):
+                del kwargs
+                self.url = "http://127.0.0.1:8765"
+
+            def start(self) -> int:
+                calls["dashboard_started"] += 1
+                return 8765
+
+            def open_browser(self) -> None:
+                return None
+
+            def schedule_shutdown(self, delay_seconds: float) -> None:
+                del delay_seconds
+
+            def wait_for_stop(self, timeout: float | None = None) -> bool:
+                del timeout
+                return True
+
+        class _FakeDashboardCallback:
+            def __init__(self, buffer, jsonl_path: Path):
+                del buffer, jsonl_path
+
+            def on_train_begin(self, trainer) -> None:
+                del trainer
+
+            def on_step_end(self, trainer) -> None:
+                del trainer
+
+            def on_train_end(self, trainer) -> None:
+                del trainer
+
+            def close(self) -> None:
+                return None
+
+        fake_runtime = SimpleNamespace(
+            dataset_module=_FakeDatasetModule(),
+            dashboard_module=SimpleNamespace(
+                MetricBuffer=_FakeMetricBuffer,
+                GameplayBuffer=_FakeGameplayBuffer,
+                MetricsDashboardServer=_FakeDashboardServer,
+                DashboardCallback=_FakeDashboardCallback,
+            ),
+            dashboard_root=tmp_path / "dashboard",
+        )
+
+        monkeypatch.setattr(
+            "worldflux.training.data.create_random_buffer",
+            lambda *args, **kwargs: (_ for _ in ()).throw(
+                AssertionError("fallback random buffer should not be used")
+            ),
+        )
+        monkeypatch.setattr(
+            "worldflux.cli._train._load_scaffold_runtime",
+            lambda _root: fake_runtime,
+        )
+
+        result = runner.invoke(
+            cli.app,
+            ["train", "--config", str(toml_path), "--steps", "2"],
+        )
+
+        assert result.exit_code == 0
+        assert calls["build_training_data"] == 1
+        assert calls["dashboard_started"] == 1
+        assert calls["target_steps"] == 2
+        assert "Dashboard:" in result.output
+        assert "Training Complete" in result.output
+
     def test_train_summary_prefers_explicit_quick_verify_next_step(self, tmp_path: Path) -> None:
         toml_path = tmp_path / "worldflux.toml"
         toml_path.write_text(

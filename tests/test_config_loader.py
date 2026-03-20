@@ -11,10 +11,15 @@ import pytest
 from worldflux.config_loader import (
     ArchitectureConfig,
     CloudSectionConfig,
+    DataSectionConfig,
     FlywheelSectionConfig,
+    GameplaySectionConfig,
+    InferenceSectionConfig,
+    OnlineCollectionSectionConfig,
     ProjectConfig,
     TrainingSectionConfig,
     VerifySectionConfig,
+    VisualizationSectionConfig,
     load_config,
 )
 
@@ -42,6 +47,36 @@ device = "cpu"
 backend = "native_torch"
 backend_profile = "local"
 output_dir = "./test-outputs"
+
+[data]
+source = "gym"
+num_episodes = 12
+episode_length = 34
+buffer_capacity = 4096
+gym_env = "ALE/Breakout-v5"
+
+[gameplay]
+enabled = true
+fps = 12
+max_frames = 256
+
+[online_collection]
+enabled = true
+warmup_transitions = 1024
+collect_steps_per_update = 128
+max_episode_steps = 77
+
+[inference]
+horizon = 15
+checkpoint = "./outputs/checkpoint_best.pt"
+
+[visualization]
+enabled = true
+host = "127.0.0.1"
+port = 8765
+refresh_ms = 750
+history_max_points = 1234
+open_browser = false
 
 [verify]
 baseline = "official/dreamerv3"
@@ -107,6 +142,44 @@ class TestLoadConfig:
         assert cfg.verify.proof_claim == "compare"
         assert cfg.verify.allow_official_only is True
 
+    def test_data_parsed(self, sample_toml: Path) -> None:
+        cfg = load_config(sample_toml)
+        assert isinstance(cfg.data, DataSectionConfig)
+        assert cfg.data.source == "gym"
+        assert cfg.data.num_episodes == 12
+        assert cfg.data.episode_length == 34
+        assert cfg.data.buffer_capacity == 4096
+        assert cfg.data.gym_env == "ALE/Breakout-v5"
+
+    def test_gameplay_parsed(self, sample_toml: Path) -> None:
+        cfg = load_config(sample_toml)
+        assert isinstance(cfg.gameplay, GameplaySectionConfig)
+        assert cfg.gameplay.enabled is True
+        assert cfg.gameplay.fps == 12
+        assert cfg.gameplay.max_frames == 256
+
+    def test_online_collection_parsed(self, sample_toml: Path) -> None:
+        cfg = load_config(sample_toml)
+        assert isinstance(cfg.online_collection, OnlineCollectionSectionConfig)
+        assert cfg.online_collection.enabled is True
+        assert cfg.online_collection.warmup_transitions == 1024
+        assert cfg.online_collection.collect_steps_per_update == 128
+        assert cfg.online_collection.max_episode_steps == 77
+
+    def test_inference_and_visualization_parsed(self, sample_toml: Path) -> None:
+        cfg = load_config(sample_toml)
+        assert isinstance(cfg.inference, InferenceSectionConfig)
+        assert cfg.inference.horizon == 15
+        assert cfg.inference.checkpoint == "./outputs/checkpoint_best.pt"
+
+        assert isinstance(cfg.visualization, VisualizationSectionConfig)
+        assert cfg.visualization.enabled is True
+        assert cfg.visualization.host == "127.0.0.1"
+        assert cfg.visualization.port == 8765
+        assert cfg.visualization.refresh_ms == 750
+        assert cfg.visualization.history_max_points == 1234
+        assert cfg.visualization.open_browser is False
+
     def test_raw_dict_preserved(self, sample_toml: Path) -> None:
         cfg = load_config(sample_toml)
         assert isinstance(cfg.raw, dict)
@@ -138,6 +211,11 @@ class TestLoadConfig:
         assert cfg.project_name == "minimal"
         assert cfg.architecture.obs_shape == (3, 64, 64)
         assert cfg.training.total_steps == 100_000
+        assert cfg.data.source == "random"
+        assert cfg.gameplay.enabled is False
+        assert cfg.online_collection.enabled is False
+        assert cfg.inference.horizon == 15
+        assert cfg.visualization.enabled is False
         assert cfg.verify.env == "atari/pong"
         assert cfg.cloud.gpu_type == "a100"
         assert cfg.cloud.spot is True

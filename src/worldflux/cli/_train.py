@@ -4,7 +4,13 @@
 
 from __future__ import annotations
 
+import hashlib
+import importlib.util
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
+from types import ModuleType
+from typing import Any
 
 import typer
 
@@ -13,6 +19,13 @@ from worldflux.core.backend_bridge import canonical_backend_profile
 
 from ._app import app, console
 from ._rich_output import key_value_panel, result_banner
+
+
+@dataclass(frozen=True)
+class ScaffoldRuntime:
+    dataset_module: ModuleType
+    dashboard_module: ModuleType | None
+    dashboard_root: Path | None
 
 
 def _env_to_task_filter(env: str) -> str:
@@ -27,6 +40,137 @@ def _env_to_task_filter(env: str) -> str:
     if value.startswith("mujoco/"):
         return value.split("/", 1)[1].strip().replace("_", "-")
     return value
+
+
+def _load_module_from_file(path: Path, *, namespace: str) -> ModuleType:
+    digest = hashlib.sha256(str(path.resolve()).encode("utf-8")).hexdigest()[:12]
+    module_name = f"worldflux_cli_{namespace}_{digest}"
+    spec = importlib.util.spec_from_file_location(module_name, path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Failed to load module from {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_scaffold_runtime(project_root: Path) -> ScaffoldRuntime | None:
+    dataset_path = project_root / "dataset.py"
+    if not dataset_path.exists():
+        return None
+
+    dataset_module = _load_module_from_file(dataset_path, namespace="dataset")
+
+    dashboard_path = project_root / "local_dashboard.py"
+    dashboard_root = project_root / "dashboard"
+    dashboard_module: ModuleType | None = None
+    if dashboard_path.exists() and (dashboard_root / "index.html").exists():
+        dashboard_module = _load_module_from_file(dashboard_path, namespace="dashboard")
+
+    return ScaffoldRuntime(
+        dataset_module=dataset_module,
+        dashboard_module=dashboard_module,
+        dashboard_root=dashboard_root if dashboard_module is not None else None,
+    )
+
+
+def _prepare_scaffold_dashboard(
+    *,
+    cfg: Any,
+    effective_steps: int,
+    effective_output_dir: str,
+    runtime: ScaffoldRuntime,
+) -> tuple[dict[str, Any] | None, list[Any]]:
+    dashboard_module = runtime.dashboard_module
+    dashboard_root = runtime.dashboard_root
+    if dashboard_module is None or dashboard_root is None or not cfg.visualization.enabled:
+        return None, []
+
+    dashboard_buffer = dashboard_module.MetricBuffer(
+        max_points=cfg.visualization.history_max_points
+    )
+    if hasattr(dashboard_buffer, "set_target_steps"):
+        dashboard_buffer.set_target_steps(effective_steps)
+
+    gameplay_buffer = None
+    gameplay_enabled = bool(cfg.gameplay.enabled)
+    unavailable_detail = (
+        "Gameplay stream disabled in worldflux.toml." if not gameplay_enabled else None
+    )
+
+    if gameplay_enabled:
+        gameplay_buffer = dashboard_module.GameplayBuffer(
+            max_frames=cfg.gameplay.max_frames,
+            fps=cfg.gameplay.fps,
+        )
+        if hasattr(dashboard_buffer, "set_gameplay_available"):
+            dashboard_buffer.set_gameplay_available(True)
+    else:
+        if hasattr(dashboard_buffer, "set_gameplay_available"):
+            dashboard_buffer.set_gameplay_available(False)
+        if hasattr(dashboard_buffer, "set_phase"):
+            dashboard_buffer.set_phase("unavailable", unavailable_detail)
+
+    dashboard_server = dashboard_module.MetricsDashboardServer(
+        metric_buffer=dashboard_buffer,
+        gameplay_buffer=gameplay_buffer,
+        host=cfg.visualization.host,
+        start_port=cfg.visualization.port,
+        dashboard_root=dashboard_root,
+        refresh_ms=cfg.visualization.refresh_ms,
+        max_port_tries=100,
+    )
+    dashboard_server.start()
+    console.print(f"[wf.info]Dashboard:[/wf.info] {dashboard_server.url}")
+    if cfg.visualization.open_browser and hasattr(dashboard_server, "open_browser"):
+        dashboard_server.open_browser()
+
+    dashboard_callback = dashboard_module.DashboardCallback(
+        dashboard_buffer,
+        Path(effective_output_dir) / "metrics.jsonl",
+    )
+
+    def publish_phase(phase: str, detail: str | None = None) -> None:
+        if hasattr(dashboard_buffer, "set_phase"):
+            dashboard_buffer.set_phase(phase, detail)
+        if gameplay_buffer is not None:
+            if hasattr(gameplay_buffer, "set_phase"):
+                gameplay_buffer.set_phase(phase, detail)
+            if hasattr(gameplay_buffer, "set_status"):
+                if phase == "unavailable":
+                    gameplay_buffer.set_status("unavailable")
+                elif phase in {"finished", "error"}:
+                    gameplay_buffer.set_status(phase)
+                else:
+                    gameplay_buffer.set_status("running")
+        elif hasattr(dashboard_buffer, "set_gameplay_available") and phase == "unavailable":
+            dashboard_buffer.set_gameplay_available(False)
+
+    def publish_frame(
+        frame: Any,
+        episode: int,
+        episode_step: int,
+        reward: float,
+        done: bool,
+    ) -> None:
+        if gameplay_buffer is None or not hasattr(gameplay_buffer, "append_frame"):
+            return
+        gameplay_buffer.append_frame(
+            frame,
+            episode=episode,
+            episode_step=episode_step,
+            reward=reward,
+            done=done,
+        )
+
+    return {
+        "dashboard_buffer": dashboard_buffer,
+        "gameplay_buffer": gameplay_buffer,
+        "dashboard_server": dashboard_server,
+        "dashboard_callback": dashboard_callback,
+        "publish_phase": publish_phase,
+        "publish_frame": publish_frame,
+        "unavailable_detail": unavailable_detail,
+    }, [dashboard_callback]
 
 
 @app.command(rich_help_panel="Training")
@@ -292,45 +436,111 @@ def train(
             )
         return
 
+    project_root = Path(config).resolve().parent
+    scaffold_runtime = _load_scaffold_runtime(project_root)
+    extra_callbacks: list[Any] = []
+    dashboard_context: dict[str, Any] | None = None
+
+    def _noop_cleanup() -> None:
+        return None
+
+    cleanup_data_source: Callable[[], None] = _noop_cleanup
+    data_mode = "random"
+
+    if scaffold_runtime is not None:
+        try:
+            dashboard_context, extra_callbacks = _prepare_scaffold_dashboard(
+                cfg=cfg,
+                effective_steps=effective_steps,
+                effective_output_dir=effective_output_dir,
+                runtime=scaffold_runtime,
+            )
+        except Exception as exc:
+            console.print(f"[wf.caution]Visualization disabled:[/wf.caution] {exc}")
+            dashboard_context = None
+            extra_callbacks = []
+
     # Create data source
     console.print("[wf.info]Preparing training data...[/wf.info]")
-    data = create_random_buffer(
-        obs_shape=cfg.architecture.obs_shape,
-        action_dim=cfg.architecture.action_dim,
-    )
-    console.print(f"[wf.ok]Training data ready:[/wf.ok] {len(data)} transitions")
-
-    if use_ddp:
-        from worldflux.training.distributed import DDPTrainer
-
-        ddp_trainer = DDPTrainer(model, training_config)
-        console.print(
-            f"[wf.info]Starting DDP training for {effective_steps:,} steps "
-            f"(rank {ddp_trainer.rank}/{ddp_trainer.world_size})...[/wf.info]"
-        )
+    if scaffold_runtime is not None and hasattr(
+        scaffold_runtime.dataset_module, "build_training_data"
+    ):
+        publish_phase = dashboard_context["publish_phase"] if dashboard_context else None
+        publish_frame = dashboard_context["publish_frame"] if dashboard_context else None
+        if publish_phase is not None and cfg.gameplay.enabled:
+            publish_phase("collecting")
         try:
-            ddp_trainer.train(data, resume_from=resume_from)
-        except (RuntimeError, KeyboardInterrupt) as exc:
-            if isinstance(exc, KeyboardInterrupt):
-                console.print("\n[wf.caution]Training interrupted by user.[/wf.caution]")
-            else:
-                console.print(f"[wf.fail]DDP training failed:[/wf.fail] {exc}")
-                raise typer.Exit(code=1) from None
-        finally:
-            ddp_trainer.cleanup()
-        trainer = ddp_trainer._trainer  # For runtime profile access
+            data, cleanup_data_source, data_mode = (
+                scaffold_runtime.dataset_module.build_training_data(
+                    model.config,
+                    frame_callback=publish_frame if cfg.gameplay.enabled else None,
+                    phase_callback=publish_phase,
+                )
+            )
+            if publish_phase is not None:
+                publish_phase("training")
+            console.print(f"[wf.ok]Training data ready:[/wf.ok] mode={data_mode}")
+        except Exception as exc:
+            console.print(
+                "[wf.caution]Scaffold runtime fallback:[/wf.caution] "
+                f"{exc}. Falling back to random replay data."
+            )
+            data = create_random_buffer(
+                obs_shape=cfg.architecture.obs_shape,
+                action_dim=cfg.architecture.action_dim,
+            )
+            console.print(f"[wf.ok]Training data ready:[/wf.ok] {len(data)} transitions")
     else:
-        trainer = Trainer(model, training_config)
-        console.print(f"[wf.info]Starting training for {effective_steps:,} steps...[/wf.info]")
+        data = create_random_buffer(
+            obs_shape=cfg.architecture.obs_shape,
+            action_dim=cfg.architecture.action_dim,
+        )
+        console.print(f"[wf.ok]Training data ready:[/wf.ok] {len(data)} transitions")
 
+    try:
+        if use_ddp:
+            from worldflux.training.distributed import DDPTrainer
+
+            ddp_trainer = DDPTrainer(model, training_config)
+            console.print(
+                f"[wf.info]Starting DDP training for {effective_steps:,} steps "
+                f"(rank {ddp_trainer.rank}/{ddp_trainer.world_size})...[/wf.info]"
+            )
+            try:
+                ddp_trainer.train(data, resume_from=resume_from)
+            except (RuntimeError, KeyboardInterrupt) as exc:
+                if isinstance(exc, KeyboardInterrupt):
+                    console.print("\n[wf.caution]Training interrupted by user.[/wf.caution]")
+                else:
+                    console.print(f"[wf.fail]DDP training failed:[/wf.fail] {exc}")
+                    raise typer.Exit(code=1) from None
+            finally:
+                ddp_trainer.cleanup()
+            trainer = ddp_trainer._trainer  # For runtime profile access
+        else:
+            trainer = Trainer(model, training_config, callbacks=extra_callbacks or None)
+            console.print(f"[wf.info]Starting training for {effective_steps:,} steps...[/wf.info]")
+
+            try:
+                trainer.train(data, resume_from=resume_from)
+            except (RuntimeError, KeyboardInterrupt) as exc:
+                if isinstance(exc, KeyboardInterrupt):
+                    console.print("\n[wf.caution]Training interrupted by user.[/wf.caution]")
+                else:
+                    console.print(f"[wf.fail]Training failed:[/wf.fail] {exc}")
+                    raise typer.Exit(code=1) from None
+    finally:
         try:
-            trainer.train(data, resume_from=resume_from)
-        except (RuntimeError, KeyboardInterrupt) as exc:
-            if isinstance(exc, KeyboardInterrupt):
-                console.print("\n[wf.caution]Training interrupted by user.[/wf.caution]")
-            else:
-                console.print(f"[wf.fail]Training failed:[/wf.fail] {exc}")
-                raise typer.Exit(code=1) from None
+            cleanup_data_source()
+        except Exception as cleanup_exc:
+            console.print(f"[wf.caution]Data source cleanup failed:[/wf.caution] {cleanup_exc}")
+        if dashboard_context is not None:
+            publish_phase = dashboard_context.get("publish_phase")
+            if callable(publish_phase):
+                publish_phase("finished")
+            dashboard_server = dashboard_context.get("dashboard_server")
+            if dashboard_server is not None and hasattr(dashboard_server, "stop"):
+                dashboard_server.stop()
 
     rt_profile = trainer.runtime_profile()
     elapsed = rt_profile.get("elapsed_sec")

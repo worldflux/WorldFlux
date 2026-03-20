@@ -12,6 +12,7 @@ Developer and CI utility scripts for WorldFlux.
 | `check_parity_suite_coverage.py` | Validate parity suite coverage policy and required-suite lock alignment | `uv run python scripts/check_parity_suite_coverage.py` |
 | `check_release_checklist_gate.py` | Ensure CI captures the documented release checklist gates | `uv run python scripts/check_release_checklist_gate.py` |
 | `check_release_metadata.py` | Validate release tag/version/changelog consistency | `uv run python scripts/check_release_metadata.py` |
+| `collect_s_grade_program_status.py` | Collect the current presence/absence of Phase 0 S-grade program artifacts without failing CI | `python scripts/collect_s_grade_program_status.py` |
 | `classify_public_contract_diff.py` | Classify public contract snapshot diff as none/additive/breaking | `uv run python scripts/classify_public_contract_diff.py` |
 | `compute_wasr.py` | Compute simple WASR metrics from local JSONL telemetry | `uv run python scripts/compute_wasr.py` |
 | `estimate_quality_gate_runtime.py` | Estimate runtime for quality-gate measurements using existing seed run results | `uv run python scripts/estimate_quality_gate_runtime.py` |

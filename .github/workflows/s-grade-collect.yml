@@ -1,0 +1,33 @@
+name: Collect S-Grade Program Status
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.11"
+
+      - name: Collect program status (collect-only)
+        run: |
+          python scripts/collect_s_grade_program_status.py \
+            --output-json reports/s-grade/program-status.json
+
+      - name: Upload program status artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: s-grade-program-status
+          path: reports/s-grade/program-status.json

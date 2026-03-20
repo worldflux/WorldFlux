@@ -388,6 +388,10 @@ class WorldModel(nn.Module, ABC):
             required_state_keys=(),
         )
 
+    def on_after_optimizer_step(self) -> None:
+        """Hook for model-specific updates that must happen after optimizer.step()."""
+        return None
+
     def validate(self, *, raise_on_error: bool = True) -> ValidationResult:
         """Validate component composition and inter-component compatibility.
 
