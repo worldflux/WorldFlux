@@ -50,6 +50,7 @@ try {
     Invoke-CommandChecked -Command @("python", "-m", "pip", "install", $wheelPath.FullName) -ErrorMessage "[e2e] failed to install wheel"
 
     $env:WORLDFLUX_INIT_ENSURE_DEPS = "0"
+    $env:PYTHONUTF8 = "1"
     Set-Location $workDir.FullName
 
     @(
