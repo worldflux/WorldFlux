@@ -16,6 +16,7 @@ MARKDOWN_IGNORE_DIRS = {
     ".venv",
     ".pytest_cache",
     ".mypy_cache",
+    "superpowers",
     "site",
     "build",
     "dist",

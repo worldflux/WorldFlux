@@ -85,6 +85,7 @@ Minimal onboarding for installation and first execution.
 
 - [Installation](getting-started/installation.md)
 - [Quick Start](getting-started/quickstart.md)
+- [Train Your First Model](tutorials/train-first-model.md)
 - [Model Choice in `worldflux init`](getting-started/quickstart.md#4-choosing-a-model-in-worldflux-init)
 - [CPU Success Path](getting-started/cpu-success.md)
 

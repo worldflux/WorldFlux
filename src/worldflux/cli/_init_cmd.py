@@ -1005,7 +1005,7 @@ def init(
                 lines=[
                     f"[wf.label]1.[/wf.label] cd {resolved_target}",
                     "[wf.label]2.[/wf.label] worldflux train",
-                    "[wf.label]3.[/wf.label] worldflux verify --target ./outputs",
+                    "[wf.label]3.[/wf.label] worldflux verify --target ./outputs --mode quick",
                     "",
                     "[wf.hint]Edit worldflux.toml to tune settings.[/wf.hint]",
                     "[wf.hint]Alt: python train.py[/wf.hint]",

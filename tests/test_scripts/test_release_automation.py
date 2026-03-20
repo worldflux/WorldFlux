@@ -30,6 +30,14 @@ def test_check_release_metadata_normalizes_tags() -> None:
     assert mod._normalize_tag("0.1.0") == "0.1.0"
 
 
+def test_current_project_version_has_matching_changelog_section() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    pyproject = tomllib.loads((repo_root / "pyproject.toml").read_text(encoding="utf-8"))
+    version = pyproject["project"]["version"]
+    changelog = (repo_root / "CHANGELOG.md").read_text(encoding="utf-8")
+    assert f"## [{version}]" in changelog
+
+
 def test_generate_verification_report_parses_check_entries() -> None:
     mod = _load_module("generate_verification_report.py")
     parsed = mod._parse_check("docs_build=pass")

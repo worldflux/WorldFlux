@@ -374,7 +374,7 @@ def test_init_next_steps_uses_resolved_launcher(monkeypatch: pytest.MonkeyPatch)
         result = runner.invoke(cli.app, ["init"])
         assert result.exit_code == 0
         assert "worldflux train" in result.stdout
-        assert "worldflux verify" in result.stdout
+        assert "worldflux verify --target ./outputs --mode quick" in result.stdout
 
 
 def test_parse_obs_shape_accepts_comma_separated_dims() -> None:
@@ -1710,6 +1710,37 @@ output_dir = "{output_dir}"
         )
         assert result.exit_code == 0
         assert "Training Complete" in result.output
+
+    def test_train_summary_prefers_explicit_quick_verify_next_step(self, tmp_path: Path) -> None:
+        toml_path = tmp_path / "worldflux.toml"
+        toml_path.write_text(
+            """\
+project_name = "quick-next-step"
+model = "dreamer:ci"
+
+[architecture]
+obs_shape = [3, 64, 64]
+action_dim = 6
+
+[training]
+total_steps = 2
+batch_size = 2
+device = "cpu"
+output_dir = "{output_dir}"
+
+[verify]
+mode = "quick"
+""".format(output_dir=str(tmp_path / "outputs")),
+            encoding="utf-8",
+        )
+
+        result = runner.invoke(
+            cli.app,
+            ["train", "--config", str(toml_path), "--steps", "2"],
+        )
+        assert result.exit_code == 0
+        assert "Next: worldflux verify --target " in result.output
+        assert "--mode quick" in result.output
 
     def test_train_non_native_backend_returns_blocked_exit_code(self, tmp_path: Path) -> None:
         toml_path = tmp_path / "worldflux.toml"

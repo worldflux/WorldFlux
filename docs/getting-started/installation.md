@@ -31,6 +31,11 @@ You can override behavior with:
 - `WORLDFLUX_BOOTSTRAP_HOME`: override bootstrap root directory
 - `WORLDFLUX_INIT_ENSURE_DEPS=0`: disable auto-bootstrap (emergency bypass)
 
+MVP support note:
+
+- The public newcomer end-to-end smoke path is currently exercised in CI on Linux and macOS.
+- Windows bootstrap support exists in implementation, but is not yet part of the current newcomer E2E guarantee.
+
 ## From Source (Recommended)
 
 ```bash

@@ -11,7 +11,6 @@ WorldFlux keeps tutorial URLs stable even when a tutorial body is temporarily un
 
 ## Current Placeholder Tutorials
 
-- `docs/tutorials/train-first-model.md`
 - `docs/tutorials/dreamer-vs-tdmpc2.md`
 - `docs/tutorials/reproduce-dreamer-tdmpc2.md`
 
