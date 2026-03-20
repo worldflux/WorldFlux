@@ -159,6 +159,9 @@ This official smoke path uses a random replay buffer and a CI-sized model to
 validate installation and core contracts on CPU. It is not a benchmark or a
 real-environment reproduction path.
 
+For the first scaffolded end-to-end walkthrough after that smoke test, use
+[`Train Your First Model`](docs/tutorials/train-first-model.md).
+
 ### Create a Model
 
 ```python
@@ -323,10 +326,14 @@ uv run python examples/train_dreamer.py --data trajectories.npz --steps 100000
 - [Full Documentation](https://worldflux.ai/) - Guides and API reference
 - [API Reference](https://worldflux.ai/api/factory/) - Contract and symbol-level docs
 - [Reference](https://worldflux.ai/reference/benchmarks/) - Operational and quality docs
+- [Release Checklist](docs/reference/release-checklist.md) - Canonical local release validation gates
+- [Release Runbook](docs/operations/release-runbook.md) - Operator flow for publishing a release
 
 ## Roadmap
 
-See [ROADMAP.md](ROADMAP.md) for planned milestones and the path to v1.0.
+See [2026 Q2 quality roadmap](docs/roadmap/2026-q2-worldflux-quality-program.md)
+for the current S-grade program milestones and [docs/roadmap.md](docs/roadmap.md)
+for the broader technical priority list.
 
 ## Community
 
