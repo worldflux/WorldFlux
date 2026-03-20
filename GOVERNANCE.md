@@ -39,6 +39,8 @@ recommended.
 - Access grants and removals are tracked in repository settings and documented in
   maintainer discussions.
 - Current technical priorities are tracked in `ROADMAP.md`.
+- The structured S-grade quality program is tracked in
+  `docs/roadmap/2026-q2-worldflux-quality-program.md`.
 
 ## Committer Promotion Criteria
 
