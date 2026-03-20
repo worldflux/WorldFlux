@@ -5,6 +5,10 @@ WorldFlux provides two parity tracks. They are intentionally different:
 - `legacy quick parity`: fast non-inferiority checks for local development.
 - `proof-grade parity`: strict official-vs-WorldFlux equivalence pipeline.
 
+If you are using WorldFlux for the first time, do not start here.
+Use `worldflux verify --target ./outputs --mode quick` from the scaffolded project flow first,
+then come back to proof-oriented parity only when you need advanced evidence workflows.
+
 Use the proof path when you need a controlled statistical claim inside the
 parity pipeline. A public proof claim still requires a published evidence
 bundle that third parties can inspect.

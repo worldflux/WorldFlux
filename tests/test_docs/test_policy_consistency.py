@@ -26,6 +26,7 @@ def test_public_docs_include_cpu_success_and_benchmark_paths():
 
     assert "CPU-First Success Path" in readme
     assert "quickstart_cpu_success.py" in readme
+    assert "(tutorials/train-first-model.md)" in index
     assert "(getting-started/cpu-success.md)" in index
     assert "(reference/benchmarks.md)" in index
     assert "(reference/parity.md)" in index
