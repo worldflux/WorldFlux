@@ -8,7 +8,7 @@ Parses ``worldflux.toml`` into structured types consumed by
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
@@ -144,6 +144,56 @@ class ProjectConfig:
     raw: dict[str, Any] = field(default_factory=dict, repr=False)
 
 
+_TOP_LEVEL_KEYS: frozenset[str] = frozenset(
+    {
+        "project_name",
+        "environment",
+        "model",
+        "model_type",
+        "architecture",
+        "training",
+        "data",
+        "gameplay",
+        "online_collection",
+        "inference",
+        "visualization",
+        "verify",
+        "cloud",
+        "flywheel",
+    }
+)
+
+
+def _allowed_section_keys(config_cls: type) -> frozenset[str]:
+    return frozenset(field_def.name for field_def in fields(config_cls))
+
+
+def _validate_top_level_keys(raw: dict[str, Any]) -> None:
+    for key in raw:
+        if key not in _TOP_LEVEL_KEYS:
+            raise ValueError(f"Unknown top-level key: {key}")
+
+
+def _validate_section_keys(
+    section_name: str,
+    raw: dict[str, Any],
+    config_cls: type,
+) -> None:
+    allowed = _allowed_section_keys(config_cls)
+    for key in raw:
+        if key not in allowed:
+            raise ValueError(f"Unknown key '{section_name}.{key}' in worldflux.toml")
+
+
+def _coerce_section(raw: dict[str, Any], key: str) -> dict[str, Any]:
+    section = raw.get(key, {})
+    if section is None:
+        return {}
+    if not isinstance(section, dict):
+        raise ValueError(f"Section '{key}' must be a TOML table.")
+    return section
+
+
 def _parse_obs_shape(value: Any) -> tuple[int, ...]:
     if isinstance(value, list | tuple):
         return tuple(int(v) for v in value)
@@ -188,6 +238,8 @@ def load_config(path: str | Path = "worldflux.toml") -> ProjectConfig:
     with config_path.open("rb") as f:
         raw = tomllib.load(f)
 
+    _validate_top_level_keys(raw)
+
     project_name = str(raw.get("project_name", config_path.parent.name))
     environment = str(raw.get("environment", "custom"))
     model = str(raw.get("model", ""))
@@ -197,19 +249,21 @@ def load_config(path: str | Path = "worldflux.toml") -> ProjectConfig:
         model = "dreamer:ci" if environment == "atari" else "tdmpc2:ci"
     if not model_type:
         model_type = _infer_model_type(model)
+    if model_type not in {"dreamer", "tdmpc2", "tdmpc"}:
+        raise ValueError(
+            "worldflux.toml supported newcomer schema only accepts DreamerV3 / TD-MPC2 families."
+        )
 
-    arch_raw = raw.get("architecture", {})
-    if not isinstance(arch_raw, dict):
-        arch_raw = {}
+    arch_raw = _coerce_section(raw, "architecture")
+    _validate_section_keys("architecture", arch_raw, ArchitectureConfig)
     architecture = ArchitectureConfig(
         obs_shape=_parse_obs_shape(arch_raw.get("obs_shape", [3, 64, 64])),
         action_dim=int(arch_raw.get("action_dim", 6)),
         hidden_dim=int(arch_raw.get("hidden_dim", 32)),
     )
 
-    train_raw = raw.get("training", {})
-    if not isinstance(train_raw, dict):
-        train_raw = {}
+    train_raw = _coerce_section(raw, "training")
+    _validate_section_keys("training", train_raw, TrainingSectionConfig)
     training = TrainingSectionConfig(
         total_steps=int(train_raw.get("total_steps", 100_000)),
         batch_size=int(train_raw.get("batch_size", 16)),
@@ -221,9 +275,8 @@ def load_config(path: str | Path = "worldflux.toml") -> ProjectConfig:
         output_dir=str(train_raw.get("output_dir", "./outputs")),
     )
 
-    data_raw = raw.get("data", {})
-    if not isinstance(data_raw, dict):
-        data_raw = {}
+    data_raw = _coerce_section(raw, "data")
+    _validate_section_keys("data", data_raw, DataSectionConfig)
     data = DataSectionConfig(
         source=str(data_raw.get("source", "random")).strip().lower() or "random",
         num_episodes=int(data_raw.get("num_episodes", 100)),
@@ -232,18 +285,16 @@ def load_config(path: str | Path = "worldflux.toml") -> ProjectConfig:
         gym_env=str(data_raw.get("gym_env", "")).strip(),
     )
 
-    gameplay_raw = raw.get("gameplay", {})
-    if not isinstance(gameplay_raw, dict):
-        gameplay_raw = {}
+    gameplay_raw = _coerce_section(raw, "gameplay")
+    _validate_section_keys("gameplay", gameplay_raw, GameplaySectionConfig)
     gameplay = GameplaySectionConfig(
         enabled=bool(gameplay_raw.get("enabled", False)),
         fps=int(gameplay_raw.get("fps", 8)),
         max_frames=int(gameplay_raw.get("max_frames", 512)),
     )
 
-    online_raw = raw.get("online_collection", {})
-    if not isinstance(online_raw, dict):
-        online_raw = {}
+    online_raw = _coerce_section(raw, "online_collection")
+    _validate_section_keys("online_collection", online_raw, OnlineCollectionSectionConfig)
     online_collection = OnlineCollectionSectionConfig(
         enabled=bool(online_raw.get("enabled", False)),
         warmup_transitions=int(online_raw.get("warmup_transitions", 512)),
@@ -251,18 +302,16 @@ def load_config(path: str | Path = "worldflux.toml") -> ProjectConfig:
         max_episode_steps=int(online_raw.get("max_episode_steps", 100)),
     )
 
-    inference_raw = raw.get("inference", {})
-    if not isinstance(inference_raw, dict):
-        inference_raw = {}
+    inference_raw = _coerce_section(raw, "inference")
+    _validate_section_keys("inference", inference_raw, InferenceSectionConfig)
     inference = InferenceSectionConfig(
         horizon=int(inference_raw.get("horizon", 15)),
         checkpoint=str(inference_raw.get("checkpoint", "./outputs/checkpoint_best.pt")).strip()
         or "./outputs/checkpoint_best.pt",
     )
 
-    visualization_raw = raw.get("visualization", {})
-    if not isinstance(visualization_raw, dict):
-        visualization_raw = {}
+    visualization_raw = _coerce_section(raw, "visualization")
+    _validate_section_keys("visualization", visualization_raw, VisualizationSectionConfig)
     visualization = VisualizationSectionConfig(
         enabled=bool(visualization_raw.get("enabled", False)),
         host=str(visualization_raw.get("host", "127.0.0.1")).strip() or "127.0.0.1",
@@ -272,9 +321,8 @@ def load_config(path: str | Path = "worldflux.toml") -> ProjectConfig:
         open_browser=bool(visualization_raw.get("open_browser", False)),
     )
 
-    verify_raw = raw.get("verify", {})
-    if not isinstance(verify_raw, dict):
-        verify_raw = {}
+    verify_raw = _coerce_section(raw, "verify")
+    _validate_section_keys("verify", verify_raw, VerifySectionConfig)
     verify = VerifySectionConfig(
         baseline=str(verify_raw.get("baseline", "official/dreamerv3")),
         env=str(verify_raw.get("env", "atari/pong")),
@@ -285,9 +333,8 @@ def load_config(path: str | Path = "worldflux.toml") -> ProjectConfig:
         allow_official_only=bool(verify_raw.get("allow_official_only", False)),
     )
 
-    cloud_raw = raw.get("cloud", {})
-    if not isinstance(cloud_raw, dict):
-        cloud_raw = {}
+    cloud_raw = _coerce_section(raw, "cloud")
+    _validate_section_keys("cloud", cloud_raw, CloudSectionConfig)
     cloud = CloudSectionConfig(
         gpu_type=str(cloud_raw.get("gpu_type", "a100")),
         spot=bool(cloud_raw.get("spot", True)),
@@ -295,9 +342,8 @@ def load_config(path: str | Path = "worldflux.toml") -> ProjectConfig:
         timeout_hours=int(cloud_raw.get("timeout_hours", 24)),
     )
 
-    flywheel_raw = raw.get("flywheel", {})
-    if not isinstance(flywheel_raw, dict):
-        flywheel_raw = {}
+    flywheel_raw = _coerce_section(raw, "flywheel")
+    _validate_section_keys("flywheel", flywheel_raw, FlywheelSectionConfig)
     flywheel = FlywheelSectionConfig(
         opt_in=bool(flywheel_raw.get("opt_in", False)),
         privacy_epsilon=float(flywheel_raw.get("privacy_epsilon", 1.0)),

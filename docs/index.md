@@ -76,20 +76,23 @@ print(trajectory.rewards.shape)
 |-------|---------|--------|
 | DreamerV3 | `size12m`, `size25m`, `size50m`, `size100m`, `size200m` | Reference-family |
 | TD-MPC2 | `5m`, `19m`, `48m`, `317m` | Reference-family |
-| JEPA | `base` | Experimental |
-| Token | `base` | Experimental |
-| Diffusion | `base` | Experimental |
 
-This table highlights common presets. For the full model catalog (including CI, experimental,
-and skeleton families), run:
+This table highlights the supported MVP presets. For the public catalog
+including advanced proof-oriented presets, run:
 
 ```bash
-worldflux models list --verbose
+worldflux models list --surface public --verbose
 ```
 
 Reference-family models map to maintained upstream families and internal
 proof-mode parity workflows. Public proof claims require published evidence
 bundles.
+
+Experimental and skeleton families remain available behind explicit opt-in:
+
+```bash
+worldflux models list --surface all --verbose
+```
 
 ## Documentation
 

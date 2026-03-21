@@ -140,6 +140,7 @@ In the current implementation, `dreamer` family aliases resolve to DreamerV3 pre
 def list_models(
     verbose: bool = False,
     maturity: str | None = None,
+    surface: str = "supported",
 ) -> list[str] | dict[str, dict[str, Any]]
 ```
 
@@ -151,6 +152,7 @@ List all available world model presets.
 |-----------|------|---------|-------------|
 | `verbose` | `bool` | `False` | If `True`, return detailed model information as a dict instead of a plain list. |
 | `maturity` | `str \| None` | `None` | Optional maturity filter. One of `"reference"`, `"experimental"`, or `"skeleton"`. |
+| `surface` | `str` | `"supported"` | Optional support-surface filter. One of `"supported"`, `"public"`, or `"all"`. |
 
 ### Returns
 
@@ -177,8 +179,11 @@ list_models(verbose=True)
 #     ...
 # }
 
+# Include advanced proof-oriented presets
+list_models(surface="public")
+
 # Filter to reference models only
-list_models(maturity="reference")
+list_models(maturity="reference", surface="all")
 ```
 
 ---

@@ -107,7 +107,7 @@ Useful fields beyond the basic loop:
 - `gradient_accumulation_steps`
 - `optimizer`
 - `scheduler`
-- `ema_decay`
+- `ema_decay` (placeholder today; do not put it in `worldflux.toml`)
 
 ## Scaffolded `worldflux.toml`
 
@@ -127,6 +127,15 @@ inside a scaffolded project:
 If the scaffold helper files are present, `worldflux train` reuses the generated
 `dataset.py` and `local_dashboard.py` helpers instead of forcing the generic
 random-buffer fallback path.
+
+The newcomer `worldflux.toml` loader is strict:
+
+- unknown top-level keys fail early
+- unknown section keys fail early
+- the supported newcomer schema only accepts DreamerV3 / TD-MPC2 families
+
+If a run has to degrade to random replay or cannot collect from the real
+environment, `outputs/run_manifest.json` records that in `degraded_modes`.
 
 ## Save and Load Configs
 

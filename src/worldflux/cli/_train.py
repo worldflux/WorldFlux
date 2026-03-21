@@ -28,6 +28,36 @@ class ScaffoldRuntime:
     dashboard_root: Path | None
 
 
+def _normalize_degraded_modes(values: list[str]) -> list[str]:
+    normalized: list[str] = []
+    for value in values:
+        key = str(value).strip().lower()
+        if key and key not in normalized:
+            normalized.append(key)
+    return normalized
+
+
+def _training_support_surface(model_id: str, backend: str) -> str:
+    from worldflux.factory import get_model_info
+
+    if str(backend).strip().lower() != "native_torch":
+        return "advanced"
+
+    try:
+        info = get_model_info(model_id)
+    except ValueError:
+        return "internal"
+    return str(info.get("support_tier", "internal")).strip().lower() or "internal"
+
+
+def _classify_local_run(*, support_surface: str, data_mode: str, degraded_modes: list[str]) -> str:
+    if support_surface == "advanced":
+        return "advanced_evidence"
+    if support_surface == "supported" and data_mode in {"offline", "online"} and not degraded_modes:
+        return "meaningful_local_training"
+    return "contract_smoke"
+
+
 def _env_to_task_filter(env: str) -> str:
     value = str(env).strip().lower()
     if not value:
@@ -128,8 +158,10 @@ def _prepare_scaffold_dashboard(
         dashboard_buffer,
         Path(effective_output_dir) / "metrics.jsonl",
     )
+    phase_events: list[tuple[str, str | None]] = []
 
     def publish_phase(phase: str, detail: str | None = None) -> None:
+        phase_events.append((phase, detail))
         if hasattr(dashboard_buffer, "set_phase"):
             dashboard_buffer.set_phase(phase, detail)
         if gameplay_buffer is not None:
@@ -170,6 +202,7 @@ def _prepare_scaffold_dashboard(
         "publish_phase": publish_phase,
         "publish_frame": publish_frame,
         "unavailable_detail": unavailable_detail,
+        "phase_events": phase_events,
     }, [dashboard_callback]
 
 
@@ -440,6 +473,8 @@ def train(
     scaffold_runtime = _load_scaffold_runtime(project_root)
     extra_callbacks: list[Any] = []
     dashboard_context: dict[str, Any] | None = None
+    degraded_modes: list[str] = []
+    support_surface = _training_support_surface(cfg.model, cfg.training.backend)
 
     def _noop_cleanup() -> None:
         return None
@@ -485,6 +520,7 @@ def train(
                 "[wf.caution]Scaffold runtime fallback:[/wf.caution] "
                 f"{exc}. Falling back to random replay data."
             )
+            degraded_modes.extend(["scaffold_runtime_fallback", "random_replay_fallback"])
             data = create_random_buffer(
                 obs_shape=cfg.architecture.obs_shape,
                 action_dim=cfg.architecture.action_dim,
@@ -497,11 +533,41 @@ def train(
         )
         console.print(f"[wf.ok]Training data ready:[/wf.ok] {len(data)} transitions")
 
+    if dashboard_context is not None:
+        phase_events = dashboard_context.get("phase_events", [])
+        if isinstance(phase_events, list):
+            env_unavailable = any(
+                phase == "unavailable"
+                and detail is not None
+                and "gameplay stream disabled" not in str(detail).lower()
+                for phase, detail in phase_events
+            )
+            if env_unavailable:
+                degraded_modes.append("env_collection_unavailable")
+                if data_mode in {"offline", "random"}:
+                    degraded_modes.append("random_replay_fallback")
+
+    degraded_modes = _normalize_degraded_modes(degraded_modes)
+    run_classification = _classify_local_run(
+        support_surface=support_surface,
+        data_mode=data_mode,
+        degraded_modes=degraded_modes,
+    )
+    if degraded_modes:
+        console.print(
+            "[wf.caution]Run is degraded:[/wf.caution] "
+            + ", ".join(mode.replace("_", "-") for mode in degraded_modes)
+        )
+
     try:
         if use_ddp:
             from worldflux.training.distributed import DDPTrainer
 
             ddp_trainer = DDPTrainer(model, training_config)
+            ddp_trainer._trainer.support_surface = support_surface
+            ddp_trainer._trainer.data_mode = data_mode
+            ddp_trainer._trainer.degraded_modes = list(degraded_modes)
+            ddp_trainer._trainer.run_classification = run_classification
             console.print(
                 f"[wf.info]Starting DDP training for {effective_steps:,} steps "
                 f"(rank {ddp_trainer.rank}/{ddp_trainer.world_size})...[/wf.info]"
@@ -519,6 +585,10 @@ def train(
             trainer = ddp_trainer._trainer  # For runtime profile access
         else:
             trainer = Trainer(model, training_config, callbacks=extra_callbacks or None)
+            trainer.support_surface = support_surface
+            trainer.data_mode = data_mode
+            trainer.degraded_modes = list(degraded_modes)
+            trainer.run_classification = run_classification
             console.print(f"[wf.info]Starting training for {effective_steps:,} steps...[/wf.info]")
 
             try:
@@ -548,9 +618,17 @@ def train(
     final_step = trainer.state.global_step
 
     summary_lines = [
+        f"[wf.label]Run class:[/wf.label]   {run_classification}",
+        f"[wf.label]Surface:[/wf.label]     {support_surface}",
+        f"[wf.label]Data mode:[/wf.label]   {data_mode}",
         f"[wf.label]Final step:[/wf.label]  {final_step:,}",
         f"[wf.label]Output:[/wf.label]      {Path(effective_output_dir).resolve()}",
     ]
+    if degraded_modes:
+        summary_lines.append(
+            "[wf.label]Warning:[/wf.label]     degraded via "
+            + ", ".join(mode.replace("_", "-") for mode in degraded_modes)
+        )
     if elapsed is not None:
         summary_lines.append(f"[wf.label]Elapsed:[/wf.label]     {elapsed:.1f}s")
     if throughput is not None:
@@ -560,6 +638,10 @@ def train(
     if str(cfg.verify.mode).strip().lower() == "quick":
         verify_next += " --mode quick"
     summary_lines.append("Next: " + verify_next)
+    if degraded_modes:
+        summary_lines.append(
+            "Action: rerun with a real environment-backed dataset before treating this as meaningful local training."
+        )
 
     console.print(
         result_banner(

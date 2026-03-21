@@ -47,9 +47,9 @@ trajectory = model.rollout(state, actions)  # imagine 15 steps ahead
 ```
 
 - **Swap components independently** with the 5-layer pluggable architecture
-- **Reference-family implementations** with proof-mode parity workflows against
-  upstream baselines; proof/public-evidence work remains an advanced workflow
-  and public proof claims require published evidence bundles
+- **Reference-family implementations** with an evidence-backed MVP focused on
+  DreamerV3 and TD-MPC2 local training; proof/public-evidence work remains an
+  advanced workflow and public proof claims require published evidence bundles
 - **Training infrastructure** with replay buffers, checkpointing, and callbacks
 - **One API** — `encode()`, `transition()`, `decode()`, `rollout()` — works across all model families
 
@@ -184,20 +184,36 @@ WorldFlux now treats the public default path as an evidence-first surface:
   and `tdmpc2:proof_5m`
 - `experimental` / `internal`: non-default families kept for research or plugin work
 
-By default, `worldflux models list` shows only `supported` and `advanced`
-surfaces. Use maturity filters when you intentionally want experimental or
+By default, `worldflux models list` shows only the `supported` surface.
+Use `--surface public` when you intentionally want advanced proof-oriented
+presets, and `--surface all` when you intentionally want experimental or
 skeleton families.
 
 For the first scaffolded end-to-end walkthrough after that smoke test, use
 [`Train Your First Model`](docs/tutorials/train-first-model.md).
-The supported newcomer path is:
+The two official newcomer lanes are:
+
+1. `contract smoke`
+2. `meaningful local training`
+
+The supported newcomer path starts with the contract-smoke lane:
 
 1. `worldflux init`
 2. `worldflux train`
 3. `worldflux verify --target ./outputs --mode quick`
 
-This supported newcomer path is the current evidence-backed MVP surface.
-Treat it as a local compatibility workflow, not as a benchmark or public proof claim.
+This lane is the current evidence-backed MVP surface for installation and
+contract validation. Treat it as a local compatibility workflow, not as a
+benchmark or public proof claim.
+
+The meaningful-local-training lane starts after that smoke passes:
+
+1. set `data.source = "gym"` in `worldflux.toml`
+2. use a real environment id such as `ALE/Breakout-v5` or `HalfCheetah-v5`
+3. rerun `worldflux train`
+4. inspect `outputs/run_manifest.json` and confirm `run_classification` is
+   `meaningful_local_training` with no `degraded_modes`
+
 The newcomer wheel-install smoke is exercised in CI on Linux and macOS; Windows
 bootstrap support exists in implementation but is not yet part of that E2E guarantee.
 
@@ -277,17 +293,12 @@ trained_model.save_pretrained("./my_model")
 |--------|---------|--------|
 | DreamerV3 | `size12m`, `size25m`, `size50m`, `size100m`, `size200m` | Reference-family |
 | TD-MPC2 | `5m`, `19m`, `48m`, `317m` | Reference-family |
-| JEPA | `base` | Experimental |
-| V-JEPA2 | `ci`, `tiny`, `base` | Experimental |
-| Token | `base` | Experimental |
-| Diffusion | `base` | Experimental |
 
 > **Reference-family** models map to maintained upstream families and internal
 > proof-mode parity workflows. Public proof claims require published evidence
 > bundles; local fixtures and internal runs are not enough on their own.
-> **Experimental** models implement the full API but do not carry the same
-> parity workflow coverage and may return `None` for some predictions
-> (e.g. rewards).
+> Experimental and skeleton families remain available behind explicit surface
+> opt-in and are not part of the default MVP promise.
 
 Reference-family Dreamer profiles additionally expose alignment metadata for
 docs/tooling:
@@ -303,17 +314,23 @@ Reference-family TD-MPC2 profiles expose the same tier vocabulary:
 - `tdmpc2:proof_5m` -> `proof`
 - `tdmpc2:5m_legacy` -> `compatibility`
 
-This table lists commonly used presets. For the public default catalog, run:
+This table lists the supported MVP presets. For the public default catalog, run:
 
 ```bash
 worldflux models list --verbose
 ```
 
+To inspect advanced proof-oriented presets explicitly:
+
+```bash
+worldflux models list --surface public --format json
+```
+
 To inspect experimental families explicitly:
 
 ```bash
-worldflux models list --maturity experimental --format json
-worldflux models list --maturity skeleton --format json
+worldflux models list --surface all --maturity experimental --format json
+worldflux models list --surface all --maturity skeleton --format json
 ```
 
 ## API Reference
@@ -356,6 +373,7 @@ See the `examples/` directory:
 
 - `quickstart_cpu_success.py` - Official CPU-first smoke path using a random replay buffer
 - `compare_unified_training.py` - Official unified comparison demo with the same quick verification flow for DreamerV3 and TD-MPC2
+- `benchmarks/evidence_dreamerv3_breakout.py` - Evidence-oriented DreamerV3 Breakout bundle with returns, checkpoints, manifests, and report artifacts
 - `collect_mujoco.py` - MuJoCo dataset collection with dataset manifest support and policy-checkpoint collector path
 - `benchmarks/evidence_tdmpc2_halfcheetah.py` - Evidence-oriented TD-MPC2 benchmark that emits curves, returns, checkpoints, and report artifacts
 - `worldflux_quickstart.ipynb` - Interactive Colab notebook

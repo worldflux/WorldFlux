@@ -16,6 +16,12 @@ from ._rich_output import key_value_panel
 
 @models_app.command("list")
 def models_list(
+    surface: str = typer.Option(
+        "supported",
+        "--surface",
+        "-s",
+        help="Surface: supported, public, or all.",
+    ),
     maturity: str | None = typer.Option(
         None,
         "--maturity",
@@ -29,13 +35,14 @@ def models_list(
 
     [dim]Examples:[/dim]
       worldflux models list
+      worldflux models list --surface public
       worldflux models list --maturity reference
-      worldflux models list --maturity reference-family
+      worldflux models list --surface all --maturity reference-family
       worldflux models list --format json
     """
     from worldflux.factory import list_models
 
-    catalog = list_models(verbose=True, maturity=maturity)
+    catalog = list_models(verbose=True, maturity=maturity, surface=surface)
 
     if not isinstance(catalog, dict):
         # list_models returns list[str] when verbose=False, but we forced True
@@ -70,8 +77,13 @@ def models_list(
     console.print(table)
     if any(str(info.get("maturity")) == "reference" for info in catalog.values()):
         console.print(
-            "\n[wf.muted]reference-family is an internal maturity tier; public proof "
-            "claims require published evidence bundles.[/wf.muted]"
+            "\n[wf.muted]reference-family is an internal maturity tier; it is not by "
+            "itself a public proof claim.[/wf.muted]"
+        )
+    if any(str(info.get("support_tier")) == "advanced" for info in catalog.values()):
+        console.print(
+            "[wf.muted]Advanced presets are an advanced evidence workflow, not the default MVP "
+            "onboarding path.[/wf.muted]"
         )
     if not verbose:
         console.print("\n[wf.muted]Tip: worldflux models info <id> for details.[/wf.muted]")

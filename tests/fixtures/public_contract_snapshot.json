@@ -83,7 +83,7 @@
   ],
   "function_signatures": {
     "create_world_model": "(model: 'str', *, obs_shape: 'tuple[int, ...] | None' = None, action_dim: 'int | None' = None, observation_modalities: 'dict[str, dict[str, Any]] | None' = None, action_spec: 'dict[str, Any] | None' = None, component_overrides: 'dict[str, object] | None' = None, device: 'str' = 'cpu', api_version: 'str' = 'v3', **kwargs: 'Any') -> 'WorldModel'",
-    "list_models": "(verbose: 'bool' = False, maturity: 'str | None' = None) -> 'list[str] | dict[str, dict[str, Any]]'",
+    "list_models": "(verbose: 'bool' = False, maturity: 'str | None' = None, surface: 'str' = 'supported') -> 'list[str] | dict[str, dict[str, Any]]'",
     "get_model_info": "(model: 'str') -> 'dict[str, Any]'",
     "get_config": "(model: 'str', *, obs_shape: 'tuple[int, ...] | None' = None, action_dim: 'int | None' = None, **kwargs: 'Any') -> 'WorldModelConfig'"
   },

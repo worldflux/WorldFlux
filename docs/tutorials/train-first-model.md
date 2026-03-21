@@ -46,7 +46,7 @@ Open `worldflux.toml` and confirm the newcomer-safe defaults:
 
 You do not need parity/proof setup for this tutorial.
 
-## 3. Run a Short Training Job
+## 3. Run the Contract-Smoke Lane
 
 Start with a small CPU run:
 
@@ -54,7 +54,7 @@ Start with a small CPU run:
 worldflux train --steps 5 --device cpu
 ```
 
-What to expect:
+What to expect in this lane:
 
 - a training summary panel in the terminal
 - an `outputs/` directory with checkpoints and `run_manifest.json`
@@ -64,7 +64,10 @@ What to expect:
 If you want a longer run later, increase `training.total_steps` in `worldflux.toml`
 or pass a larger `--steps` value.
 
-## 4. Verify the Result Locally
+The contract-smoke lane is about command success, artifact creation, and
+manifest structure. It is not the same thing as meaningful local training.
+
+## 4. Verify the Contract-Smoke Result Locally
 
 Run the quick compatibility check:
 
@@ -76,15 +79,43 @@ This is the supported first verification path for local projects.
 It is intentionally different from proof-mode parity workflows.
 
 Quick verify may still return a failing non-inferiority verdict if the run is too short.
-For a first pass, the important thing is that the command executes and produces a structured result.
+For this lane, the important thing is that the command executes and produces a
+structured result.
 
-## 5. Inspect the Scaffolded Helper Script
+Check `outputs/run_manifest.json` after the run. In the smoke lane you should
+expect:
+
+- `run_classification = "contract_smoke"`
+- `data_mode = "random"` unless you already configured a real environment-backed dataset
+- `degraded_modes = []` for the happy path, or explicit fallback markers if the
+  scaffold had to degrade
+
+## 5. Promote to Meaningful Local Training
+
+Once the smoke lane passes, switch to a real environment-backed run:
+
+1. Set `data.source = "gym"` in `worldflux.toml`
+2. Set an explicit environment id such as `ALE/Breakout-v5` or `HalfCheetah-v5`
+3. Increase `training.total_steps` to a value that is meaningful for your local test
+4. Rerun `worldflux train`
+
+This lane is successful only if `outputs/run_manifest.json` shows:
+
+- `run_classification = "meaningful_local_training"`
+- `data_mode = "offline"` or `data_mode = "online"`
+- no `degraded_modes`
+
+If `random_replay_fallback`, `scaffold_runtime_fallback`, or
+`env_collection_unavailable` appears, treat the run as smoke only and fix the
+data path before using it as evidence.
+
+## 6. Inspect the Scaffolded Helper Script
 
 The scaffold also creates `inference.py`.
 Use it as the starting point for short rollout and imagination checks once you are ready
 to inspect a trained checkpoint with the same environment you use for development.
 
-## 6. What to Do Next
+## 7. What to Do Next
 
 - Tune `training.total_steps`, `training.batch_size`, and `training.learning_rate` in `worldflux.toml`
 - Tune `data.source`, `gameplay.enabled`, and `visualization.enabled` in `worldflux.toml`

@@ -78,6 +78,10 @@ def test_train_writes_run_manifest(tmp_path: Path) -> None:
     assert payload["backend"] == "native_torch"
     assert payload["checkpoint_schema_version"] == 1
     assert payload["global_step"] == 1
+    assert payload["run_classification"] == "contract_smoke"
+    assert payload["support_surface"] == "internal"
+    assert payload["data_mode"] == "unknown"
+    assert payload["degraded_modes"] == []
 
 
 def test_save_checkpoint_includes_schema_version(tmp_path: Path) -> None:
@@ -125,3 +129,30 @@ def test_train_writes_data_provenance_into_run_manifest(tmp_path: Path) -> None:
     payload = json.loads((tmp_path / "run_manifest.json").read_text(encoding="utf-8"))
     assert payload["data_provenance"]["kind"] == "dataset_manifest"
     assert payload["data_provenance"]["env_id"] == "mujoco/HalfCheetah-v5"
+
+
+def test_train_writes_explicit_run_metadata_into_run_manifest(tmp_path: Path) -> None:
+    trainer = Trainer(
+        _MiniModel(),
+        TrainingConfig(
+            total_steps=1,
+            batch_size=2,
+            sequence_length=1,
+            output_dir=str(tmp_path),
+            device="cpu",
+            auto_quality_check=False,
+        ),
+        callbacks=[],
+    )
+    trainer.run_classification = "advanced_evidence"
+    trainer.support_surface = "supported"
+    trainer.data_mode = "offline"
+    trainer.degraded_modes = ["env_collection_unavailable"]
+
+    trainer.train(_provider(), num_steps=1)
+
+    payload = json.loads((tmp_path / "run_manifest.json").read_text(encoding="utf-8"))
+    assert payload["run_classification"] == "advanced_evidence"
+    assert payload["support_surface"] == "supported"
+    assert payload["data_mode"] == "offline"
+    assert payload["degraded_modes"] == ["env_collection_unavailable"]
