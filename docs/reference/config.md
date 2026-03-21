@@ -109,6 +109,25 @@ Useful fields beyond the basic loop:
 - `scheduler`
 - `ema_decay`
 
+## Scaffolded `worldflux.toml`
+
+`worldflux init` writes a project-level `worldflux.toml` for the supported
+newcomer flow. `worldflux train` reads these sections directly when it is run
+inside a scaffolded project:
+
+- `[training]`: core trainer settings such as `total_steps`, `batch_size`,
+  `sequence_length`, `learning_rate`, `device`, `backend`, and `output_dir`
+- `[data]`: training data source selection (`random` or `gym`) and replay sizing
+- `[gameplay]`: live gameplay stream toggles and frame-rate settings
+- `[online_collection]`: warmup and per-update collection settings for gym-backed runs
+- `[visualization]`: local dashboard host/port and refresh behavior
+- `[inference]`: helper defaults for the generated `inference.py`
+- `[verify]`: default quick/proof verification routing
+
+If the scaffold helper files are present, `worldflux train` reuses the generated
+`dataset.py` and `local_dashboard.py` helpers instead of forcing the generic
+random-buffer fallback path.
+
 ## Save and Load Configs
 
 ```python

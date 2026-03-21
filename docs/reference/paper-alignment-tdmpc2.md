@@ -24,9 +24,10 @@ components in code:
 - `training_tier`
 - `parity_profile`
 - target Q ensemble with EMA soft update via `target_q_tau`
+- target Q EMA applied after optimizer steps, not during pure loss evaluation
 - latent consistency loss
 - reward loss
-- TD loss
+- terminal-aware TD loss
 - policy loss
 
 These values are surfaced through `TDMPC2Config` and

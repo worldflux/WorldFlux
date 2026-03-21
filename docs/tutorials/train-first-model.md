@@ -42,6 +42,7 @@ Open `worldflux.toml` and confirm the newcomer-safe defaults:
 
 - `training.backend = "native_torch"`
 - `verify.mode = "quick"`
+- `data.source` matches the scaffolded environment (`gym` for the default Atari/MuJoCo path)
 
 You do not need parity/proof setup for this tutorial.
 
@@ -57,7 +58,8 @@ What to expect:
 
 - a training summary panel in the terminal
 - an `outputs/` directory with checkpoints and `run_manifest.json`
-- a local dashboard URL such as `http://127.0.0.1:8765`
+- a local dashboard URL such as `http://127.0.0.1:8765` because the scaffolded
+  project includes `local_dashboard.py` and `dashboard/index.html`
 
 If you want a longer run later, increase `training.total_steps` in `worldflux.toml`
 or pass a larger `--steps` value.
@@ -85,7 +87,8 @@ to inspect a trained checkpoint with the same environment you use for developmen
 ## 6. What to Do Next
 
 - Tune `training.total_steps`, `training.batch_size`, and `training.learning_rate` in `worldflux.toml`
-- Switch `data.source` from random data to gym-backed collection when your environment setup is ready
+- Tune `data.source`, `gameplay.enabled`, and `visualization.enabled` in `worldflux.toml`
+  when you want to change how `worldflux train` collects data and displays the local dashboard
 - Read [Quick Start](../getting-started/quickstart.md) for core API usage
 - Read [Training API Guide](../api/training.md) for trainer and replay buffer details
 - Read [Parity](../reference/parity.md) only when you need advanced proof-oriented workflows

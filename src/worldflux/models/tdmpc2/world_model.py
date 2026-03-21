@@ -400,6 +400,10 @@ class TDMPC2WorldModel(WorldModel):
             ):
                 target_param.data.mul_(1 - tau).add_(online_param.data, alpha=tau)
 
+    def on_after_optimizer_step(self) -> None:
+        """Apply TD-MPC2 target-network updates after optimizer state changes."""
+        self._soft_update_target_q()
+
     def loss(self, batch: Batch) -> LossOutput:
         """
         TD-MPC2 loss computation.
@@ -426,6 +430,7 @@ class TDMPC2WorldModel(WorldModel):
         rewards = batch.rewards
         if actions is None or rewards is None:
             raise ValueError("TD-MPC2 requires actions and rewards in batch")
+        terminations = batch.terminations
 
         batch_size, seq_len = obs.shape[:2]
         device = obs.device
@@ -483,7 +488,11 @@ class TDMPC2WorldModel(WorldModel):
                 z_next = z_targets[:, t]  # No gradient for target
                 next_action = self._policy(z_next)
                 q_next = self._target_q_ensemble(z_next, next_action).squeeze(-1).min(dim=0)[0]
-                target = rewards[:, t + 1] + gamma * q_next
+                if terminations is None:
+                    bootstrap_mask = torch.ones_like(q_next)
+                else:
+                    bootstrap_mask = 1.0 - terminations[:, t + 1].to(q_next.dtype)
+                target = rewards[:, t + 1] + gamma * bootstrap_mask * q_next
 
             td_loss = td_loss + F.mse_loss(q_values.mean(dim=0), target)
 
@@ -504,7 +513,6 @@ class TDMPC2WorldModel(WorldModel):
             + self.config.td_loss_coef * components["td"]
             + self.config.policy_loss_coef * components["policy"]
         )
-        self._soft_update_target_q()
         metrics = {k: v.item() for k, v in components.items()}
         return LossOutput(loss=total, components=components, metrics=metrics)
 

@@ -42,6 +42,56 @@ class TrainingSectionConfig:
 
 
 @dataclass(frozen=True)
+class DataSectionConfig:
+    """Training data parameters from ``[data]``."""
+
+    source: str = "random"
+    num_episodes: int = 100
+    episode_length: int = 100
+    buffer_capacity: int = 10_000
+    gym_env: str = ""
+
+
+@dataclass(frozen=True)
+class GameplaySectionConfig:
+    """Gameplay stream parameters from ``[gameplay]``."""
+
+    enabled: bool = False
+    fps: int = 8
+    max_frames: int = 512
+
+
+@dataclass(frozen=True)
+class OnlineCollectionSectionConfig:
+    """Online collection parameters from ``[online_collection]``."""
+
+    enabled: bool = False
+    warmup_transitions: int = 512
+    collect_steps_per_update: int = 64
+    max_episode_steps: int = 100
+
+
+@dataclass(frozen=True)
+class InferenceSectionConfig:
+    """Inference helper parameters from ``[inference]``."""
+
+    horizon: int = 15
+    checkpoint: str = "./outputs/checkpoint_best.pt"
+
+
+@dataclass(frozen=True)
+class VisualizationSectionConfig:
+    """Visualization parameters from ``[visualization]``."""
+
+    enabled: bool = False
+    host: str = "127.0.0.1"
+    port: int = 8765
+    refresh_ms: int = 1000
+    history_max_points: int = 2000
+    open_browser: bool = False
+
+
+@dataclass(frozen=True)
 class VerifySectionConfig:
     """Verification parameters from ``[verify]``."""
 
@@ -83,6 +133,11 @@ class ProjectConfig:
     model_type: str
     architecture: ArchitectureConfig
     training: TrainingSectionConfig
+    data: DataSectionConfig
+    gameplay: GameplaySectionConfig
+    online_collection: OnlineCollectionSectionConfig
+    inference: InferenceSectionConfig
+    visualization: VisualizationSectionConfig
     verify: VerifySectionConfig
     cloud: CloudSectionConfig
     flywheel: FlywheelSectionConfig
@@ -166,6 +221,57 @@ def load_config(path: str | Path = "worldflux.toml") -> ProjectConfig:
         output_dir=str(train_raw.get("output_dir", "./outputs")),
     )
 
+    data_raw = raw.get("data", {})
+    if not isinstance(data_raw, dict):
+        data_raw = {}
+    data = DataSectionConfig(
+        source=str(data_raw.get("source", "random")).strip().lower() or "random",
+        num_episodes=int(data_raw.get("num_episodes", 100)),
+        episode_length=int(data_raw.get("episode_length", 100)),
+        buffer_capacity=int(data_raw.get("buffer_capacity", 10_000)),
+        gym_env=str(data_raw.get("gym_env", "")).strip(),
+    )
+
+    gameplay_raw = raw.get("gameplay", {})
+    if not isinstance(gameplay_raw, dict):
+        gameplay_raw = {}
+    gameplay = GameplaySectionConfig(
+        enabled=bool(gameplay_raw.get("enabled", False)),
+        fps=int(gameplay_raw.get("fps", 8)),
+        max_frames=int(gameplay_raw.get("max_frames", 512)),
+    )
+
+    online_raw = raw.get("online_collection", {})
+    if not isinstance(online_raw, dict):
+        online_raw = {}
+    online_collection = OnlineCollectionSectionConfig(
+        enabled=bool(online_raw.get("enabled", False)),
+        warmup_transitions=int(online_raw.get("warmup_transitions", 512)),
+        collect_steps_per_update=int(online_raw.get("collect_steps_per_update", 64)),
+        max_episode_steps=int(online_raw.get("max_episode_steps", 100)),
+    )
+
+    inference_raw = raw.get("inference", {})
+    if not isinstance(inference_raw, dict):
+        inference_raw = {}
+    inference = InferenceSectionConfig(
+        horizon=int(inference_raw.get("horizon", 15)),
+        checkpoint=str(inference_raw.get("checkpoint", "./outputs/checkpoint_best.pt")).strip()
+        or "./outputs/checkpoint_best.pt",
+    )
+
+    visualization_raw = raw.get("visualization", {})
+    if not isinstance(visualization_raw, dict):
+        visualization_raw = {}
+    visualization = VisualizationSectionConfig(
+        enabled=bool(visualization_raw.get("enabled", False)),
+        host=str(visualization_raw.get("host", "127.0.0.1")).strip() or "127.0.0.1",
+        port=int(visualization_raw.get("port", 8765)),
+        refresh_ms=int(visualization_raw.get("refresh_ms", 1000)),
+        history_max_points=int(visualization_raw.get("history_max_points", 2000)),
+        open_browser=bool(visualization_raw.get("open_browser", False)),
+    )
+
     verify_raw = raw.get("verify", {})
     if not isinstance(verify_raw, dict):
         verify_raw = {}
@@ -205,6 +311,11 @@ def load_config(path: str | Path = "worldflux.toml") -> ProjectConfig:
         model_type=model_type,
         architecture=architecture,
         training=training,
+        data=data,
+        gameplay=gameplay,
+        online_collection=online_collection,
+        inference=inference,
+        visualization=visualization,
         verify=verify,
         cloud=cloud,
         flywheel=flywheel,

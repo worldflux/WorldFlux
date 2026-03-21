@@ -48,7 +48,8 @@ trajectory = model.rollout(state, actions)  # imagine 15 steps ahead
 
 - **Swap components independently** with the 5-layer pluggable architecture
 - **Reference-family implementations** with proof-mode parity workflows against
-  upstream baselines; public proof claims require published evidence bundles
+  upstream baselines; proof/public-evidence work remains an advanced workflow
+  and public proof claims require published evidence bundles
 - **Training infrastructure** with replay buffers, checkpointing, and callbacks
 - **One API** — `encode()`, `transition()`, `decode()`, `rollout()` — works across all model families
 
@@ -161,7 +162,14 @@ real-environment reproduction path.
 
 For the first scaffolded end-to-end walkthrough after that smoke test, use
 [`Train Your First Model`](docs/tutorials/train-first-model.md).
+The supported newcomer path is:
 
+1. `worldflux init`
+2. `worldflux train`
+3. `worldflux verify --target ./outputs --mode quick`
+
+In scaffolded projects, `worldflux train` reuses the generated onboarding
+helpers such as `dataset.py`, `local_dashboard.py`, and `dashboard/index.html`.
 ### Create a Model
 
 ```python
@@ -331,7 +339,7 @@ uv run python examples/train_dreamer.py --data trajectories.npz --steps 100000
 
 ## Roadmap
 
-See [docs/roadmap.md](docs/roadmap.md) for the current technical priorities.
+See [docs/roadmap.md](docs/roadmap.md) for the current technical priority list.
 
 ## Community
 

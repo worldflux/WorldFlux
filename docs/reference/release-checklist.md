@@ -13,6 +13,7 @@ Release authority sources:
 - `pyproject.toml` defines the package version that must match the release tag.
 - `CHANGELOG.md` defines the release-ready notes for that version.
 - `docs/operations/release-runbook.md` defines the operator sequence for publish.
+- `docs/roadmap.md` defines the current technical priority list for release-hardening work.
 
 ## CI and Quality Gates
 

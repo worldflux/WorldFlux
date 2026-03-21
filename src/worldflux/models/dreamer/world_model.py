@@ -472,7 +472,7 @@ class DreamerV3WorldModel(WorldModel):
         for t, state in enumerate(states):
             decoded = self.decode(state)
 
-            if self.config.use_symlog:
+            if self.config.use_symlog and self.config.decoder_type != "cnn":
                 target = symlog(obs[:, t])
             else:
                 target = obs[:, t]

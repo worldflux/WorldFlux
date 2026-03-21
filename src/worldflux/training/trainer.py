@@ -831,6 +831,10 @@ class Trainer:
         # Track GPU memory after optimizer step
         self.perf_monitor.record_gpu_memory()
 
+        post_step_hook = getattr(local_model, "on_after_optimizer_step", None)
+        if callable(post_step_hook):
+            post_step_hook()
+
         self._publish_event("optimizer.stepped", trainer=self, step=self.state.global_step)
 
     def _train_step(self, data: BatchProvider | Any) -> dict[str, float]:
