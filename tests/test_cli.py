@@ -228,7 +228,8 @@ def test_resolve_python_launcher_falls_back_to_python3(monkeypatch: pytest.Monke
 def test_root_help_promotes_supported_verify_workflow() -> None:
     result = runner.invoke(cli.app, ["--help"])
     assert result.exit_code == 0
-    assert "worldflux verify --target ./outputs --mode quick" in result.stdout
+    normalized = " ".join(result.stdout.split())
+    assert "worldflux verify --target ./outputs --mode quick" in normalized
     assert "worldflux eval ./outputs --suite quick" not in result.stdout
 
 
