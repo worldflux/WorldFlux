@@ -202,6 +202,71 @@ def test_publish_mode_rejects_degenerate_report(tmp_path: Path, monkeypatch) -> 
     assert not output.exists()
 
 
+def test_publish_mode_rejects_noncanonical_seed_set(tmp_path: Path) -> None:
+    mod = _load_module()
+    exit_code = mod.main(
+        [
+            "--lane",
+            "publish",
+            "--env-backend",
+            "gymnasium",
+            "--seeds",
+            "0",
+            "--steps",
+            "200",
+            "--model-profile",
+            "wf12m",
+            "--output",
+            str(tmp_path / "out.json"),
+        ]
+    )
+    assert exit_code == 2
+
+
+def test_publish_mode_rejects_noncanonical_step_count(tmp_path: Path) -> None:
+    mod = _load_module()
+    exit_code = mod.main(
+        [
+            "--lane",
+            "publish",
+            "--env-backend",
+            "gymnasium",
+            "--seeds",
+            "0,1,2",
+            "--steps",
+            "48",
+            "--model-profile",
+            "wf12m",
+            "--output",
+            str(tmp_path / "out.json"),
+        ]
+    )
+    assert exit_code == 2
+
+
+def test_smoke_mode_rejects_tracked_publish_paths(tmp_path: Path) -> None:
+    mod = _load_module()
+    exit_code = mod.main(
+        [
+            "--lane",
+            "smoke",
+            "--env-backend",
+            "stub",
+            "--seeds",
+            "0",
+            "--steps",
+            "12",
+            "--model-profile",
+            "wf12m",
+            "--output",
+            "reports/parity/sensitivity/dreamerv3_sensitivity.json",
+            "--output-md",
+            str(tmp_path / "ignored.md"),
+        ]
+    )
+    assert exit_code == 2
+
+
 def test_report_from_renders_markdown_with_optional_metadata(tmp_path: Path) -> None:
     mod = _load_module()
     report_json = tmp_path / "input.json"

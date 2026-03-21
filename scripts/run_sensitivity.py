@@ -51,8 +51,10 @@ SMOKE_LANE = "smoke"
 PUBLISH_LANE = "publish"
 DEFAULT_TRACKED_REPORT = Path("reports/parity/sensitivity/dreamerv3_sensitivity.json")
 DEFAULT_TRACKED_DOC = Path("docs/reference/hyperparameter-sensitivity.md")
-MIN_PUBLISH_STEPS = 48
-MIN_PUBLISH_SEEDS = 1
+CANONICAL_PUBLISH_SEEDS = [0, 1, 2]
+CANONICAL_PUBLISH_STEPS = 200
+CANONICAL_PUBLISH_MODEL_PROFILE = "wf12m"
+CANONICAL_PUBLISH_ENV_BACKEND = "gymnasium"
 
 
 def _parse_seeds(raw: str | None) -> list[int]:
@@ -91,12 +93,17 @@ def _validate_lane_policy(
 
     if env_backend == "stub":
         return "publish lane requires a real environment backend."
-    if model_profile == "ci":
-        return "publish lane does not allow model_profile='ci'."
-    if len(seeds) < MIN_PUBLISH_SEEDS:
-        return f"publish lane requires at least {MIN_PUBLISH_SEEDS} seed."
-    if steps < MIN_PUBLISH_STEPS:
-        return f"publish lane requires at least {MIN_PUBLISH_STEPS} steps."
+    if env_backend != CANONICAL_PUBLISH_ENV_BACKEND:
+        return f"publish lane requires env_backend='{CANONICAL_PUBLISH_ENV_BACKEND}'."
+    if model_profile != CANONICAL_PUBLISH_MODEL_PROFILE:
+        return f"publish lane requires model_profile='{CANONICAL_PUBLISH_MODEL_PROFILE}'."
+    if seeds != CANONICAL_PUBLISH_SEEDS:
+        return (
+            "publish lane requires canonical seeds "
+            f"{','.join(str(seed) for seed in CANONICAL_PUBLISH_SEEDS)}."
+        )
+    if steps != CANONICAL_PUBLISH_STEPS:
+        return f"publish lane requires steps={CANONICAL_PUBLISH_STEPS}."
     if task_id != DEFAULT_TASK_ID:
         return f"publish lane requires task_id='{DEFAULT_TASK_ID}'."
     return None
