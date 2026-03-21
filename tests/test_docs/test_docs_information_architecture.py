@@ -48,6 +48,12 @@ def test_docs_index_exposes_primary_paths_for_cpu_success_and_reference():
     assert "(reference/parity.md)" in index
 
 
+def test_docs_index_logo_does_not_use_unprocessed_raw_html_asset_path():
+    index = _read("docs/index.md")
+    assert '<img src="assets/logo.svg"' not in index
+    assert 'src="/img/logo.svg"' in index
+
+
 def test_quickstart_points_to_cpu_path_and_api_guides():
     quickstart = _read("docs/getting-started/quickstart.md")
     assert "Choosing a Model in `worldflux init`" in quickstart
