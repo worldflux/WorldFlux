@@ -127,3 +127,10 @@ def test_public_surfaces_use_conservative_claim_language():
     assert "same quick verification flow" in comparison_tutorial
     assert "published evidence bundle" in parity
     assert "not a public proof claim" in parity
+
+
+def test_hyperparameter_sensitivity_doc_is_no_longer_template() -> None:
+    sensitivity = _read("docs/reference/hyperparameter-sensitivity.md")
+    assert "Template - to be populated" not in sensitivity
+    assert "Pending experiment" not in sensitivity
+    assert "atari100k_pong" in sensitivity
