@@ -29,10 +29,7 @@ from .config import {{ config_class }}
 
 @WorldModelRegistry.register("{{ model_type }}", {{ config_class }})
 class {{ model_class }}(WorldModel):
-    """{{ model_name }} world model implementation.
-
-    TODO: Add model description and architecture details.
-    """
+    """Experimental starter implementation for {{ model_name }}."""
 
     def __init__(self, config: {{ config_class }}):
         super().__init__()
@@ -42,7 +39,7 @@ class {{ model_class }}(WorldModel):
             Capability.REWARD_PRED,
         }
 
-        # TODO: Initialize model components (encoder, dynamics, decoder, heads)
+        # Replace these starter buffers/modules with your concrete architecture.
         self.register_buffer("_device_tracker", torch.empty(0))
 
     @property
@@ -98,7 +95,7 @@ class {{ model_class }}(WorldModel):
             obs = obs.observations
         if isinstance(obs, dict):
             obs = obs["obs"]
-        # TODO: Implement encoder forward pass
+        # Starter stub: replace with your encoder path.
         z = torch.zeros(obs.shape[0], self.config.latent_dim, device=obs.device)
         return State(tensors={"latent": z}, meta={})
 
@@ -112,7 +109,7 @@ class {{ model_class }}(WorldModel):
         """Predict next latent state."""
         del conditions, deterministic
         z = state.tensors["latent"]
-        # TODO: Implement dynamics forward pass
+        # Starter stub: replace with your transition path.
         z_next = torch.zeros_like(z)
         return State(tensors={"latent": z_next}, meta={})
 
@@ -120,7 +117,7 @@ class {{ model_class }}(WorldModel):
         """Decode latent state to predictions."""
         del conditions
         z = state.tensors["latent"]
-        # TODO: Implement decoder forward pass
+        # Starter stub: replace with your decoder path.
         reward = torch.zeros(z.shape[0], 1, device=z.device)
         return ModelOutput(predictions={"reward": reward}, state=state)
 
@@ -139,7 +136,7 @@ class {{ model_class }}(WorldModel):
         if obs is None:
             raise ValueError("{{ model_name }} requires obs tensor in batch")
 
-        # TODO: Implement training loss computation
+        # Starter stub: replace with a real training objective.
         dummy_loss = torch.tensor(0.0, device=obs.device, requires_grad=True)
         return LossOutput(
             loss=dummy_loss,

@@ -10,20 +10,18 @@ from worldflux.core.config import DynamicsType, LatentType, WorldModelConfig
 
 @dataclass
 class {{ config_class }}(WorldModelConfig):
-    """{{ model_name }} configuration.
+    """Experimental starter config for {{ model_name }}.
 
     Size Presets:
         - ci:   Tiny model for CI testing
         - base: Default model size
-
-    TODO: Add model-specific fields and documentation.
     """
 
     model_type: str = "{{ model_type }}"
     latent_type: LatentType = LatentType.DETERMINISTIC
     dynamics_type: DynamicsType = DynamicsType.MLP
 
-    # TODO: Add model-specific configuration fields here
+    # Replace or extend these starter fields for your concrete model family.
     # Example:
     # num_layers: int = 4
     # num_heads: int = 4

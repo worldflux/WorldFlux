@@ -126,6 +126,9 @@ def test_generate_project_creates_expected_files(tmp_path: Path) -> None:
     assert 'id="progress-fill"' in dashboard_frontend
     assert "resolveProgressPercent" in dashboard_frontend
 
+    for relative_path in expected_files:
+        assert "TODO:" not in (target / relative_path).read_text(encoding="utf-8")
+
 
 def test_generate_project_rejects_non_empty_directory_without_force(tmp_path: Path) -> None:
     target = tmp_path / "existing"
