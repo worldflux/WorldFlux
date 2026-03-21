@@ -14,7 +14,7 @@ CHECKPOINT_SCHEMA_VERSION = 1
 
 def build_run_manifest(*, trainer: Any) -> dict[str, Any]:
     runtime_profile = trainer.runtime_profile() if hasattr(trainer, "runtime_profile") else {}
-    return {
+    payload = {
         "schema_version": RUN_MANIFEST_SCHEMA_VERSION,
         "backend": str(getattr(trainer.config, "backend", "native_torch")),
         "device": str(getattr(trainer, "device", "cpu")),
@@ -27,6 +27,10 @@ def build_run_manifest(*, trainer: Any) -> dict[str, Any]:
         "train_end_time": trainer.state.train_end_time,
         "ttfi_sec": trainer.state.ttfi_sec,
     }
+    data_provenance = getattr(trainer, "data_provenance", None)
+    if isinstance(data_provenance, dict) and data_provenance:
+        payload["data_provenance"] = dict(data_provenance)
+    return payload
 
 
 def write_run_manifest(*, trainer: Any, output_dir: str | Path) -> Path:
