@@ -89,6 +89,9 @@ def run_eval_suite(
     model_id: str = "unknown",
     batch_size: int = 4,
     horizon: int = 10,
+    mode: str = "synthetic",
+    data: dict[str, torch.Tensor] | None = None,
+    provenance: dict[str, Any] | None = None,
 ) -> EvalReport:
     """Run an evaluation suite on a world model.
 
@@ -117,7 +120,21 @@ def run_eval_suite(
 
     model.eval()
 
-    data = _generate_synthetic_data(model, batch_size=batch_size, horizon=horizon, device=device)
+    eval_mode = str(mode).strip().lower() or "synthetic"
+    if eval_mode not in {"synthetic", "real"}:
+        raise ValueError(f"Unknown evaluation mode {mode!r}. Expected 'synthetic' or 'real'.")
+
+    if eval_mode == "real":
+        if data is None:
+            raise ValueError("real evaluation data is required when mode='real'.")
+        eval_data = data
+    else:
+        eval_data = _generate_synthetic_data(
+            model,
+            batch_size=batch_size,
+            horizon=horizon,
+            device=device,
+        )
 
     results: list[EvalResult] = []
     for name in metric_names:
@@ -129,17 +146,17 @@ def run_eval_suite(
         if name == "reward_prediction_accuracy":
             result = fn(
                 model,
-                data["obs"],
-                data["actions"],
-                data["rewards"],
+                eval_data["obs"],
+                eval_data["actions"],
+                eval_data["rewards"],
                 suite=suite,
                 model_id=model_id,
             )
         else:
             result = fn(
                 model,
-                data["obs"],
-                data["actions"],
+                eval_data["obs"],
+                eval_data["actions"],
                 suite=suite,
                 model_id=model_id,
             )
@@ -161,6 +178,8 @@ def run_eval_suite(
         timestamp=start_time,
         wall_time_sec=wall_time,
         all_passed=all_passed,
+        mode=eval_mode,
+        provenance=dict(provenance or {}),
     )
 
     if output_path is not None:

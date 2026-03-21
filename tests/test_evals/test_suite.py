@@ -112,3 +112,28 @@ class TestRunEvalSuite:
         assert d["model_id"] == "test"
         assert isinstance(d["results"], list)
         assert d["wall_time_sec"] >= 0.0
+        assert d["mode"] == "synthetic"
+        assert "synthetic_provenance" in d
+
+    def test_real_mode_requires_explicit_data(self, model):
+        with pytest.raises(ValueError, match="real evaluation data"):
+            run_eval_suite(model, suite="quick", mode="real")
+
+    def test_real_mode_records_real_provenance(self, model):
+        data = {
+            "obs": torch.randn(4, 8),
+            "actions": torch.randn(6, 4, 4),
+            "rewards": torch.randn(6, 4),
+        }
+        report = run_eval_suite(
+            model,
+            suite="quick",
+            mode="real",
+            data=data,
+            provenance={"kind": "dataset_manifest", "env_id": "mujoco/HalfCheetah-v5"},
+        )
+
+        payload = report.to_dict()
+        assert payload["mode"] == "real"
+        assert payload["real_provenance"]["kind"] == "dataset_manifest"
+        assert "synthetic_provenance" not in payload
