@@ -3,11 +3,9 @@
 """Hyperparameter sensitivity analysis infrastructure.
 
 Defines parameter sweep specifications, one-at-a-time sensitivity analysis,
-result aggregation, and ranking of hyperparameter importance. Designed to
-run on a fast environment (e.g. CartPole-v1) with multiple seeds.
-
-This module builds the analysis infrastructure. Actual experiment execution
-requires a GPU runner and is launched via ``scripts/run_sensitivity.py``.
+result aggregation, and ranking of hyperparameter importance. The canonical
+execution path uses the Dreamer native runner on a small Atari task with
+multiple seeds.
 """
 
 from __future__ import annotations
@@ -86,12 +84,75 @@ class SensitivityReport:
     total_steps: int
     parameters: list[ParameterSensitivity]
     generated_at_utc: str = ""
+    task_id: str = ""
+    env_backend: str = ""
+    model_profile: str = ""
 
     def __post_init__(self) -> None:
         if not self.generated_at_utc:
             self.generated_at_utc = (
                 datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
             )
+
+    def to_json_payload(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "schema_version": "worldflux.sensitivity.v1",
+            "generated_at_utc": self.generated_at_utc,
+            "family": self.family,
+            "environment": self.environment,
+            "seeds": self.seeds,
+            "total_steps": self.total_steps,
+            "total_runs": sum(len(param.values) for param in self.parameters)
+            * max(1, len(self.seeds)),
+            "parameters": [],
+        }
+        if self.task_id:
+            payload["task_id"] = self.task_id
+        if self.env_backend:
+            payload["env_backend"] = self.env_backend
+        if self.model_profile:
+            payload["model_profile"] = self.model_profile
+        for param in self.parameters:
+            payload["parameters"].append(
+                {
+                    "name": param.name,
+                    "default_value": param.default_value,
+                    "values": param.values,
+                    "mean_rewards": param.mean_rewards,
+                    "std_rewards": param.std_rewards,
+                    "sensitivity_score": param.sensitivity_score,
+                    "default_rank_percentile": param.default_rank_percentile,
+                    "default_in_safe_range": param.default_in_safe_range,
+                }
+            )
+        return payload
+
+    @classmethod
+    def from_json_payload(cls, raw: dict[str, Any]) -> SensitivityReport:
+        params: list[ParameterSensitivity] = []
+        for payload in raw.get("parameters", []):
+            params.append(
+                ParameterSensitivity(
+                    name=payload["name"],
+                    default_value=payload["default_value"],
+                    values=payload["values"],
+                    mean_rewards=payload["mean_rewards"],
+                    std_rewards=payload["std_rewards"],
+                    sensitivity_score=payload["sensitivity_score"],
+                    default_rank_percentile=payload["default_rank_percentile"],
+                )
+            )
+        return cls(
+            family=raw.get("family", "dreamerv3"),
+            environment=raw.get("environment", "unknown"),
+            seeds=raw.get("seeds", []),
+            total_steps=raw.get("total_steps", 0),
+            parameters=params,
+            generated_at_utc=raw.get("generated_at_utc", ""),
+            task_id=raw.get("task_id", ""),
+            env_backend=raw.get("env_backend", ""),
+            model_profile=raw.get("model_profile", ""),
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -162,7 +223,7 @@ class SensitivityAnalysis:
         self,
         sweeps: list[ParameterSweep] | None = None,
         family: str = "dreamerv3",
-        environment: str = "CartPole-v1",
+        environment: str = "atari100k_pong",
         seeds: list[int] | None = None,
         total_steps: int = 100_000,
     ) -> None:
@@ -287,29 +348,8 @@ class SensitivityAnalysis:
     def export_json(self, path: Path) -> None:
         """Serialize the report to JSON."""
         report = self.generate_report()
-        payload: dict[str, Any] = {
-            "schema_version": "worldflux.sensitivity.v1",
-            "generated_at_utc": report.generated_at_utc,
-            "family": report.family,
-            "environment": report.environment,
-            "seeds": report.seeds,
-            "total_steps": report.total_steps,
-            "total_runs": self.total_runs,
-            "parameters": [],
-        }
-        for param in report.parameters:
-            payload["parameters"].append(
-                {
-                    "name": param.name,
-                    "default_value": param.default_value,
-                    "values": param.values,
-                    "mean_rewards": param.mean_rewards,
-                    "std_rewards": param.std_rewards,
-                    "sensitivity_score": param.sensitivity_score,
-                    "default_rank_percentile": param.default_rank_percentile,
-                    "default_in_safe_range": param.default_in_safe_range,
-                }
-            )
+        payload = report.to_json_payload()
+        payload["total_runs"] = self.total_runs
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
@@ -322,8 +362,13 @@ def render_sensitivity_markdown(report: SensitivityReport) -> str:
         f"Generated at: {report.generated_at_utc}",
         f"Family: {report.family}",
         f"Environment: {report.environment}",
+        f"Task ID: {report.task_id or report.environment}",
+        f"Env backend: {report.env_backend or 'unknown'}",
+        f"Model profile: {report.model_profile or 'unknown'}",
         f"Seeds: {report.seeds}",
         f"Steps per run: {report.total_steps:,}",
+        "",
+        "This is an initial measured Dreamer sensitivity report. It is not a proof claim or a benchmark claim.",
         "",
         "## Sensitivity Ranking",
         "",
@@ -350,4 +395,27 @@ def render_sensitivity_markdown(report: SensitivityReport) -> str:
             lines.append(f"| {val}{marker} | {mean:.2f} | {std:.2f} |")
         lines.append("")
 
+    lines.extend(
+        [
+            "## Reproducing",
+            "",
+            "```bash",
+            "python scripts/run_sensitivity.py --dry-run",
+            "",
+            "# smoke / deterministic CI-sized execution",
+            "python scripts/run_sensitivity.py \\",
+            f"    --task-id {report.task_id or report.environment} \\",
+            f"    --env-backend {report.env_backend or 'stub'} \\",
+            f"    --model-profile {report.model_profile or 'wf12m'} \\",
+            f"    --seeds {','.join(str(seed) for seed in report.seeds) or '0'} \\",
+            f"    --steps {report.total_steps} \\",
+            "    --output reports/parity/sensitivity/dreamerv3_sensitivity.json",
+            "",
+            "# render markdown from existing results",
+            "python scripts/run_sensitivity.py \\",
+            "    --report-from reports/parity/sensitivity/dreamerv3_sensitivity.json \\",
+            "    --output-md docs/reference/hyperparameter-sensitivity.md",
+            "```",
+        ]
+    )
     return "\n".join(lines) + "\n"
