@@ -1,17 +1,16 @@
-# Tutorial Placeholder Policy
+# Tutorial Rollout Policy
 
-WorldFlux keeps tutorial URLs stable even when a tutorial body is temporarily unavailable.
+WorldFlux treats tutorials as promoted onboarding surfaces, not draft notes.
 
 ## Policy
 
-- Placeholder tutorial pages remain published to avoid broken inbound links.
-- Placeholder pages must clearly state temporary unavailability.
-- Placeholder pages must link to supported alternatives in Getting Started/API docs.
-- Promotion to full tutorial content is additive and must not break existing links.
+- Promoted tutorials must contain runnable guidance grounded in the current repository.
+- Tutorial steps must stay inside the evidence-backed MVP boundary unless explicitly marked advanced or experimental.
+- Placeholder or stealth-review pages should stay hidden from promoted navigation until they are replaced with real content.
+- Adding a tutorial is preferred over widening public claims in README/help text without executable guidance.
 
-## Current Placeholder Tutorials
+## Current Status
 
-- `docs/tutorials/dreamer-vs-tdmpc2.md`
-- `docs/tutorials/reproduce-dreamer-tdmpc2.md`
-
-This policy preserves public contracts while enabling staged documentation rollout.
+- `docs/tutorials/train-first-model.md` is the canonical newcomer tutorial.
+- `docs/tutorials/dreamer-vs-tdmpc2.md` compares the two supported reference families at MVP depth.
+- `docs/tutorials/reproduce-dreamer-tdmpc2.md` explains the currently supported local reproducibility path and points to advanced parity workflows without over-claiming proof support.

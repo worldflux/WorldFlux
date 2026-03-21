@@ -31,7 +31,16 @@ def test_public_docs_include_cpu_success_and_benchmark_paths():
     assert "(reference/benchmarks.md)" in index
     assert "(reference/parity.md)" in index
     assert "worldflux parity run" in parity
-    assert "Placeholder tutorial pages remain published" in tutorial_policy
+    assert "Promoted tutorials must contain runnable guidance" in tutorial_policy
+
+
+def test_installation_docs_bound_windows_mvp_claims() -> None:
+    readme = _read("README.md")
+    installation = _read("docs/getting-started/installation.md")
+
+    assert "supported newcomer path" in readme
+    assert "Windows bootstrap support exists in implementation" in installation
+    assert "not yet part of the current newcomer E2E guarantee" in installation
 
 
 def test_quality_docs_reference_current_gate_commands():

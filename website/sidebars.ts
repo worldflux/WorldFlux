@@ -35,16 +35,15 @@ const sidebars: SidebarsConfig = {
         'guides/training-observability',
       ],
     },
-    // Tutorials hidden until content is release-ready (see tutorial-policy.md)
-    // {
-    //   type: 'category',
-    //   label: 'Tutorials',
-    //   items: [
-    //     'tutorials/train-first-model',
-    //     'tutorials/reproduce-dreamer-tdmpc2',
-    //     'tutorials/dreamer-vs-tdmpc2',
-    //   ],
-    // },
+    {
+      type: 'category',
+      label: 'Tutorials',
+      items: [
+        'tutorials/train-first-model',
+        'tutorials/dreamer-vs-tdmpc2',
+        'tutorials/reproduce-dreamer-tdmpc2',
+      ],
+    },
     {
       type: 'category',
       label: 'Reference',

@@ -19,6 +19,10 @@ def test_sidebars_expose_cpu_success_and_reference_guides():
     assert "'getting-started/installation'" in sidebars
     assert "'getting-started/quickstart'" in sidebars
     assert "'getting-started/cpu-success'" in sidebars
+    assert "'Tutorials'" in sidebars
+    assert "'tutorials/train-first-model'" in sidebars
+    assert "'tutorials/dreamer-vs-tdmpc2'" in sidebars
+    assert "'tutorials/reproduce-dreamer-tdmpc2'" in sidebars
 
     assert "'Reference'" in sidebars
     assert "'reference/benchmarks'" in sidebars
@@ -35,6 +39,8 @@ def test_docs_index_exposes_primary_paths_for_cpu_success_and_reference():
     assert "(getting-started/quickstart.md)" in index
     assert "(getting-started/quickstart.md#4-choosing-a-model-in-worldflux-init)" in index
     assert "(getting-started/cpu-success.md)" in index
+    assert "(tutorials/dreamer-vs-tdmpc2.md)" in index
+    assert "(tutorials/reproduce-dreamer-tdmpc2.md)" in index
     assert "(api/factory.md)" in index
     assert "(reference/benchmarks.md)" in index
     assert "(reference/observation-action.md)" in index

@@ -16,7 +16,7 @@ app = typer.Typer(
         "  Get started      → worldflux init\n"
         "  Train a model    → worldflux train\n"
         "  List models      → worldflux models list\n"
-        "  Evaluate         → worldflux eval ./outputs --suite quick\n"
+        "  Verify           → worldflux verify --target ./outputs --mode quick\n"
         "  System info      → worldflux doctor\n"
         "  Docs             → https://worldflux.ai/\n"
         "  Cloud (exp.)     → worldflux jobs[/dim]"

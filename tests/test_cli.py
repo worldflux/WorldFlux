@@ -225,6 +225,13 @@ def test_resolve_python_launcher_falls_back_to_python3(monkeypatch: pytest.Monke
     assert cli._resolve_python_launcher() == "python3"
 
 
+def test_root_help_promotes_supported_verify_workflow() -> None:
+    result = runner.invoke(cli.app, ["--help"])
+    assert result.exit_code == 0
+    assert "worldflux verify --target ./outputs --mode quick" in result.stdout
+    assert "worldflux eval ./outputs --suite quick" not in result.stdout
+
+
 def test_train_delegated_backend_uses_submit(monkeypatch: pytest.MonkeyPatch) -> None:
     from worldflux.training import JobHandle, JobStatus
 

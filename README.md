@@ -168,6 +168,11 @@ The supported newcomer path is:
 2. `worldflux train`
 3. `worldflux verify --target ./outputs --mode quick`
 
+This supported newcomer path is the current evidence-backed MVP surface.
+Treat it as a local compatibility workflow, not as a benchmark or public proof claim.
+The newcomer wheel-install smoke is exercised in CI on Linux and macOS; Windows
+bootstrap support exists in implementation but is not yet part of that E2E guarantee.
+
 In scaffolded projects, `worldflux train` reuses the generated onboarding
 helpers such as `dataset.py`, `local_dashboard.py`, and `dashboard/index.html`.
 ### Create a Model

@@ -86,6 +86,8 @@ Minimal onboarding for installation and first execution.
 - [Installation](getting-started/installation.md)
 - [Quick Start](getting-started/quickstart.md)
 - [Train Your First Model](tutorials/train-first-model.md)
+- [DreamerV3 vs TD-MPC2](tutorials/dreamer-vs-tdmpc2.md)
+- [Reproduce DreamerV3 and TD-MPC2 Locally](tutorials/reproduce-dreamer-tdmpc2.md)
 - [Model Choice in `worldflux init`](getting-started/quickstart.md#4-choosing-a-model-in-worldflux-init)
 - [CPU Success Path](getting-started/cpu-success.md)
 
@@ -108,7 +110,7 @@ Operational documentation and project quality checks.
 - [Documentation Stack](reference/docs-stack.md)
 - [Release Checklist](reference/release-checklist.md)
 - [Publishing](reference/publishing.md)
-- [Tutorial Placeholder Policy](reference/tutorial-policy.md)
+- [Tutorial Rollout Policy](reference/tutorial-policy.md)
 - [Troubleshooting](reference/troubleshooting.md)
 - [WASR Metrics](reference/wasr.md)
 

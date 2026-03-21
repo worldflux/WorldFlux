@@ -22,7 +22,7 @@ from .data import (
     TrajectoryDataset,
     TransitionArrayProvider,
 )
-from .distributed import DDPTrainer, FSDPTrainer, build_launch_config
+from .distributed import DDPTrainer, build_launch_config
 from .profiling import PerformanceMonitor, TorchProfilerWrapper
 from .replay_backends import MemoryReplayBackend, ParquetReplayBackend, ReplayBackend
 from .report import HealthSignal, LossCurveSummary, TrainingReport
@@ -39,7 +39,6 @@ __all__ = [
     "PrefetchBatchProvider",
     "build_launch_config",
     "DDPTrainer",
-    "FSDPTrainer",
     "ReplayBackend",
     "MemoryReplayBackend",
     "ParquetReplayBackend",
