@@ -168,6 +168,10 @@ class Trainer:
         # Optional model I/O contract for runtime validation.
         self.io_contract: ModelIOContract | None = None
         self.data_provenance: dict[str, Any] = {}
+        self.run_classification: str | None = None
+        self.data_mode: str | None = None
+        self.degraded_modes: list[str] = []
+        self.support_surface: str | None = None
         if self.execution_mode == "delegated":
             self._backend_handle = cast(OfficialBackendHandle, model)
             self.model = model

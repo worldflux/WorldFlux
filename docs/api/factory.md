@@ -135,11 +135,17 @@ List available model presets.
 ```python
 from worldflux import list_models
 
-# Simple list
+# Supported MVP presets only
 models = list_models()
 
-# With descriptions
+# Supported MVP presets with descriptions
 models = list_models(verbose=True)
+
+# Include advanced proof-oriented presets explicitly
+models = list_models(verbose=True, surface="public")
+
+# Include experimental / internal families explicitly
+models = list_models(verbose=True, surface="all")
 ```
 
 ### Parameters
@@ -148,6 +154,7 @@ models = list_models(verbose=True)
 |-----------|------|---------|-------------|
 | `verbose` | `bool` | `False` | Return detailed metadata instead of only names |
 | `maturity` | `str \| None` | `None` | Optional maturity filter (`reference`, `experimental`, `skeleton`) |
+| `surface` | `str` | `"supported"` | Public surface filter. One of `"supported"`, `"public"`, or `"all"` |
 
 ### Returns
 
@@ -191,8 +198,14 @@ models = list_models(verbose=True)
 - `tdmpc2:5m_legacy`: TD-MPC2 legacy compatibility preset.
 - The remaining reference-family presets are for experimentation and capacity tuning.
 
+For advanced proof-oriented presets, use:
+
+```bash
+worldflux models list --surface public --verbose
+```
+
 For the complete catalog (including experimental/skeleton families), use:
 
 ```bash
-worldflux models list --verbose
+worldflux models list --surface all --verbose
 ```

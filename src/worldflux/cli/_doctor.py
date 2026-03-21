@@ -66,7 +66,7 @@ def doctor() -> None:
     try:
         from worldflux.factory import list_models
 
-        all_models = list_models(verbose=True)
+        all_models = list_models(verbose=True, surface="all")
         if isinstance(all_models, dict):
             total = len(all_models)
             by_maturity: dict[str, int] = {}

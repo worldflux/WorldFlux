@@ -582,6 +582,7 @@ def create_world_model(
 def list_models(
     verbose: bool = False,
     maturity: str | None = None,
+    surface: str = "supported",
 ) -> list[str] | dict[str, dict[str, Any]]:
     """
     List all available world model presets.
@@ -590,6 +591,7 @@ def list_models(
         verbose: If True, return detailed model information
         maturity: Optional maturity filter ("reference", "reference-family",
             "experimental", "skeleton")
+        surface: Public surface filter ("supported", "public", or "all")
 
     Returns:
         List of model names, or dict with detailed info if verbose=True
@@ -611,16 +613,28 @@ def list_models(
         }
     """
     catalog = _resolved_catalog()
+    normalized_surface = str(surface).strip().lower() or "supported"
+    if normalized_surface == "supported":
+        allowed_support_tiers = {"supported"}
+    elif normalized_surface == "public":
+        allowed_support_tiers = {"supported", "advanced"}
+    elif normalized_surface == "all":
+        allowed_support_tiers = None
+    else:
+        raise ValueError(
+            f"Unsupported surface: {surface!r}. Expected 'supported', 'public', or 'all'."
+        )
+
+    if allowed_support_tiers is not None:
+        catalog = {
+            k: v for k, v in catalog.items() if v.get("support_tier") in allowed_support_tiers
+        }
+
     if maturity is not None:
         maturity = maturity.lower().replace("_", "-")
         if maturity == "reference-family":
             maturity = ModelMaturity.REFERENCE.value
         catalog = {k: v for k, v in catalog.items() if v.get("maturity") == maturity}
-    else:
-        # Default: show only supported public lanes and advanced proof lanes.
-        catalog = {
-            k: v for k, v in catalog.items() if v.get("support_tier") in {"supported", "advanced"}
-        }
     if verbose:
         return catalog
     return list(catalog.keys())

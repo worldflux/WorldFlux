@@ -2020,7 +2020,17 @@ def test_models_list_human_output_uses_reference_family_label() -> None:
     result = runner.invoke(cli.app, ["models", "list"])
     assert result.exit_code == 0
     assert "reference-family" in result.output
-    assert "published evidence bundles" in result.output
+    assert "published evidence bundles" not in result.output
+    assert "advanced evidence workflow" not in result.output
+
+
+def test_models_list_public_surface_mentions_advanced_workflow() -> None:
+    result = runner.invoke(cli.app, ["models", "list", "--surface", "public", "--format", "json"])
+    assert result.exit_code == 0
+    assert "dreamerv3:official_xl" in result.output
+    result = runner.invoke(cli.app, ["models", "list", "--surface", "public"])
+    assert result.exit_code == 0
+    assert "advanced evidence workflow" in result.output
 
 
 def test_models_list_json_preserves_reference_machine_value() -> None:
@@ -2028,16 +2038,33 @@ def test_models_list_json_preserves_reference_machine_value() -> None:
     assert result.exit_code == 0
     assert '"maturity": "reference"' in result.output
     assert '"support_tier": "supported"' in result.output
+    assert '"support_tier": "advanced"' not in result.output
 
 
 def test_models_list_accepts_reference_family_alias() -> None:
     result = runner.invoke(
         cli.app,
-        ["models", "list", "--maturity", "reference-family", "--format", "json"],
+        [
+            "models",
+            "list",
+            "--surface",
+            "all",
+            "--maturity",
+            "reference-family",
+            "--format",
+            "json",
+        ],
     )
     assert result.exit_code == 0
     assert "dreamerv3:size12m" in result.output
     assert "No models match" not in result.output
+
+
+def test_models_list_all_surface_exposes_experimental_and_internal() -> None:
+    result = runner.invoke(cli.app, ["models", "list", "--surface", "all", "--format", "json"])
+    assert result.exit_code == 0
+    assert '"jepa:base"' in result.output
+    assert '"dit:base"' in result.output
 
 
 def test_models_info_reference_note_is_conservative() -> None:
@@ -2046,3 +2073,56 @@ def test_models_info_reference_note_is_conservative() -> None:
     assert "reference-family" in result.output
     assert "not by itself a public" in result.output
     assert "proof claim" in result.output
+
+
+def test_train_marks_random_fallback_runs_as_contract_smoke(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    toml_path = tmp_path / "worldflux.toml"
+    output_dir = tmp_path / "outputs"
+    toml_path.write_text(
+        f"""\
+project_name = "fallback-train"
+environment = "atari"
+model = "dreamer:ci"
+
+[architecture]
+obs_shape = [3, 64, 64]
+action_dim = 6
+
+[training]
+total_steps = 2
+batch_size = 2
+device = "cpu"
+output_dir = "{output_dir}"
+
+[data]
+source = "gym"
+gym_env = "ALE/Breakout-v5"
+""",
+        encoding="utf-8",
+    )
+
+    class _FailingDatasetModule:
+        @staticmethod
+        def build_training_data(*args, **kwargs):
+            del args, kwargs
+            raise RuntimeError("dataset bootstrap failed")
+
+    fake_runtime = SimpleNamespace(
+        dataset_module=_FailingDatasetModule(),
+        dashboard_module=SimpleNamespace(),
+        dashboard_root=tmp_path / "dashboard",
+    )
+    monkeypatch.setattr("worldflux.cli._train._load_scaffold_runtime", lambda _root: fake_runtime)
+
+    result = runner.invoke(cli.app, ["train", "--config", str(toml_path), "--steps", "2"])
+
+    assert result.exit_code == 0
+    assert "degraded" in result.output.lower()
+    payload = json.loads((output_dir / "run_manifest.json").read_text(encoding="utf-8"))
+    assert payload["run_classification"] == "contract_smoke"
+    assert payload["support_surface"] == "supported"
+    assert payload["data_mode"] == "random"
+    assert "random_replay_fallback" in payload["degraded_modes"]
+    assert "scaffold_runtime_fallback" in payload["degraded_modes"]

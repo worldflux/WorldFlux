@@ -239,3 +239,50 @@ class TestLoadConfig:
         )
         cfg = load_config(toml_path)
         assert cfg.model == "tdmpc2:ci"
+
+    def test_rejects_unknown_top_level_keys(self, tmp_path: Path) -> None:
+        toml_path = tmp_path / "worldflux.toml"
+        toml_path.write_text(
+            'project_name = "bad"\nextra = "nope"\n',
+            encoding="utf-8",
+        )
+        with pytest.raises(ValueError, match="Unknown top-level key"):
+            load_config(toml_path)
+
+    def test_rejects_unknown_section_keys(self, tmp_path: Path) -> None:
+        toml_path = tmp_path / "worldflux.toml"
+        toml_path.write_text(
+            """\
+project_name = "bad-training"
+model = "dreamer:ci"
+
+[training]
+total_steps = 10
+ema_decay = 0.99
+""",
+            encoding="utf-8",
+        )
+        with pytest.raises(ValueError, match="Unknown key 'training.ema_decay'"):
+            load_config(toml_path)
+
+    def test_rejects_non_supported_model_family(self, tmp_path: Path) -> None:
+        toml_path = tmp_path / "worldflux.toml"
+        toml_path.write_text(
+            'project_name = "bad-model"\nmodel = "jepa:base"\n',
+            encoding="utf-8",
+        )
+        with pytest.raises(ValueError, match="supported newcomer schema"):
+            load_config(toml_path)
+
+    def test_rejects_non_table_sections(self, tmp_path: Path) -> None:
+        toml_path = tmp_path / "worldflux.toml"
+        toml_path.write_text(
+            """\
+project_name = "bad-section"
+model = "tdmpc2:5m"
+training = "oops"
+""",
+            encoding="utf-8",
+        )
+        with pytest.raises(ValueError, match="Section 'training' must be a TOML table"):
+            load_config(toml_path)

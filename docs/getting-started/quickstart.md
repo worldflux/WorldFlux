@@ -168,17 +168,21 @@ print(config.num_samples)  # 512
 ```python
 from worldflux import list_models
 
-# Simple list of preset identifiers
+# Simple list of supported MVP preset identifiers
 print(list_models())
 # ['dreamer:ci', 'dreamerv3:size12m', 'dreamerv3:size25m', ...]
 
-# Detailed catalog with descriptions and parameter counts
+# Supported MVP catalog with descriptions and parameter counts
 catalog = list_models(verbose=True)
 for name, info in catalog.items():
     print(f"{name:25s} {info['params']:>8s}  {info['description']}")
 
-# Filter by maturity level
-experimental = list_models(maturity="experimental")
+# Include advanced proof-oriented presets explicitly
+public_catalog = list_models(verbose=True, surface="public")
+print("Advanced available:", "dreamerv3:official_xl" in public_catalog)
+
+# Filter experimental families explicitly
+experimental = list_models(maturity="experimental", surface="all")
 print(experimental)
 # ['jepa:base', 'vjepa2:ci', 'vjepa2:tiny', 'vjepa2:base', ...]
 ```

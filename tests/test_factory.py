@@ -27,16 +27,16 @@ class TestListModels:
     """Tests for list_models function."""
 
     def test_list_models_simple(self):
-        """list_models returns public supported lanes by default."""
+        """list_models returns supported MVP lanes by default."""
         models = list_models()
         assert isinstance(models, list)
         assert "dreamer:ci" in models
         assert "dreamerv3:size12m" in models
-        assert "dreamerv3:official_xl" in models
         assert "tdmpc2:ci" in models
         assert "tdmpc2:5m" in models
-        assert "tdmpc2:proof_5m" in models
         assert "tdmpc2:5m_legacy" in models
+        assert "dreamerv3:official_xl" not in models
+        assert "tdmpc2:proof_5m" not in models
         assert "jepa:base" not in models
         assert "vjepa2:base" not in models
         assert "token:base" not in models
@@ -45,6 +45,20 @@ class TestListModels:
         assert "dit:base" not in models
         assert "ssm:base" not in models
 
+    def test_list_models_public_surface_includes_advanced(self):
+        models = list_models(surface="public")
+        assert "dreamerv3:size12m" in models
+        assert "dreamerv3:official_xl" in models
+        assert "tdmpc2:proof_5m" in models
+        assert "jepa:base" not in models
+
+    def test_list_models_all_surface_includes_experimental_and_internal(self):
+        models = list_models(surface="all")
+        assert "dreamerv3:official_xl" in models
+        assert "jepa:base" in models
+        assert "vjepa2:base" in models
+        assert "dit:base" in models
+
     def test_list_models_verbose(self):
         """list_models with verbose returns detailed info."""
         models = list_models(verbose=True)
@@ -52,12 +66,13 @@ class TestListModels:
         assert "dreamerv3:size12m" in models
         assert "description" in models["dreamerv3:size12m"]
         assert "params" in models["dreamerv3:size12m"]
+        assert "dreamerv3:official_xl" not in models
 
     def test_list_models_with_maturity_filter(self):
-        ref_models = list_models(maturity="reference")
-        ref_family_models = list_models(maturity="reference-family")
-        exp_models = list_models(maturity="experimental")
-        skeleton_models = list_models(maturity="skeleton")
+        ref_models = list_models(maturity="reference", surface="all")
+        ref_family_models = list_models(maturity="reference-family", surface="all")
+        exp_models = list_models(maturity="experimental", surface="all")
+        skeleton_models = list_models(maturity="skeleton", surface="all")
         assert "dreamerv3:size12m" in ref_models
         assert ref_family_models == ref_models
         assert "jepa:base" in exp_models
@@ -71,7 +86,7 @@ class TestListModels:
         assert "ssm:base" not in exp_models
 
     def test_list_models_verbose_includes_support_tier(self):
-        catalog = list_models(verbose=True)
+        catalog = list_models(verbose=True, surface="public")
         assert catalog["dreamerv3:size12m"]["support_tier"] == "supported"
         assert catalog["dreamerv3:official_xl"]["support_tier"] == "advanced"
         assert catalog["tdmpc2:proof_5m"]["support_tier"] == "advanced"
