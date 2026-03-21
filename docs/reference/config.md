@@ -107,7 +107,13 @@ Useful fields beyond the basic loop:
 - `gradient_accumulation_steps`
 - `optimizer`
 - `scheduler`
-- `ema_decay` (placeholder today; do not put it in `worldflux.toml`)
+
+### Advanced/Internal training knobs
+
+These knobs exist in the broader training surface, but they are not part of the
+supported MVP path:
+
+`ema_decay` and `model_overrides`.
 
 ## Scaffolded `worldflux.toml`
 

@@ -141,3 +141,9 @@ def test_training_reference_isolates_unsupported_placeholders() -> None:
     assert "Advanced/Internal placeholders" in training_ref
     assert "| `ema_decay` |" not in training_ref
     assert "| `model_overrides` |" not in training_ref
+
+
+def test_config_reference_moves_unsupported_training_knobs_out_of_main_flow() -> None:
+    config_ref = _read("docs/reference/config.md")
+    assert "- `ema_decay`" not in config_ref
+    assert "Advanced/Internal training knobs" in config_ref
