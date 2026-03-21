@@ -63,9 +63,18 @@ def test_execution_mode_writes_aggregated_json(tmp_path: Path, monkeypatch) -> N
     )
 
     def _fake_run_campaign(
-        *, analysis, task_id, env_backend, device, model_profile, run_root, progress_callback=None
+        *,
+        analysis,
+        lane,
+        task_id,
+        env_backend,
+        device,
+        model_profile,
+        run_root,
+        progress_callback=None,
     ):
         assert analysis.total_steps == 12
+        assert lane == "smoke"
         assert task_id == "atari100k_pong"
         assert env_backend == "stub"
         assert model_profile == "wf12m"
@@ -98,6 +107,99 @@ def test_execution_mode_writes_aggregated_json(tmp_path: Path, monkeypatch) -> N
     assert payload["task_id"] == "atari100k_pong"
     assert payload["env_backend"] == "stub"
     assert payload["model_profile"] == "wf12m"
+
+
+def test_publish_mode_rejects_stub_backend(tmp_path: Path) -> None:
+    mod = _load_module()
+    exit_code = mod.main(
+        [
+            "--lane",
+            "publish",
+            "--env-backend",
+            "stub",
+            "--seeds",
+            "0,1,2",
+            "--steps",
+            "200",
+            "--model-profile",
+            "wf12m",
+            "--output",
+            str(tmp_path / "out.json"),
+        ]
+    )
+    assert exit_code == 2
+
+
+def test_publish_mode_rejects_ci_profile(tmp_path: Path) -> None:
+    mod = _load_module()
+    exit_code = mod.main(
+        [
+            "--lane",
+            "publish",
+            "--env-backend",
+            "gymnasium",
+            "--seeds",
+            "0,1,2",
+            "--steps",
+            "200",
+            "--model-profile",
+            "ci",
+            "--output",
+            str(tmp_path / "out.json"),
+        ]
+    )
+    assert exit_code == 2
+
+
+def test_publish_mode_rejects_degenerate_report(tmp_path: Path, monkeypatch) -> None:
+    mod = _load_module()
+    output = tmp_path / "dreamerv3_sensitivity.json"
+
+    degenerate_report = SensitivityReport(
+        family="dreamerv3",
+        environment="atari100k_pong",
+        seeds=[0, 1, 2],
+        total_steps=200,
+        task_id="atari100k_pong",
+        env_backend="gymnasium",
+        model_profile="wf12m",
+        parameters=[
+            ParameterSensitivity(
+                name="learning_rate",
+                default_value=1e-4,
+                values=[3e-5, 1e-4],
+                mean_rewards=[0.0, 0.0],
+                std_rewards=[0.0, 0.0],
+                sensitivity_score=0.0,
+                default_rank_percentile=100.0,
+            )
+        ],
+        generated_at_utc="2026-03-21T00:00:00Z",
+    )
+
+    monkeypatch.setattr(mod, "run_sensitivity_campaign", lambda **kwargs: degenerate_report)
+
+    exit_code = mod.main(
+        [
+            "--lane",
+            "publish",
+            "--task-id",
+            "atari100k_pong",
+            "--env-backend",
+            "gymnasium",
+            "--seeds",
+            "0,1,2",
+            "--steps",
+            "200",
+            "--model-profile",
+            "wf12m",
+            "--output",
+            str(output),
+        ]
+    )
+
+    assert exit_code == 2
+    assert not output.exists()
 
 
 def test_report_from_renders_markdown_with_optional_metadata(tmp_path: Path) -> None:

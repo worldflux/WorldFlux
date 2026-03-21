@@ -356,6 +356,11 @@ class SensitivityAnalysis:
 
 def render_sensitivity_markdown(report: SensitivityReport) -> str:
     """Render a sensitivity report as Markdown."""
+    publish_model_profile = (
+        report.model_profile if report.model_profile not in {"", "ci"} else "wf12m"
+    )
+    publish_steps = max(int(report.total_steps), 48)
+    publish_seeds = ",".join(str(seed) for seed in report.seeds) or "0"
     lines = [
         "# Hyperparameter Sensitivity Analysis",
         "",
@@ -404,12 +409,24 @@ def render_sensitivity_markdown(report: SensitivityReport) -> str:
             "",
             "# smoke / deterministic CI-sized execution",
             "python scripts/run_sensitivity.py \\",
+            "    --lane smoke \\",
             f"    --task-id {report.task_id or report.environment} \\",
-            f"    --env-backend {report.env_backend or 'stub'} \\",
-            f"    --model-profile {report.model_profile or 'wf12m'} \\",
-            f"    --seeds {','.join(str(seed) for seed in report.seeds) or '0'} \\",
-            f"    --steps {report.total_steps} \\",
-            "    --output reports/parity/sensitivity/dreamerv3_sensitivity.json",
+            "    --env-backend stub \\",
+            "    --model-profile wf12m \\",
+            "    --seeds 0 \\",
+            "    --steps 12 \\",
+            "    --output outputs/sensitivity/dreamerv3_sensitivity_smoke.json",
+            "",
+            "# publish / tracked evidence update",
+            "python scripts/run_sensitivity.py \\",
+            "    --lane publish \\",
+            f"    --task-id {report.task_id or report.environment} \\",
+            f"    --env-backend {report.env_backend or 'gymnasium'} \\",
+            f"    --model-profile {publish_model_profile} \\",
+            f"    --seeds {publish_seeds} \\",
+            f"    --steps {publish_steps} \\",
+            "    --output reports/parity/sensitivity/dreamerv3_sensitivity.json \\",
+            "    --output-md docs/reference/hyperparameter-sensitivity.md",
             "",
             "# render markdown from existing results",
             "python scripts/run_sensitivity.py \\",

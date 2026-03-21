@@ -79,12 +79,24 @@ python scripts/run_sensitivity.py --dry-run
 
 # smoke / deterministic CI-sized execution
 python scripts/run_sensitivity.py \
+    --lane smoke \
     --task-id atari100k_pong \
-    --env-backend gymnasium \
-    --model-profile ci \
+    --env-backend stub \
+    --model-profile wf12m \
     --seeds 0 \
     --steps 12 \
-    --output reports/parity/sensitivity/dreamerv3_sensitivity.json
+    --output outputs/sensitivity/dreamerv3_sensitivity_smoke.json
+
+# publish / tracked evidence update
+python scripts/run_sensitivity.py \
+    --lane publish \
+    --task-id atari100k_pong \
+    --env-backend gymnasium \
+    --model-profile wf12m \
+    --seeds 0 \
+    --steps 48 \
+    --output reports/parity/sensitivity/dreamerv3_sensitivity.json \
+    --output-md docs/reference/hyperparameter-sensitivity.md
 
 # render markdown from existing results
 python scripts/run_sensitivity.py \

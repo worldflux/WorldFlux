@@ -83,6 +83,7 @@ def _slug_value(value: float) -> str:
 def build_runner_launch(
     run_config: dict[str, Any],
     *,
+    lane: str,
     task_id: str,
     env_backend: str,
     device: str,
@@ -101,6 +102,8 @@ def build_runner_launch(
 
     run_dir = run_root / param_name / f"value_{_slug_value(param_value)}" / f"seed_{seed}"
     metrics_out = run_dir / "metrics.json"
+    smoke_mode = str(lane).strip().lower() == "smoke"
+
     command = [
         python_executable or sys.executable,
         str(_wrapper_path()),
@@ -113,27 +116,27 @@ def build_runner_launch(
         "--steps",
         str(steps),
         "--eval-interval",
-        str(max(1, steps)),
+        str(max(1, steps) if smoke_mode else max(24, steps // 2)),
         "--eval-episodes",
-        "1",
+        "1" if smoke_mode else "3",
         "--eval-window",
-        "1",
+        "1" if smoke_mode else "3",
         "--env-backend",
         env_backend,
         "--device",
         device,
         "--buffer-capacity",
-        "64",
+        "64" if smoke_mode else "256",
         "--warmup-steps",
-        "1",
+        "1" if smoke_mode else "8",
         "--train-steps-per-eval",
         "1",
         "--sequence-length",
-        "2",
+        "2" if smoke_mode else "4",
         "--batch-size",
-        "2",
+        "2" if smoke_mode else "4",
         "--max-episode-steps",
-        "4",
+        "4" if smoke_mode else "512",
         "--dreamer-train-ratio",
         "1",
         "--dreamer-replay-ratio",
@@ -176,6 +179,7 @@ def load_runner_metrics(metrics_path: Path) -> dict[str, Any]:
 def run_sweep_config(
     run_config: dict[str, Any],
     *,
+    lane: str,
     task_id: str,
     env_backend: str,
     device: str,
@@ -186,6 +190,7 @@ def run_sweep_config(
     """Execute a single sweep configuration and return its aggregate result."""
     launch = build_runner_launch(
         run_config,
+        lane=lane,
         task_id=task_id,
         env_backend=env_backend,
         device=device,
@@ -226,6 +231,7 @@ def _validate_results(results: list[SweepResult], expected_total: int) -> None:
 def run_sensitivity_campaign(
     *,
     analysis: SensitivityAnalysis,
+    lane: str,
     task_id: str,
     env_backend: str,
     device: str,
@@ -244,6 +250,7 @@ def run_sensitivity_campaign(
         results.append(
             run_sweep_config(
                 config,
+                lane=lane,
                 task_id=task_id,
                 env_backend=env_backend,
                 device=device,

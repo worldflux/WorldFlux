@@ -47,6 +47,13 @@ from worldflux.parity.sensitivity_runner import (  # noqa: E402
     run_sensitivity_campaign,
 )
 
+SMOKE_LANE = "smoke"
+PUBLISH_LANE = "publish"
+DEFAULT_TRACKED_REPORT = Path("reports/parity/sensitivity/dreamerv3_sensitivity.json")
+DEFAULT_TRACKED_DOC = Path("docs/reference/hyperparameter-sensitivity.md")
+MIN_PUBLISH_STEPS = 48
+MIN_PUBLISH_SEEDS = 1
+
 
 def _parse_seeds(raw: str | None) -> list[int]:
     if raw is None:
@@ -54,8 +61,55 @@ def _parse_seeds(raw: str | None) -> list[int]:
     return sorted({int(s.strip()) for s in raw.split(",") if s.strip()})
 
 
+def _report_is_degenerate(report: SensitivityReport) -> bool:
+    values: list[float] = []
+    for param in report.parameters:
+        values.extend(float(value) for value in param.mean_rewards)
+    if not values:
+        return True
+    first = values[0]
+    return all(abs(value - first) <= 1e-12 for value in values)
+
+
+def _validate_lane_policy(
+    *,
+    lane: str,
+    task_id: str,
+    env_backend: str,
+    model_profile: str,
+    seeds: list[int],
+    steps: int,
+    output: Path,
+    output_md: Path | None,
+) -> str | None:
+    if lane == SMOKE_LANE:
+        if output == DEFAULT_TRACKED_REPORT:
+            return "tracked sensitivity JSON is reserved for publish lane."
+        if output_md == DEFAULT_TRACKED_DOC:
+            return "tracked sensitivity Markdown is reserved for publish lane."
+        return None
+
+    if env_backend == "stub":
+        return "publish lane requires a real environment backend."
+    if model_profile == "ci":
+        return "publish lane does not allow model_profile='ci'."
+    if len(seeds) < MIN_PUBLISH_SEEDS:
+        return f"publish lane requires at least {MIN_PUBLISH_SEEDS} seed."
+    if steps < MIN_PUBLISH_STEPS:
+        return f"publish lane requires at least {MIN_PUBLISH_STEPS} steps."
+    if task_id != DEFAULT_TASK_ID:
+        return f"publish lane requires task_id='{DEFAULT_TASK_ID}'."
+    return None
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--lane",
+        default=SMOKE_LANE,
+        choices=[SMOKE_LANE, PUBLISH_LANE],
+        help="Execution lane: smoke or publish.",
+    )
     parser.add_argument(
         "--task-id",
         default=DEFAULT_TASK_ID,
@@ -101,7 +155,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("reports/parity/sensitivity/dreamerv3_sensitivity.json"),
+        default=Path("outputs/sensitivity/dreamerv3_sensitivity.json"),
         help="Path for aggregated JSON output.",
     )
     parser.add_argument(
@@ -148,6 +202,20 @@ def main(argv: list[str] | None = None) -> int:
             print(md)
         return 0
 
+    lane_policy_error = _validate_lane_policy(
+        lane=str(args.lane),
+        task_id=task_id,
+        env_backend=str(args.env_backend),
+        model_profile=str(args.model_profile),
+        seeds=seeds,
+        steps=int(args.steps),
+        output=args.output,
+        output_md=args.output_md,
+    )
+    if lane_policy_error is not None:
+        print(f"[sensitivity] {lane_policy_error}", file=sys.stderr)
+        return 2
+
     analysis = SensitivityAnalysis(
         sweeps=DREAMERV3_SWEEPS,
         family=args.family,
@@ -164,6 +232,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"[sensitivity] Task: {task_id}")
     print(f"[sensitivity] Backend: {args.env_backend}")
     print(f"[sensitivity] Model profile: {args.model_profile}")
+    print(f"[sensitivity] Lane: {args.lane}")
 
     if args.dry_run:
         print("\n[dry-run] Configurations:")
@@ -180,6 +249,7 @@ def main(argv: list[str] | None = None) -> int:
 
     report = run_sensitivity_campaign(
         analysis=analysis,
+        lane=str(args.lane),
         task_id=task_id,
         env_backend=str(args.env_backend),
         device=str(args.device),
@@ -187,6 +257,12 @@ def main(argv: list[str] | None = None) -> int:
         run_root=args.run_root,
         progress_callback=_progress,
     )
+    if str(args.lane) == PUBLISH_LANE and _report_is_degenerate(report):
+        print(
+            "[sensitivity] publish lane produced a degenerate report; refusing to overwrite tracked artifacts.",
+            file=sys.stderr,
+        )
+        return 2
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(
