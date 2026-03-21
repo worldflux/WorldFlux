@@ -1,18 +1,20 @@
 #!/usr/bin/env python3
 """Launch hyperparameter sensitivity analysis for DreamerV3.
 
-Generates one-at-a-time sweep configurations and (optionally) executes them
-on a fast environment. Produces a JSON report and Markdown summary.
+Generates one-at-a-time sweep configurations and can execute them through the
+Dreamer native runner. Produces a JSON report and Markdown summary.
 
 Usage:
     # List all configurations without running
     python scripts/run_sensitivity.py --dry-run
 
-    # Full execution (requires environment + GPU)
+    # Execute a stub-backed campaign
     python scripts/run_sensitivity.py \
-        --environment CartPole-v1 \
-        --seeds 0,1,2 \
-        --steps 100000 \
+        --task-id atari100k_pong \
+        --env-backend stub \
+        --model-profile wf12m \
+        --seeds 0 \
+        --steps 12 \
         --output reports/parity/sensitivity/dreamerv3_sensitivity.json
 
     # Generate Markdown report from existing JSON
@@ -31,6 +33,20 @@ from pathlib import Path
 project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root / "src"))
 
+from worldflux.parity.sensitivity import (  # noqa: E402
+    DREAMERV3_SWEEPS,
+    SensitivityAnalysis,
+    SensitivityReport,
+    render_sensitivity_markdown,
+)
+from worldflux.parity.sensitivity_runner import (  # noqa: E402
+    DEFAULT_ENV_BACKEND,
+    DEFAULT_MODEL_PROFILE,
+    DEFAULT_RUN_ROOT,
+    DEFAULT_TASK_ID,
+    run_sensitivity_campaign,
+)
+
 
 def _parse_seeds(raw: str | None) -> list[int]:
     if raw is None:
@@ -38,12 +54,33 @@ def _parse_seeds(raw: str | None) -> list[int]:
     return sorted({int(s.strip()) for s in raw.split(",") if s.strip()})
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
+        "--task-id",
+        default=DEFAULT_TASK_ID,
+        help="Canonical Dreamer task id (default: atari100k_pong).",
+    )
+    parser.add_argument(
         "--environment",
-        default="CartPole-v1",
-        help="Environment to evaluate (default: CartPole-v1).",
+        default=None,
+        help="Deprecated alias for --task-id.",
+    )
+    parser.add_argument(
+        "--env-backend",
+        default=DEFAULT_ENV_BACKEND,
+        choices=["stub", "gymnasium"],
+        help="Environment backend for the Dreamer native runner.",
+    )
+    parser.add_argument(
+        "--device",
+        default="cpu",
+        help="Execution device for the Dreamer native runner.",
+    )
+    parser.add_argument(
+        "--model-profile",
+        default=DEFAULT_MODEL_PROFILE,
+        help="Dreamer native model profile (default: wf12m).",
     )
     parser.add_argument(
         "--seeds",
@@ -64,8 +101,8 @@ def main() -> int:
     parser.add_argument(
         "--output",
         type=Path,
-        default=None,
-        help="Path for JSON output.",
+        default=Path("reports/parity/sensitivity/dreamerv3_sensitivity.json"),
+        help="Path for aggregated JSON output.",
     )
     parser.add_argument(
         "--output-md",
@@ -84,44 +121,24 @@ def main() -> int:
         default=None,
         help="Generate report from existing JSON results instead of running.",
     )
-
-    args = parser.parse_args()
-
-    from worldflux.parity.sensitivity import (
-        DREAMERV3_SWEEPS,
-        SensitivityAnalysis,
-        SensitivityReport,
-        render_sensitivity_markdown,
+    parser.add_argument(
+        "--run-root",
+        type=Path,
+        default=DEFAULT_RUN_ROOT,
+        help="Root directory for per-run artifacts.",
     )
+
+    args = parser.parse_args(argv)
+    task_id = str(args.environment).strip() or str(args.task_id).strip()
+    if str(args.task_id).strip():
+        task_id = str(args.task_id).strip()
 
     seeds = _parse_seeds(args.seeds)
 
     # Report-from mode: just render existing results
     if args.report_from is not None:
         raw = json.loads(args.report_from.read_text(encoding="utf-8"))
-        from worldflux.parity.sensitivity import ParameterSensitivity
-
-        params = []
-        for p in raw.get("parameters", []):
-            params.append(
-                ParameterSensitivity(
-                    name=p["name"],
-                    default_value=p["default_value"],
-                    values=p["values"],
-                    mean_rewards=p["mean_rewards"],
-                    std_rewards=p["std_rewards"],
-                    sensitivity_score=p["sensitivity_score"],
-                    default_rank_percentile=p["default_rank_percentile"],
-                )
-            )
-        report = SensitivityReport(
-            family=raw.get("family", "dreamerv3"),
-            environment=raw.get("environment", "unknown"),
-            seeds=raw.get("seeds", []),
-            total_steps=raw.get("total_steps", 0),
-            parameters=params,
-            generated_at_utc=raw.get("generated_at_utc", ""),
-        )
+        report = SensitivityReport.from_json_payload(raw)
         md = render_sensitivity_markdown(report)
         if args.output_md:
             args.output_md.parent.mkdir(parents=True, exist_ok=True)
@@ -134,7 +151,7 @@ def main() -> int:
     analysis = SensitivityAnalysis(
         sweeps=DREAMERV3_SWEEPS,
         family=args.family,
-        environment=args.environment,
+        environment=task_id,
         seeds=seeds,
         total_steps=args.steps,
     )
@@ -144,6 +161,9 @@ def main() -> int:
     print(f"[sensitivity] Parameters: {[s.name for s in analysis.sweeps]}")
     print(f"[sensitivity] Seeds: {seeds}")
     print(f"[sensitivity] Steps: {args.steps}")
+    print(f"[sensitivity] Task: {task_id}")
+    print(f"[sensitivity] Backend: {args.env_backend}")
+    print(f"[sensitivity] Model profile: {args.model_profile}")
 
     if args.dry_run:
         print("\n[dry-run] Configurations:")
@@ -152,31 +172,33 @@ def main() -> int:
         print(f"\n[dry-run] Would run {len(configs)} experiments. Exiting.")
         return 0
 
-    # Actual execution would happen here. For now, we just generate the
-    # infrastructure. Real runs require environment + model setup.
-    print(
-        "[sensitivity] Actual execution not available in this script. "
-        "Use the generated configs with your training pipeline."
-    )
-    print("[sensitivity] Exporting run configs for external execution...")
-
-    if args.output:
-        # Export the configs as a launch manifest
-        manifest = {
-            "schema_version": "worldflux.sensitivity.manifest.v1",
-            "family": args.family,
-            "environment": args.environment,
-            "seeds": seeds,
-            "total_steps": args.steps,
-            "total_runs": len(configs),
-            "configs": configs,
-        }
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(
-            json.dumps(manifest, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
+    def _progress(index: int, total: int, config: dict[str, object]) -> None:
+        print(
+            "[sensitivity] "
+            f"[{index}/{total}] {config['param_name']}={config['param_value']} seed={config['seed']}"
         )
-        print(f"[sensitivity] Manifest written to {args.output}")
+
+    report = run_sensitivity_campaign(
+        analysis=analysis,
+        task_id=task_id,
+        env_backend=str(args.env_backend),
+        device=str(args.device),
+        model_profile=str(args.model_profile),
+        run_root=args.run_root,
+        progress_callback=_progress,
+    )
+
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(
+        json.dumps(report.to_json_payload(), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    print(f"[sensitivity] Aggregated report written to {args.output}")
+
+    if args.output_md is not None:
+        args.output_md.parent.mkdir(parents=True, exist_ok=True)
+        args.output_md.write_text(render_sensitivity_markdown(report), encoding="utf-8")
+        print(f"[sensitivity] Markdown written to {args.output_md}")
 
     return 0
 
