@@ -175,6 +175,19 @@ artifacts, and per-family `quick_verify.json` outputs.
 Treat this as a contract demonstration only. It is not a benchmark, paper
 reproduction, or public proof claim.
 
+### Supported Surface
+
+WorldFlux now treats the public default path as an evidence-first surface:
+
+- `supported`: DreamerV3 / TD-MPC2 local native training and evaluation
+- `advanced`: canonical proof-oriented presets such as `dreamerv3:official_xl`
+  and `tdmpc2:proof_5m`
+- `experimental` / `internal`: non-default families kept for research or plugin work
+
+By default, `worldflux models list` shows only `supported` and `advanced`
+surfaces. Use maturity filters when you intentionally want experimental or
+skeleton families.
+
 For the first scaffolded end-to-end walkthrough after that smoke test, use
 [`Train Your First Model`](docs/tutorials/train-first-model.md).
 The supported newcomer path is:
@@ -290,11 +303,17 @@ Reference-family TD-MPC2 profiles expose the same tier vocabulary:
 - `tdmpc2:proof_5m` -> `proof`
 - `tdmpc2:5m_legacy` -> `compatibility`
 
-This table lists commonly used presets. For the full catalog (including CI, experimental, and
-skeleton families), run:
+This table lists commonly used presets. For the public default catalog, run:
 
 ```bash
 worldflux models list --verbose
+```
+
+To inspect experimental families explicitly:
+
+```bash
+worldflux models list --maturity experimental --format json
+worldflux models list --maturity skeleton --format json
 ```
 
 ## API Reference
@@ -337,6 +356,8 @@ See the `examples/` directory:
 
 - `quickstart_cpu_success.py` - Official CPU-first smoke path using a random replay buffer
 - `compare_unified_training.py` - Official unified comparison demo with the same quick verification flow for DreamerV3 and TD-MPC2
+- `collect_mujoco.py` - MuJoCo dataset collection with dataset manifest support and policy-checkpoint collector path
+- `benchmarks/evidence_tdmpc2_halfcheetah.py` - Evidence-oriented TD-MPC2 benchmark that emits curves, returns, checkpoints, and report artifacts
 - `worldflux_quickstart.ipynb` - Interactive Colab notebook
 - `train_dreamer.py` - Training example
 - `train_tdmpc2.py` - Training example

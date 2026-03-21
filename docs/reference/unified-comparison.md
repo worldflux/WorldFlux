@@ -37,5 +37,6 @@ you intentionally want a faster local smoke without verification artifacts.
 ## Interpretation
 
 This demo proves that both families can be created, trained, rolled out, and
-checked through the same public workflow shape. It does not establish benchmark
+checked through the same public workflow shape. It remains a smoke-only contract
+demonstration and does not establish real-environment performance, benchmark
 superiority, paper reproduction, or a public proof claim.
