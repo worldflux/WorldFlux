@@ -71,9 +71,33 @@ Expected minimum result:
 - finite losses
 - imagination artifact generated
 
-## Evidence Lane
+## Evidence Lanes
 
-The first real benchmark lane is TD-MPC2 on HalfCheetah.
+The two canonical evidence lanes in the current MVP are:
+
+- DreamerV3 on `ALE/Breakout-v5`
+- TD-MPC2 on `HalfCheetah-v5`
+
+These are reproducible evidence bundles, not SOTA claims or proof claims.
+
+### Evidence Lane 1: DreamerV3 Breakout
+
+```bash
+uv run python benchmarks/evidence_dreamerv3_breakout.py \
+  --quick \
+  --output-dir outputs/benchmarks/dreamerv3-breakout-evidence
+```
+
+Artifacts:
+
+- `summary.json`
+- `returns.jsonl`
+- `learning_curve.csv`
+- `checkpoint_index.json`
+- `report.md`
+- dataset manifest + replay buffer bundle
+
+### Evidence Lane 2: TD-MPC2 HalfCheetah
 
 ```bash
 uv run python benchmarks/evidence_tdmpc2_halfcheetah.py \
@@ -100,7 +124,7 @@ Evidence lane artifacts:
 - `report.md`
 - dataset manifest + replay buffer bundle
 
-This lane is intended to produce reproducible evidence bundles, not SOTA or
+These lanes are intended to produce reproducible evidence bundles, not SOTA or
 paper-parity claims.
 
 ## Reproducibility Notes

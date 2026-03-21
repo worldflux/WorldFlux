@@ -373,6 +373,7 @@ See the `examples/` directory:
 
 - `quickstart_cpu_success.py` - Official CPU-first smoke path using a random replay buffer
 - `compare_unified_training.py` - Official unified comparison demo with the same quick verification flow for DreamerV3 and TD-MPC2
+- `benchmarks/evidence_dreamerv3_breakout.py` - Evidence-oriented DreamerV3 Breakout bundle with returns, checkpoints, manifests, and report artifacts
 - `collect_mujoco.py` - MuJoCo dataset collection with dataset manifest support and policy-checkpoint collector path
 - `benchmarks/evidence_tdmpc2_halfcheetah.py` - Evidence-oriented TD-MPC2 benchmark that emits curves, returns, checkpoints, and report artifacts
 - `worldflux_quickstart.ipynb` - Interactive Colab notebook
