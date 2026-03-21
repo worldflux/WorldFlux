@@ -160,6 +160,21 @@ This official smoke path uses a random replay buffer and a CI-sized model to
 validate installation and core contracts on CPU. It is not a benchmark or a
 real-environment reproduction path.
 
+### Unified Comparison Demo (Official)
+
+```bash
+uv sync --extra dev --extra training
+uv run python examples/compare_unified_training.py --quick
+```
+
+This repository-level public demo shows DreamerV3 and TD-MPC2 running through
+the same unified API, the same training contract, and the same quick
+verification flow. It emits a shared `summary.json`, per-family imagination
+artifacts, and per-family `quick_verify.json` outputs.
+
+Treat this as a contract demonstration only. It is not a benchmark, paper
+reproduction, or public proof claim.
+
 For the first scaffolded end-to-end walkthrough after that smoke test, use
 [`Train Your First Model`](docs/tutorials/train-first-model.md).
 The supported newcomer path is:
@@ -321,7 +336,7 @@ from worldflux.training.callbacks import (
 See the `examples/` directory:
 
 - `quickstart_cpu_success.py` - Official CPU-first smoke path using a random replay buffer
-- `compare_unified_training.py` - Shared-contract smoke comparison for DreamerV3 and TD-MPC2
+- `compare_unified_training.py` - Official unified comparison demo with the same quick verification flow for DreamerV3 and TD-MPC2
 - `worldflux_quickstart.ipynb` - Interactive Colab notebook
 - `train_dreamer.py` - Training example
 - `train_tdmpc2.py` - Training example

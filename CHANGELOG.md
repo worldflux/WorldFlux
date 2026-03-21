@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Official unified comparison demo now emits per-family quick verification artifacts for DreamerV3 and TD-MPC2
+
+### Changed
+- Public onboarding copy now aligns GitHub, docs, and next-release PyPI messaging around the canonical unified comparison demo
+
 ## [0.1.1] - 2026-03-20
 
 ### Added

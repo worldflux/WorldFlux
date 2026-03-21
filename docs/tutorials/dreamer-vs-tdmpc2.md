@@ -39,12 +39,13 @@ uv run python examples/compare_unified_training.py --quick
 ```
 
 This command is the fastest machine-checkable way to compare both families on a
-shared contract-level training path.
+shared contract-level training path with the same quick verification flow.
 
 What this proves:
 
 - both model families can be created from the same unified API
 - both families can run a short smoke training/evaluation loop
+- both families can emit the same quick verification artifact shape
 - the comparison stays local and synthetic; it is not a benchmark or a proof claim
 
 ## 3. Choose the right scaffold path

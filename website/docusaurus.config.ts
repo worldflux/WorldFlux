@@ -75,6 +75,11 @@ const config: Config = {
           label: 'GitHub',
           position: 'right',
         },
+        {
+          href: 'https://huggingface.co/spaces/WorldFlux/demo',
+          label: 'Demo',
+          position: 'right',
+        },
       ],
     },
     footer: {
@@ -93,6 +98,9 @@ const config: Config = {
           items: [
             {label: 'GitHub', href: 'https://github.com/worldflux/WorldFlux'},
             {label: 'Issues', href: 'https://github.com/worldflux/WorldFlux/issues'},
+            {label: 'Discord', href: 'https://discord.gg/ZUBn9UEp2z'},
+            {label: 'Hugging Face Demo', href: 'https://huggingface.co/spaces/WorldFlux/demo'},
+            {label: 'Colab Notebook', href: 'https://colab.research.google.com/github/worldflux/WorldFlux/blob/main/examples/worldflux_quickstart.ipynb'},
           ],
         },
       ],

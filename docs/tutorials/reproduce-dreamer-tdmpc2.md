@@ -33,7 +33,8 @@ uv run python examples/compare_unified_training.py --quick
 ```
 
 This is the supported repository-level reproduction step for comparing
-DreamerV3 and TD-MPC2 under the same synthetic smoke conditions.
+DreamerV3 and TD-MPC2 under the same synthetic smoke conditions and the same
+quick verification flow.
 
 ## 3. Reproduce the newcomer project flow
 

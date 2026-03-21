@@ -9,6 +9,8 @@
 *One API. Multiple Architectures. Clear Contracts.*
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/worldflux/WorldFlux/blob/main/examples/worldflux_quickstart.ipynb)
+[![Hugging Face Spaces](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Spaces-blue)](https://huggingface.co/spaces/WorldFlux/demo)
+[![Discord](https://img.shields.io/badge/Discord-Join%20Community-7289da?logo=discord&logoColor=white)](https://discord.gg/ZUBn9UEp2z)
 [![GitHub](https://img.shields.io/badge/GitHub-worldflux-blue?logo=github)](https://github.com/worldflux/WorldFlux)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
@@ -34,6 +36,18 @@ Official CPU-success docs: [CPU Success Path](getting-started/cpu-success.md)
 
 This landing page highlights the public onboarding surface. Start with the CPU
 smoke path before treating any workflow as a benchmark or proof claim.
+
+### Unified Comparison Demo
+
+```bash
+uv sync --extra dev --extra training
+uv run python examples/compare_unified_training.py --quick
+```
+
+This canonical public demo shows DreamerV3 and TD-MPC2 under the same unified
+API, the same `TrainingConfig` contract, and the same quick verification flow.
+It writes `summary.json`, per-family imagination artifacts, and per-family
+`quick_verify.json` outputs.
 
 ### API Glimpse
 

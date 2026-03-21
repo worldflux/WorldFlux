@@ -33,6 +33,8 @@ You can override behavior with:
 
 MVP support note:
 
+- Windows bootstrap support exists in implementation.
+- It is not yet part of the current newcomer E2E guarantee for every public workflow.
 - The public newcomer end-to-end smoke path is currently exercised in CI on Linux, macOS, and Windows.
 
 ## From Source (Recommended)

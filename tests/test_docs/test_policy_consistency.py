@@ -108,6 +108,7 @@ def test_public_surfaces_use_conservative_claim_language():
     index = _read("docs/index.md")
     cpu = _read("docs/getting-started/cpu-success.md")
     comparison = _read("docs/reference/unified-comparison.md")
+    comparison_tutorial = _read("docs/tutorials/dreamer-vs-tdmpc2.md")
     parity = _read("docs/reference/parity.md")
 
     assert "Infinite Imagination" not in readme
@@ -119,6 +120,9 @@ def test_public_surfaces_use_conservative_claim_language():
     assert "random replay" in cpu.lower()
     assert "smoke test" in cpu.lower()
     assert "random `ReplayBuffer` source" in comparison
+    assert "same quick verification flow" in comparison
+    assert "quick_verify.json" in comparison
     assert "contract demonstration" in comparison
+    assert "same quick verification flow" in comparison_tutorial
     assert "published evidence bundle" in parity
     assert "not a public proof claim" in parity
