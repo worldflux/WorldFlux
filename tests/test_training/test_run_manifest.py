@@ -98,3 +98,30 @@ def test_save_checkpoint_includes_schema_version(tmp_path: Path) -> None:
     trainer.save_checkpoint(str(path))
     checkpoint = torch.load(path, map_location="cpu", weights_only=False)
     assert checkpoint["checkpoint_schema_version"] == 1
+
+
+def test_train_writes_data_provenance_into_run_manifest(tmp_path: Path) -> None:
+    trainer = Trainer(
+        _MiniModel(),
+        TrainingConfig(
+            total_steps=1,
+            batch_size=2,
+            sequence_length=1,
+            output_dir=str(tmp_path),
+            device="cpu",
+            auto_quality_check=False,
+        ),
+        callbacks=[],
+    )
+    provider = _provider()
+    provider.data_provenance = {
+        "kind": "dataset_manifest",
+        "env_id": "mujoco/HalfCheetah-v5",
+        "dataset_manifest": "/tmp/halfcheetah.manifest.json",
+    }
+
+    trainer.train(provider, num_steps=1)
+
+    payload = json.loads((tmp_path / "run_manifest.json").read_text(encoding="utf-8"))
+    assert payload["data_provenance"]["kind"] == "dataset_manifest"
+    assert payload["data_provenance"]["env_id"] == "mujoco/HalfCheetah-v5"

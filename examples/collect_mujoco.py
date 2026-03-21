@@ -2,15 +2,17 @@
 """
 Collect trajectories from MuJoCo continuous control environments.
 
-This script collects data from MuJoCo environments using a random policy
-for testing TD-MPC2 world model training on continuous control tasks.
+This script collects data from MuJoCo environments and writes a dataset
+bundle with a replay buffer manifest. The preferred path is a
+policy-checkpoint collector; random/noisy collection remains available
+only as an explicit fallback.
 
 Usage:
     # Basic collection (HalfCheetah)
-    uv run python examples/collect_mujoco.py
+    uv run python examples/collect_mujoco.py --policy-checkpoint ./outputs/checkpoint_final.pt
 
     # Different environment
-    uv run python examples/collect_mujoco.py --env Hopper-v5 --episodes 100
+    uv run python examples/collect_mujoco.py --env Hopper-v5 --episodes 100 --policy-checkpoint ./outputs/checkpoint_final.pt
 
     # List available environments
     uv run python examples/collect_mujoco.py --list-envs
@@ -21,6 +23,7 @@ Requirements:
 
 import argparse
 import logging
+import shutil
 from pathlib import Path
 
 import numpy as np
@@ -73,6 +76,8 @@ def collect_mujoco_data(
     output_path: str = "mujoco_data.npz",
     max_steps_per_episode: int = 1000,
     action_noise: float = 0.1,
+    collector_policy: str = "policy_checkpoint",
+    policy_checkpoint: str | None = None,
 ) -> dict[str, np.ndarray]:
     """
     Collect trajectories from MuJoCo with random/noisy policy.
@@ -87,6 +92,42 @@ def collect_mujoco_data(
     Returns:
         Dictionary with collected data.
     """
+    if collector_policy != "policy_checkpoint" and policy_checkpoint is None:
+        logger.warning(
+            "Using %s collector without policy checkpoint. This path is for smoke data only.",
+            collector_policy,
+        )
+
+    if collector_policy == "policy_checkpoint" or policy_checkpoint is not None:
+        from worldflux.training.mujoco_collection import collect_mujoco_dataset
+
+        output_file = Path(output_path)
+        bundle_dir = output_file.parent / f"{output_file.stem}_bundle"
+        _, manifest_path, manifest = collect_mujoco_dataset(
+            env_name=env_name,
+            output_dir=bundle_dir,
+            num_episodes=num_episodes,
+            max_steps_per_episode=max_steps_per_episode,
+            collector_policy=collector_policy,
+            policy_checkpoint=policy_checkpoint,
+            action_noise=action_noise,
+            seed=42,
+        )
+        raw_dataset_path = bundle_dir / "mujoco_raw.npz"
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(raw_dataset_path, output_file)
+        logger.info("Saved raw dataset to: %s", output_file)
+        logger.info("Saved dataset manifest to: %s", manifest_path)
+        data = np.load(output_file, allow_pickle=False)
+        return {
+            "obs": data["obs"],
+            "actions": data["actions"],
+            "rewards": data["rewards"],
+            "dones": data["dones"],
+            "dataset_manifest": np.array(str(manifest_path.resolve())),
+            "collector_policy": np.array(str(manifest.get("collector_policy", collector_policy))),
+        }
+
     logger.info(f"Creating environment: {env_name}")
 
     try:
@@ -306,6 +347,19 @@ def main():
         help="Action noise std (0 for uniform random)",
     )
     parser.add_argument(
+        "--collector-policy",
+        type=str,
+        default="policy_checkpoint",
+        choices=("policy_checkpoint", "noisy", "random"),
+        help="Collection policy. policy_checkpoint is the preferred evidence path.",
+    )
+    parser.add_argument(
+        "--policy-checkpoint",
+        type=str,
+        default="",
+        help="Local TD-MPC2 checkpoint/save directory used for policy-driven collection.",
+    )
+    parser.add_argument(
         "--list-envs",
         action="store_true",
         help="List available MuJoCo environments",
@@ -322,6 +376,8 @@ def main():
         output_path=args.output,
         max_steps_per_episode=args.max_steps,
         action_noise=args.action_noise,
+        collector_policy=args.collector_policy,
+        policy_checkpoint=args.policy_checkpoint or None,
     )
 
 

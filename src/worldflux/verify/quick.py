@@ -280,7 +280,7 @@ def _load_model_from_target(target_path: Path, *, device: str) -> torch.nn.Modul
     1. Directory with ``config.json`` + ``model.pt`` (save_pretrained format)
     2. Single ``.pt`` file (Trainer checkpoint with ``model_state_dict``)
     """
-    from worldflux.factory import create_world_model
+    from worldflux.core.registry import WorldModelRegistry
 
     if target_path.is_dir():
         # save_pretrained directory layout
@@ -288,28 +288,7 @@ def _load_model_from_target(target_path: Path, *, device: str) -> torch.nn.Modul
         model_pt = target_path / "model.pt"
 
         if config_json.exists() and model_pt.exists():
-            config_data = json.loads(config_json.read_text(encoding="utf-8"))
-            model_id = str(config_data.get("model_type", "dreamer")) + ":ci"
-            obs_shape = tuple(config_data.get("obs_shape", [3, 64, 64]))
-            action_dim = int(config_data.get("action_dim", 6))
-            hidden_dim = int(config_data.get("hidden_dim", 32))
-            model_kwargs: dict[str, Any] = {}
-            if "encoder_type" in config_data:
-                model_kwargs["encoder_type"] = config_data["encoder_type"]
-            if "decoder_type" in config_data:
-                model_kwargs["decoder_type"] = config_data["decoder_type"]
-
-            model = create_world_model(
-                model=model_id,
-                obs_shape=obs_shape,
-                action_dim=action_dim,
-                hidden_dim=hidden_dim,
-                device=device,
-                **model_kwargs,
-            )
-            state_dict = torch.load(model_pt, map_location=device, weights_only=True)
-            model.load_state_dict(state_dict)
-            return model
+            return WorldModelRegistry.from_pretrained(str(target_path), device=device)
 
         # Check for trainer checkpoint in the directory
         checkpoint_candidates = [
@@ -333,9 +312,9 @@ def _load_model_from_target(target_path: Path, *, device: str) -> torch.nn.Modul
 
 def _load_from_trainer_checkpoint(checkpoint_path: Path, *, device: str) -> torch.nn.Module:
     """Load model from a Trainer-format checkpoint (``.pt`` file)."""
-    from worldflux.factory import create_world_model
-
-    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)
+    checkpoint = torch.load(  # nosec B614
+        checkpoint_path, map_location=device, weights_only=False
+    )
 
     if not isinstance(checkpoint, dict) or "model_state_dict" not in checkpoint:
         raise ValueError(
@@ -347,27 +326,64 @@ def _load_from_trainer_checkpoint(checkpoint_path: Path, *, device: str) -> torc
     if not isinstance(model_config, dict):
         model_config = {}
 
-    model_type = str(model_config.get("model_type", "dreamer"))
-    model_id = f"{model_type}:ci"
-    obs_shape = tuple(model_config.get("obs_shape", [3, 64, 64]))
-    action_dim = int(model_config.get("action_dim", 6))
-    hidden_dim = int(model_config.get("hidden_dim", 32))
-    model_kwargs: dict[str, Any] = {}
-    if "encoder_type" in model_config:
-        model_kwargs["encoder_type"] = model_config["encoder_type"]
-    if "decoder_type" in model_config:
-        model_kwargs["decoder_type"] = model_config["decoder_type"]
-
-    model = create_world_model(
-        model=model_id,
-        obs_shape=obs_shape,
-        action_dim=action_dim,
-        hidden_dim=hidden_dim,
+    model = _build_model_from_config_payload(
+        model_config,
         device=device,
-        **model_kwargs,
+        require_model_name=True,
     )
     model.load_state_dict(checkpoint["model_state_dict"])
     return model
+
+
+def _build_model_from_config_payload(
+    config_payload: dict[str, Any],
+    *,
+    device: str,
+    require_model_name: bool = False,
+) -> torch.nn.Module:
+    from worldflux.core.config import WorldModelConfig
+    from worldflux.core.registry import ConfigRegistry, WorldModelRegistry
+
+    if not isinstance(config_payload, dict):
+        raise ValueError("Saved checkpoint is missing a valid model_config dictionary.")
+
+    normalized = dict(config_payload)
+    model_type = str(normalized.get("model_type", "")).strip().lower()
+    if not model_type:
+        raise ValueError("Saved checkpoint is missing model_config.model_type.")
+
+    model_name = str(normalized.get("model_name", "")).strip()
+    if require_model_name and not model_name:
+        raise ValueError(
+            "Saved checkpoint is missing model_config.model_name required for exact restoration."
+        )
+
+    normalized["device"] = device
+
+    preset_config: Any | None = None
+    if model_name:
+        try:
+            preset_config = ConfigRegistry.from_pretrained(
+                f"{model_type}:{model_name}", device=device
+            )
+        except Exception:
+            preset_config = None
+
+    if preset_config is not None:
+        merged = preset_config.to_dict()
+        merged.update(normalized)
+        config_class = type(preset_config)
+        config = config_class.from_dict(merged)
+    else:
+        config_class = ConfigRegistry._registry.get(model_type, WorldModelConfig)
+        config = config_class.from_dict(normalized)
+
+    WorldModelRegistry.load_entrypoint_plugins()
+    WorldModelRegistry._load_builtin_models()
+    model_class = WorldModelRegistry._model_registry.get(model_type)
+    if model_class is None:
+        raise ValueError(f"Unsupported model_type in saved checkpoint: {model_type!r}")
+    return model_class(config)
 
 
 def quality_check(

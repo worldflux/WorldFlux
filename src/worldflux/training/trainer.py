@@ -167,6 +167,7 @@ class Trainer:
 
         # Optional model I/O contract for runtime validation.
         self.io_contract: ModelIOContract | None = None
+        self.data_provenance: dict[str, Any] = {}
         if self.execution_mode == "delegated":
             self._backend_handle = cast(OfficialBackendHandle, model)
             self.model = model
@@ -576,6 +577,7 @@ class Trainer:
         total_steps = (
             int(num_steps) if num_steps is not None else self.config.effective_total_steps()
         )
+        self.data_provenance = self._extract_data_provenance(data)
 
         # Resume from checkpoint if specified
         if resume_from:
@@ -688,6 +690,13 @@ class Trainer:
             "elapsed_sec": elapsed,
             "throughput_steps_per_sec": throughput,
         }
+
+    @staticmethod
+    def _extract_data_provenance(data: Any) -> dict[str, Any]:
+        provenance = getattr(data, "data_provenance", None)
+        if isinstance(provenance, dict):
+            return dict(provenance)
+        return {}
 
     def _check_for_nan_inf(self, losses: dict[str, torch.Tensor], step: int) -> None:
         """

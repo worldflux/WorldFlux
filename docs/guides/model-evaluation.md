@@ -4,7 +4,10 @@ Guide for evaluating WorldFlux model quality using the deterministic eval framew
 
 ## Overview
 
-The eval framework provides fast, reproducible metrics for assessing model quality during development and CI.
+The eval framework now has two explicit modes:
+
+- `synthetic`: fast compatibility metrics for development and CI
+- `real`: dataset-backed or env-backed evaluation for evidence collection
 
 ## Eval Suites
 
@@ -21,6 +24,13 @@ from worldflux.evals import run_eval_suite
 
 report = run_eval_suite(model, suite="quick")
 print(report.all_passed)
+```
+
+CLI examples:
+
+```bash
+worldflux eval ./outputs --suite quick --mode synthetic --format json
+worldflux eval ./outputs --suite quick --mode real --dataset-manifest ./data/halfcheetah.dataset_manifest.json --format json
 ```
 
 ## Quick Verification Tiers
@@ -42,6 +52,16 @@ from worldflux.verify.quick import quick_verify
 result = quick_verify("./outputs", env="atari/pong", tier="offline")
 print(result.stats["verification_tier"])
 ```
+
+## Real Evaluation Inputs
+
+`worldflux eval --mode real` requires one of:
+
+- `--dataset-manifest <path>`: replay-buffer backed evidence input
+- `--env-id <gymnasium-id>`: short env-backed real evaluation loop
+
+Real-mode JSON outputs include `real_provenance`. Synthetic-mode outputs include
+`synthetic_provenance`.
 
 ## Metrics Reference
 

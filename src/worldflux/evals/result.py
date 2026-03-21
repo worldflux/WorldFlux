@@ -46,16 +46,27 @@ class EvalReport:
     timestamp: float
     wall_time_sec: float
     all_passed: bool | None
+    mode: str = "synthetic"
+    provenance: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        payload = {
             "suite": self.suite,
             "model_id": self.model_id,
             "results": [r.to_dict() for r in self.results],
             "timestamp": self.timestamp,
             "wall_time_sec": self.wall_time_sec,
             "all_passed": self.all_passed,
+            "mode": self.mode,
         }
+        provenance = dict(self.provenance)
+        if self.mode == "real":
+            payload["real_provenance"] = provenance
+        else:
+            if not provenance:
+                provenance = {"kind": "synthetic", "label": "synthetic evaluation input"}
+            payload["synthetic_provenance"] = provenance
+        return payload
 
     def save(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)

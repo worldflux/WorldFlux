@@ -2027,6 +2027,7 @@ def test_models_list_json_preserves_reference_machine_value() -> None:
     result = runner.invoke(cli.app, ["models", "list", "--format", "json"])
     assert result.exit_code == 0
     assert '"maturity": "reference"' in result.output
+    assert '"support_tier": "supported"' in result.output
 
 
 def test_models_list_accepts_reference_family_alias() -> None:

@@ -27,7 +27,7 @@ class TestListModels:
     """Tests for list_models function."""
 
     def test_list_models_simple(self):
-        """list_models returns list of model IDs (skeletons excluded by default)."""
+        """list_models returns public supported lanes by default."""
         models = list_models()
         assert isinstance(models, list)
         assert "dreamer:ci" in models
@@ -37,8 +37,10 @@ class TestListModels:
         assert "tdmpc2:5m" in models
         assert "tdmpc2:proof_5m" in models
         assert "tdmpc2:5m_legacy" in models
-        assert "jepa:base" in models
-        assert "vjepa2:base" in models
+        assert "jepa:base" not in models
+        assert "vjepa2:base" not in models
+        assert "token:base" not in models
+        assert "diffusion:base" not in models
         # Skeleton models excluded by default
         assert "dit:base" not in models
         assert "ssm:base" not in models
@@ -67,6 +69,12 @@ class TestListModels:
         assert "gan:base" in skeleton_models
         assert "dit:base" not in exp_models
         assert "ssm:base" not in exp_models
+
+    def test_list_models_verbose_includes_support_tier(self):
+        catalog = list_models(verbose=True)
+        assert catalog["dreamerv3:size12m"]["support_tier"] == "supported"
+        assert catalog["dreamerv3:official_xl"]["support_tier"] == "advanced"
+        assert catalog["tdmpc2:proof_5m"]["support_tier"] == "advanced"
 
 
 class TestGetModelInfo:
@@ -98,6 +106,7 @@ class TestGetModelInfo:
         assert info["model_id"] == "tdmpc2:proof_5m"
         assert info["canonical_display_name"] == "TD-MPC2 Proof 5M"
         assert info["parity_role"] == "proof_canonical"
+        assert info["support_tier"] == "advanced"
 
     def test_get_model_info_unknown(self):
         """Unknown model raises ValueError."""
@@ -380,6 +389,15 @@ class TestModelCatalog:
         for model_id, info in MODEL_CATALOG.items():
             assert info.get("maturity") in {"reference", "experimental", "skeleton"}, model_id
 
+    def test_catalog_entries_have_support_tier(self):
+        for model_id, info in MODEL_CATALOG.items():
+            assert info.get("support_tier") in {
+                "supported",
+                "advanced",
+                "experimental",
+                "internal",
+            }, model_id
+
     def test_list_models_reflects_dynamic_registry_catalog_entries(self):
         model_id = "extplugin:demo"
         try:
@@ -394,7 +412,8 @@ class TestModelCatalog:
                 },
             )
             models = list_models()
-            assert model_id in models
+            assert model_id not in models
             assert get_model_info(model_id)["type"] == "extplugin"
+            assert get_model_info(model_id)["support_tier"] == "experimental"
         finally:
             WorldModelRegistry.unregister_catalog_entry(model_id)
