@@ -344,6 +344,10 @@ def _build_model_from_config_payload(
     from worldflux.core.config import WorldModelConfig
     from worldflux.core.registry import ConfigRegistry, WorldModelRegistry
 
+    # Ensure builtin models and plugins are loaded before any registry lookups.
+    WorldModelRegistry.load_entrypoint_plugins()
+    WorldModelRegistry._load_builtin_models()
+
     if not isinstance(config_payload, dict):
         raise ValueError("Saved checkpoint is missing a valid model_config dictionary.")
 
@@ -378,8 +382,6 @@ def _build_model_from_config_payload(
         config_class = ConfigRegistry._registry.get(model_type, WorldModelConfig)
         config = config_class.from_dict(normalized)
 
-    WorldModelRegistry.load_entrypoint_plugins()
-    WorldModelRegistry._load_builtin_models()
     model_class = WorldModelRegistry._model_registry.get(model_type)
     if model_class is None:
         raise ValueError(f"Unsupported model_type in saved checkpoint: {model_type!r}")
