@@ -12,6 +12,11 @@ one-liner `train` function, replay buffer, and training callbacks.
 - local mode for native Torch models
 - delegated mode for `OfficialBackendHandle` jobs backed by external runtimes
 
+Stable distributed entry points are intentionally narrow in v0.1.x:
+
+- `DDPTrainer` is the supported distributed trainer surface
+- planned FSDP support is not exported from `worldflux.training`
+
 ```python
 from worldflux.training import Trainer, TrainingConfig, ReplayBuffer, train
 from worldflux.training.callbacks import (
