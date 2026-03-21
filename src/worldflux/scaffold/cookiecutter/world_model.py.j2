@@ -140,6 +140,6 @@ class {{ model_class }}(WorldModel):
         dummy_loss = torch.tensor(0.0, device=obs.device, requires_grad=True)
         return LossOutput(
             loss=dummy_loss,
-            components={"placeholder": dummy_loss},
-            metrics={"placeholder": 0.0},
+            components={"starter_stub_loss": dummy_loss},
+            metrics={"starter_stub_metric": 0.0},
         )
