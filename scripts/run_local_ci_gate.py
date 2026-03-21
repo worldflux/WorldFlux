@@ -52,6 +52,8 @@ def _lychee_command() -> GateCommand:
         "2",
         "--accept",
         "200,206,301,302,303,307,308,403,429",
+        "--root-dir",
+        "website/static",
         "README.md",
         "CONTRIBUTING.md",
         "CHANGELOG.md",

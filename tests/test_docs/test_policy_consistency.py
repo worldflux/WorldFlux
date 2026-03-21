@@ -71,6 +71,7 @@ def test_ci_includes_strict_docs_gate_and_new_smokes():
     assert "npm ci" in ci
     assert "npm audit --audit-level=high" in ci
     assert "npm run build" in ci
+    assert "--root-dir website/static" in ci
     assert "examples/quickstart_cpu_success.py --quick" in ci
     assert "examples/compare_unified_training.py --quick" in ci
 

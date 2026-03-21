@@ -84,6 +84,16 @@ def test_lychee_command_does_not_exclude_when_reachable(monkeypatch) -> None:
     assert "--exclude" not in command.argv
 
 
+def test_lychee_command_sets_root_dir_for_root_relative_docs_assets(monkeypatch) -> None:
+    mod = _load_module()
+    monkeypatch.setattr(mod, "_is_docs_domain_reachable", lambda timeout_seconds=5.0: True)
+
+    command = mod._lychee_command()
+    assert "--root-dir" in command.argv
+    root_dir_index = command.argv.index("--root-dir")
+    assert command.argv[root_dir_index + 1] == "website/static"
+
+
 def test_run_commands_stops_on_first_failure(monkeypatch) -> None:
     mod = _load_module()
     calls: list[tuple[tuple[str, ...], str | None]] = []
