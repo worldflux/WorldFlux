@@ -67,6 +67,7 @@ class DreamerNativeRunConfig:
     learning_rate_override: float = OFFICIAL_DREAMER_ATARI100K_RECIPE.learning_rate
     dreamer_diagnostic: bool = False
     strict_official_semantics: bool = False
+    model_config_overrides: dict[str, Any] | None = None
 
 
 def _normalize_policy_impl(value: str) -> str:
@@ -163,6 +164,7 @@ def _build_dreamer_model(
     action_dim: int,
     device: str,
     learning_rate: float,
+    config_overrides: dict[str, Any] | None = None,
 ) -> tuple[Any, str]:
     common_overrides: dict[str, Any] = {
         "actor_critic": True,
@@ -171,6 +173,14 @@ def _build_dreamer_model(
         "actor_lr": float(learning_rate),
         "critic_lr": float(learning_rate),
     }
+    if config_overrides:
+        for key, value in config_overrides.items():
+            if key == "loss_scales" and isinstance(value, dict):
+                merged_loss_scales = dict(common_overrides.get("loss_scales", {}))
+                merged_loss_scales.update(value)
+                common_overrides["loss_scales"] = merged_loss_scales
+            else:
+                common_overrides[key] = value
 
     profile_to_model_id = {
         "ci": "dreamerv3:ci",
@@ -484,6 +494,7 @@ def run_dreamer_native(
         action_dim=int(env.action_dim),
         device=config.device,
         learning_rate=learning_rate,
+        config_overrides=config.model_config_overrides,
     )
 
     replay_ratio_raw = config.replay_ratio
