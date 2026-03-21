@@ -47,10 +47,16 @@ repos:
         entry: bash -lc 'ROOT="$(git rev-parse --show-toplevel)"; cd "$ROOT"; uv run --project "$ROOT" python scripts/run_local_ci_gate.py --profile fast'
         language: system
         pass_filenames: false
-        stages: [pre-commit]
+        stages: [pre-commit, pre-push]
       - id: pytest
         name: pytest
         entry: bash -lc 'ROOT="$(git rev-parse --show-toplevel)"; cd "$ROOT"; uv run --project "$ROOT" --extra dev python -m pytest tests/ -x -q --tb=short'
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+      - id: e2e-source-smoke
+        name: e2e-source-smoke
+        entry: bash -lc 'ROOT="$(git rev-parse --show-toplevel)"; cd "$ROOT"; bash scripts/e2e/source_tree_smoke.sh'
         language: system
         pass_filenames: false
         stages: [pre-push]

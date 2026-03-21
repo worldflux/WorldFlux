@@ -4,6 +4,9 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
+import textwrap
 from pathlib import Path
 
 import pytest
@@ -134,6 +137,87 @@ def test_load_model_from_target_restores_trainer_checkpoint_with_exact_config(
 
     assert restored.config.model_type == model.config.model_type
     assert restored.config.model_name == model.config.model_name
+
+
+def test_build_model_from_config_payload_loads_builtins_before_registry_lookup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify _load_builtin_models runs before any ConfigRegistry access.
+
+    The CI e2e failure showed that in a cold process, the ConfigRegistry
+    is empty when _build_model_from_config_payload tries to look up the
+    config class, causing WorldModelConfig to be used for DreamerV3 payloads
+    and raising TypeError on model-specific fields like stoch_discrete.
+    """
+    from worldflux.core.registry import WorldModelRegistry
+    from worldflux.verify.quick import _build_model_from_config_payload
+
+    call_log: list[str] = []
+    real_load = WorldModelRegistry._load_builtin_models.__func__  # type: ignore[attr-defined]
+
+    @classmethod  # type: ignore[misc]
+    def _tracked_load(cls: type) -> None:
+        call_log.append("load_builtin_models")
+        real_load(cls)
+
+    monkeypatch.setattr(WorldModelRegistry, "_load_builtin_models", _tracked_load)
+
+    model = create_world_model(
+        "dreamerv3:size12m",
+        obs_shape=(8,),
+        action_dim=2,
+        encoder_type="mlp",
+        decoder_type="mlp",
+        device="cpu",
+    )
+    _build_model_from_config_payload(model.config.to_dict(), device="cpu", require_model_name=True)
+    assert (
+        "load_builtin_models" in call_log
+    ), "_load_builtin_models must be called before registry lookups"
+
+
+def test_checkpoint_verify_round_trip_in_fresh_process(tmp_path: Path) -> None:
+    """Run checkpoint save + verify in a subprocess to catch cold-registry bugs.
+
+    This test exercises the same code path as the CI e2e-pip-flow job:
+    a fresh Python process where WorldModelRegistry has not been populated
+    by prior imports.  The bug that prompted this test caused
+    WorldModelConfig to receive DreamerV3-specific kwargs (stoch_discrete)
+    because _load_builtin_models was called after the config lookup.
+    """
+    script = textwrap.dedent("""\
+        import sys
+        from pathlib import Path
+        from worldflux import create_world_model
+        from worldflux.training import Trainer, TrainingConfig
+        from worldflux.verify.quick import _load_model_from_target
+
+        tmp = Path(sys.argv[1])
+        model = create_world_model(
+            "dreamerv3:size12m", obs_shape=(8,), action_dim=2,
+            encoder_type="mlp", decoder_type="mlp", device="cpu",
+        )
+        trainer = Trainer(
+            model,
+            TrainingConfig(
+                total_steps=1, batch_size=2, sequence_length=2,
+                output_dir=str(tmp / "outputs"), device="cpu",
+                auto_quality_check=False,
+            ),
+            callbacks=[],
+        )
+        checkpoint = tmp / "outputs" / "checkpoint_final.pt"
+        trainer.save_checkpoint(str(checkpoint))
+        restored = _load_model_from_target(checkpoint, device="cpu")
+        assert restored.config.model_type == "dreamer", restored.config.model_type
+    """)
+    result = subprocess.run(
+        [sys.executable, "-c", script, str(tmp_path)],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0, f"Cold-registry checkpoint round-trip failed:\n{result.stderr}"
 
 
 def test_load_model_from_target_rejects_legacy_checkpoint_without_model_name(
