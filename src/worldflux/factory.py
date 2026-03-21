@@ -279,6 +279,36 @@ MODEL_CATALOG: dict[str, dict[str, Any]] = {
 _FACTORY_BOOTSTRAPPED = False
 
 
+def _default_support_tier(model_id: str, info: dict[str, Any]) -> str:
+    support_tier = str(info.get("support_tier", "")).strip().lower()
+    if support_tier:
+        return support_tier
+
+    parity_role = str(info.get("parity_role", "")).strip().lower()
+    maturity = str(info.get("maturity", "")).strip().lower()
+    if parity_role == "proof_canonical":
+        return "advanced"
+    if maturity == ModelMaturity.REFERENCE.value:
+        return "supported"
+    if maturity == ModelMaturity.EXPERIMENTAL.value:
+        return "experimental"
+    if maturity == ModelMaturity.SKELETON.value:
+        return "internal"
+    if model_id.startswith(("dreamerv3:", "tdmpc2:", "dreamer:")):
+        return "supported"
+    return "experimental"
+
+
+def _normalize_catalog_entry(model_id: str, info: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(info)
+    normalized["support_tier"] = _default_support_tier(model_id, normalized)
+    return normalized
+
+
+for _model_id, _info in tuple(MODEL_CATALOG.items()):
+    MODEL_CATALOG[_model_id] = _normalize_catalog_entry(_model_id, _info)
+
+
 def _bootstrap_factory_registry() -> None:
     """Register bundled aliases/catalog entries only when the factory is used."""
     global _FACTORY_BOOTSTRAPPED
@@ -383,8 +413,15 @@ def _resolved_catalog() -> dict[str, dict[str, Any]]:
     _bootstrap_factory_registry()
     # Ensure model modules are imported so plugin registrations run.
     WorldModelRegistry.list_models()
-    catalog = dict(MODEL_CATALOG)
-    catalog.update(WorldModelRegistry.list_catalog())
+    catalog = {
+        model_id: _normalize_catalog_entry(model_id, info)
+        for model_id, info in MODEL_CATALOG.items()
+    }
+    dynamic_catalog = {
+        model_id: _normalize_catalog_entry(model_id, info)
+        for model_id, info in WorldModelRegistry.list_catalog().items()
+    }
+    catalog.update(dynamic_catalog)
     return catalog
 
 
@@ -580,9 +617,9 @@ def list_models(
             maturity = ModelMaturity.REFERENCE.value
         catalog = {k: v for k, v in catalog.items() if v.get("maturity") == maturity}
     else:
-        # Default: exclude skeleton models (use maturity="skeleton" to see them)
+        # Default: show only supported public lanes and advanced proof lanes.
         catalog = {
-            k: v for k, v in catalog.items() if v.get("maturity") != ModelMaturity.SKELETON.value
+            k: v for k, v in catalog.items() if v.get("support_tier") in {"supported", "advanced"}
         }
     if verbose:
         return catalog

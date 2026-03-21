@@ -54,16 +54,18 @@ def models_list(
     table.add_column("Model ID", style="wf.brand", no_wrap=True)
     table.add_column("Description", max_width=42, no_wrap=True, overflow="ellipsis")
     table.add_column("Params", justify="right", style="wf.muted", no_wrap=True)
+    table.add_column("Support", no_wrap=True)
     table.add_column("Maturity", no_wrap=True)
     table.add_column("Parity Role", no_wrap=True)
 
     for model_id, info in catalog.items():
         desc = _get(info, "description", "-")
         params = _get(info, "params", "-")
+        support_tier = _style_support_tier(_get(info, "support_tier", "-"))
         mat = _get(info, "maturity", "-")
         mat_styled = _style_maturity(mat)
         parity_role = _style_parity_role(_get(info, "parity_role", "-"))
-        table.add_row(model_id, desc, params, mat_styled, parity_role)
+        table.add_row(model_id, desc, params, support_tier, mat_styled, parity_role)
 
     console.print(table)
     if any(str(info.get("maturity")) == "reference" for info in catalog.values()):
@@ -107,6 +109,7 @@ def models_info(
         "description",
         "params",
         "type",
+        "support_tier",
         "maturity",
         "parity_role",
         "obs_shape",
@@ -114,7 +117,9 @@ def models_info(
     ):
         if key in info:
             val = info[key]
-            if key == "maturity":
+            if key == "support_tier":
+                val = _style_support_tier(str(val))
+            elif key == "maturity":
                 val = _style_maturity(str(val))
             elif key == "parity_role":
                 val = _style_parity_role(str(val))
@@ -127,6 +132,7 @@ def models_info(
         "description",
         "params",
         "type",
+        "support_tier",
         "maturity",
         "parity_role",
         "obs_shape",
@@ -158,6 +164,7 @@ _FIELD_LABELS: dict[str, str] = {
     "description": "Description",
     "params": "Parameters",
     "type": "Type",
+    "support_tier": "Support Tier",
     "maturity": "Maturity",
     "parity_role": "Parity Role",
     "obs_shape": "Observation Shape",
@@ -178,6 +185,18 @@ def _style_maturity(maturity: str) -> str:
     if maturity == "skeleton":
         return "[wf.muted]skeleton[/wf.muted]"
     return maturity
+
+
+def _style_support_tier(support_tier: str) -> str:
+    if support_tier == "supported":
+        return "[wf.pass]supported[/wf.pass]"
+    if support_tier == "advanced":
+        return "[wf.caution]advanced[/wf.caution]"
+    if support_tier == "experimental":
+        return "[wf.caution]experimental[/wf.caution]"
+    if support_tier == "internal":
+        return "[wf.muted]internal[/wf.muted]"
+    return support_tier
 
 
 def _style_parity_role(parity_role: str) -> str:
