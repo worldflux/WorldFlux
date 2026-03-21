@@ -7,6 +7,7 @@ from __future__ import annotations
 import builtins
 import importlib.util
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -23,6 +24,7 @@ from typer.testing import CliRunner
 import worldflux.cli as cli
 
 runner = CliRunner()
+_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 
 
 def _base_context(project_name: str = "demo-project", device: str = "cpu") -> dict[str, object]:
@@ -228,7 +230,7 @@ def test_resolve_python_launcher_falls_back_to_python3(monkeypatch: pytest.Monke
 def test_root_help_promotes_supported_verify_workflow() -> None:
     result = runner.invoke(cli.app, ["--help"])
     assert result.exit_code == 0
-    normalized = " ".join(result.stdout.split())
+    normalized = " ".join(_ANSI_ESCAPE_RE.sub("", result.stdout).split())
     assert "worldflux verify --target ./outputs --mode quick" in normalized
     assert "worldflux eval ./outputs --suite quick" not in result.stdout
 
