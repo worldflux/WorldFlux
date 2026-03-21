@@ -7,6 +7,7 @@ import argparse
 import json
 import sys
 import time
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,7 @@ from worldflux import create_world_model
 from worldflux.telemetry.wasr import make_run_id, write_event
 from worldflux.training import Trainer, TrainingConfig
 from worldflux.training.data import create_random_buffer
+from worldflux.verify.quick import quick_verify
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -24,7 +26,25 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--quick", action="store_true", help="CI-safe runtime settings")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--output-dir", type=str, default="outputs/comparison")
+    parser.add_argument(
+        "--skip-verify",
+        action="store_true",
+        help="Skip per-family quick verification output generation",
+    )
     return parser
+
+
+def _run_verification(model, output_dir: Path) -> dict[str, Any]:
+    verify_target = output_dir / "verify_model"
+    model.save_pretrained(str(verify_target))
+    result = quick_verify(str(verify_target), env="atari/pong", device="cpu")
+    artifact_path = output_dir / "quick_verify.json"
+    payload = asdict(result)
+    payload["tier"] = str(result.stats.get("verification_tier", "synthetic"))
+    artifact_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    payload["artifact"] = str(artifact_path)
+    payload["target"] = str(verify_target)
+    return payload
 
 
 def _run_family(
@@ -34,6 +54,7 @@ def _run_family(
     output_dir: Path,
     total_steps: int,
     seed: int,
+    skip_verify: bool,
 ) -> dict[str, Any]:
     obs_shape = buffer.obs_shape
     action_dim = buffer.action_dim
@@ -71,7 +92,11 @@ def _run_family(
     image_path = output_dir / f"{family.split(':')[0]}.ppm"
     write_reward_heatmap_ppm(rewards, image_path)
 
-    return {
+    verification = None
+    if not skip_verify:
+        verification = _run_verification(model, output_dir / family)
+
+    result = {
         "family": family,
         "initial_loss": initial_loss,
         "final_loss": final_loss,
@@ -80,6 +105,9 @@ def _run_family(
         "rollout_horizon": int(rollout.actions.shape[0]),
         "artifacts": {"imagination": str(image_path)},
     }
+    if verification is not None:
+        result["verification"] = verification
+    return result
 
 
 def main() -> int:
@@ -109,6 +137,7 @@ def main() -> int:
             output_dir=output_dir,
             total_steps=total_steps,
             seed=args.seed,
+            skip_verify=args.skip_verify,
         )
         tdmpc2_result = _run_family(
             "tdmpc2",
@@ -116,6 +145,7 @@ def main() -> int:
             output_dir=output_dir,
             total_steps=total_steps,
             seed=args.seed,
+            skip_verify=args.skip_verify,
         )
 
         success = bool(

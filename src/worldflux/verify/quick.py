@@ -293,6 +293,11 @@ def _load_model_from_target(target_path: Path, *, device: str) -> torch.nn.Modul
             obs_shape = tuple(config_data.get("obs_shape", [3, 64, 64]))
             action_dim = int(config_data.get("action_dim", 6))
             hidden_dim = int(config_data.get("hidden_dim", 32))
+            model_kwargs: dict[str, Any] = {}
+            if "encoder_type" in config_data:
+                model_kwargs["encoder_type"] = config_data["encoder_type"]
+            if "decoder_type" in config_data:
+                model_kwargs["decoder_type"] = config_data["decoder_type"]
 
             model = create_world_model(
                 model=model_id,
@@ -300,6 +305,7 @@ def _load_model_from_target(target_path: Path, *, device: str) -> torch.nn.Modul
                 action_dim=action_dim,
                 hidden_dim=hidden_dim,
                 device=device,
+                **model_kwargs,
             )
             state_dict = torch.load(model_pt, map_location=device, weights_only=True)
             model.load_state_dict(state_dict)
@@ -346,6 +352,11 @@ def _load_from_trainer_checkpoint(checkpoint_path: Path, *, device: str) -> torc
     obs_shape = tuple(model_config.get("obs_shape", [3, 64, 64]))
     action_dim = int(model_config.get("action_dim", 6))
     hidden_dim = int(model_config.get("hidden_dim", 32))
+    model_kwargs: dict[str, Any] = {}
+    if "encoder_type" in model_config:
+        model_kwargs["encoder_type"] = model_config["encoder_type"]
+    if "decoder_type" in model_config:
+        model_kwargs["decoder_type"] = model_config["decoder_type"]
 
     model = create_world_model(
         model=model_id,
@@ -353,6 +364,7 @@ def _load_from_trainer_checkpoint(checkpoint_path: Path, *, device: str) -> torc
         action_dim=action_dim,
         hidden_dim=hidden_dim,
         device=device,
+        **model_kwargs,
     )
     model.load_state_dict(checkpoint["model_state_dict"])
     return model
