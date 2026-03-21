@@ -134,3 +134,10 @@ def test_hyperparameter_sensitivity_doc_is_no_longer_template() -> None:
     assert "Template - to be populated" not in sensitivity
     assert "Pending experiment" not in sensitivity
     assert "atari100k_pong" in sensitivity
+
+
+def test_training_reference_isolates_unsupported_placeholders() -> None:
+    training_ref = _read("docs/api/training-reference.md")
+    assert "Advanced/Internal placeholders" in training_ref
+    assert "| `ema_decay` |" not in training_ref
+    assert "| `model_overrides` |" not in training_ref
