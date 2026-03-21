@@ -23,7 +23,7 @@ def test_readme_points_to_current_release_authority_and_program_roadmap() -> Non
 
     assert "docs/reference/release-checklist.md" in readme
     assert "docs/operations/release-runbook.md" in readme
-    assert "docs/roadmap/2026-q2-worldflux-quality-program.md" in readme
+    assert "docs/roadmap.md" in readme
     assert "[ROADMAP.md](ROADMAP.md)" not in readme
 
 
@@ -34,7 +34,7 @@ def test_release_checklist_declares_metadata_authority_sources() -> None:
     assert "`pyproject.toml`" in checklist
     assert "`CHANGELOG.md`" in checklist
     assert "`docs/operations/release-runbook.md`" in checklist
-    assert "`docs/roadmap/2026-q2-worldflux-quality-program.md`" in checklist
+    assert "`docs/roadmap.md`" in checklist
 
 
 def test_pyproject_urls_include_release_checklist_and_current_program_roadmap() -> None:
@@ -42,4 +42,4 @@ def test_pyproject_urls_include_release_checklist_and_current_program_roadmap() 
     urls = pyproject["project"]["urls"]
 
     assert urls["Release Checklist"].endswith("/docs/reference/release-checklist.md")
-    assert urls["Roadmap"].endswith("/docs/roadmap/2026-q2-worldflux-quality-program.md")
+    assert urls["Roadmap"].endswith("/docs/roadmap.md")

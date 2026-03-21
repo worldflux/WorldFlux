@@ -341,9 +341,7 @@ uv run python examples/train_dreamer.py --data trajectories.npz --steps 100000
 
 ## Roadmap
 
-See [2026 Q2 quality roadmap](docs/roadmap/2026-q2-worldflux-quality-program.md)
-for the current S-grade program milestones and [docs/roadmap.md](docs/roadmap.md)
-for the broader technical priority list.
+See [docs/roadmap.md](docs/roadmap.md) for the current technical priority list.
 
 ## Community
 

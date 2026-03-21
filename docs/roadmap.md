@@ -2,9 +2,6 @@
 
 This roadmap tracks the current technical program for WorldFlux.
 
-The structured S-grade quality program lives in
-`docs/roadmap/2026-q2-worldflux-quality-program.md`.
-
 ## Current Priorities
 
 1. Reference-fidelity DreamerV3 and TD-MPC2 surfaces
@@ -23,4 +20,3 @@ The structured S-grade quality program lives in
 - `CONTRIBUTING.md`
 - `docs/operations/release-runbook.md`
 - `docs/operations/maintainer-onboarding.md`
-- `docs/roadmap/2026-q2-worldflux-quality-program.md`

@@ -132,8 +132,6 @@ uv run pytest tests/ --cov=worldflux --cov-report=html
    - Reference any related issues
    - Request review from maintainers
    - Check `docs/roadmap.md` for current priority areas before proposing broad new work
-   - Check `docs/roadmap/2026-q2-worldflux-quality-program.md` before proposing
-     work that affects the S-grade quality program
 
 ## Commit Messages
 
