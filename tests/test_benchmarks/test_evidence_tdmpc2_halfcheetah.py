@@ -18,10 +18,16 @@ _SCRIPT_PATH = (
 
 
 def _load_module():
+    benchmarks_dir = str(_SCRIPT_PATH.parent)
     spec = importlib.util.spec_from_file_location("evidence_tdmpc2_halfcheetah", _SCRIPT_PATH)
     mod = importlib.util.module_from_spec(spec)
     sys.modules["evidence_tdmpc2_halfcheetah"] = mod
     spec.loader.exec_module(mod)
+    # Remove benchmarks/ from sys.path and its cached common module to avoid
+    # shadowing scripts/parity/runtime/common in downstream test collection.
+    if benchmarks_dir in sys.path:
+        sys.path.remove(benchmarks_dir)
+    sys.modules.pop("common", None)
     return mod
 
 
