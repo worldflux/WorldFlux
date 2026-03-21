@@ -85,6 +85,9 @@ class ReplayBuffer:
         self._size = 0
         self._num_episodes = 0
 
+        # Optional provenance metadata set by collection helpers
+        self.data_provenance: dict[str, Any] = {}
+
     def __len__(self) -> int:
         """Return number of transitions stored."""
         return self._size
