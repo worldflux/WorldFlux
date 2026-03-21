@@ -1,0 +1,153 @@
+{
+  "env_backend": "gymnasium",
+  "environment": "atari100k_pong",
+  "family": "dreamerv3",
+  "generated_at_utc": "2026-03-21T20:52:01Z",
+  "model_profile": "ci",
+  "parameters": [
+    {
+      "default_in_safe_range": false,
+      "default_rank_percentile": 100.0,
+      "default_value": 0.5,
+      "mean_rewards": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "name": "kl_dynamics",
+      "sensitivity_score": 0.0,
+      "std_rewards": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "values": [
+        0.1,
+        0.3,
+        0.5,
+        1.0,
+        2.0
+      ]
+    },
+    {
+      "default_in_safe_range": false,
+      "default_rank_percentile": 100.0,
+      "default_value": 0.1,
+      "mean_rewards": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "name": "kl_representation",
+      "sensitivity_score": 0.0,
+      "std_rewards": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "values": [
+        0.01,
+        0.05,
+        0.1,
+        0.5,
+        1.0
+      ]
+    },
+    {
+      "default_in_safe_range": false,
+      "default_rank_percentile": 100.0,
+      "default_value": 1.0,
+      "mean_rewards": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "name": "free_nats",
+      "sensitivity_score": 0.0,
+      "std_rewards": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "values": [
+        0.0,
+        0.5,
+        1.0,
+        2.0,
+        5.0
+      ]
+    },
+    {
+      "default_in_safe_range": false,
+      "default_rank_percentile": 100.0,
+      "default_value": 0.0001,
+      "mean_rewards": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "name": "learning_rate",
+      "sensitivity_score": 0.0,
+      "std_rewards": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "values": [
+        3e-05,
+        0.0001,
+        0.0003,
+        0.001
+      ]
+    },
+    {
+      "default_in_safe_range": false,
+      "default_rank_percentile": 100.0,
+      "default_value": 15.0,
+      "mean_rewards": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "name": "imagination_horizon",
+      "sensitivity_score": 0.0,
+      "std_rewards": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "values": [
+        5.0,
+        10.0,
+        15.0,
+        20.0,
+        30.0
+      ]
+    }
+  ],
+  "schema_version": "worldflux.sensitivity.v1",
+  "seeds": [
+    0
+  ],
+  "task_id": "atari100k_pong",
+  "total_runs": 24,
+  "total_steps": 12
+}

@@ -1,71 +1,92 @@
 # Hyperparameter Sensitivity Analysis
 
-> **Status**: Template - to be populated with actual experimental results.
+Generated at: 2026-03-21T20:52:01Z
+Family: dreamerv3
+Environment: atari100k_pong
+Task ID: atari100k_pong
+Env backend: gymnasium
+Model profile: ci
+Seeds: [0]
+Steps per run: 12
 
-## Overview
+This is an initial measured Dreamer sensitivity report. It is not a proof claim or a benchmark claim.
 
-This document reports the sensitivity of DreamerV3 default hyperparameters to
-performance on a fast evaluation environment (CartPole-v1). The goal is to
-validate that the production defaults sit in a "safe" region where small
-perturbations do not cause large performance drops.
-
-## Method
-
-- **Analysis type**: One-at-a-time (OAT) sensitivity
-- **Environment**: CartPole-v1 (fast iteration for CI-compatible testing)
-- **Steps per run**: 100,000 environment steps
-- **Seeds per configuration**: 3
-- **Metric**: Mean final episode return (averaged across seeds)
-
-### Parameters Swept
-
-| Parameter | Grid | Default |
-|-----------|------|---------|
-| `kl_dynamics` | [0.1, 0.3, 0.5, 1.0, 2.0] | 0.5 |
-| `kl_representation` | [0.01, 0.05, 0.1, 0.5, 1.0] | 0.1 |
-| `free_nats` | [0.0, 0.5, 1.0, 2.0, 5.0] | 1.0 |
-| `learning_rate` | [3e-5, 1e-4, 3e-4, 1e-3] | 1e-4 |
-| `imagination_horizon` | [5, 10, 15, 20, 30] | 15 |
-
-## Results
-
-> Results will be auto-generated when the sensitivity sweep completes.
-> Run: `python scripts/run_sensitivity.py --report-from <results.json> --output-md docs/reference/hyperparameter-sensitivity.md`
-
-### Sensitivity Ranking
+## Sensitivity Ranking
 
 | Rank | Parameter | Sensitivity Score | Default | Default Safe |
 | ---: | --- | ---: | ---: | --- |
-| - | *Pending experiment* | - | - | - |
+| 1 | kl_dynamics | 0.0000 | 0.5 | No |
+| 2 | kl_representation | 0.0000 | 0.1 | No |
+| 3 | free_nats | 0.0000 | 1.0 | No |
+| 4 | learning_rate | 0.0000 | 0.0001 | No |
+| 5 | imagination_horizon | 0.0000 | 15.0 | No |
 
-### Per-Parameter Details
+## Per-Parameter Details
 
-*To be filled after experiments complete.*
+### kl_dynamics
 
-## Interpretation Guide
+| Value | Mean Reward | Std |
+| ---: | ---: | ---: |
+| 0.1 | 0.00 | 0.00 |
+| 0.3 | 0.00 | 0.00 |
+| 0.5 **(default)** | 0.00 | 0.00 |
+| 1.0 | 0.00 | 0.00 |
+| 2.0 | 0.00 | 0.00 |
 
-- **Sensitivity Score**: Coefficient of variation of mean rewards across
-  parameter values. Higher values indicate parameters that more strongly
-  affect performance.
-- **Default Safe**: "Yes" when the default value's mean reward is in the
-  middle 50% of tested values (25th-75th percentile).
-- A well-tuned default should be "safe" across all parameters, confirming
-  robustness to minor hyperparameter perturbations.
+### kl_representation
+
+| Value | Mean Reward | Std |
+| ---: | ---: | ---: |
+| 0.01 | 0.00 | 0.00 |
+| 0.05 | 0.00 | 0.00 |
+| 0.1 **(default)** | 0.00 | 0.00 |
+| 0.5 | 0.00 | 0.00 |
+| 1.0 | 0.00 | 0.00 |
+
+### free_nats
+
+| Value | Mean Reward | Std |
+| ---: | ---: | ---: |
+| 0.0 | 0.00 | 0.00 |
+| 0.5 | 0.00 | 0.00 |
+| 1.0 **(default)** | 0.00 | 0.00 |
+| 2.0 | 0.00 | 0.00 |
+| 5.0 | 0.00 | 0.00 |
+
+### learning_rate
+
+| Value | Mean Reward | Std |
+| ---: | ---: | ---: |
+| 3e-05 | 0.00 | 0.00 |
+| 0.0001 **(default)** | 0.00 | 0.00 |
+| 0.0003 | 0.00 | 0.00 |
+| 0.001 | 0.00 | 0.00 |
+
+### imagination_horizon
+
+| Value | Mean Reward | Std |
+| ---: | ---: | ---: |
+| 5.0 | 0.00 | 0.00 |
+| 10.0 | 0.00 | 0.00 |
+| 15.0 **(default)** | 0.00 | 0.00 |
+| 20.0 | 0.00 | 0.00 |
+| 30.0 | 0.00 | 0.00 |
 
 ## Reproducing
 
 ```bash
-# Generate configs (dry-run)
 python scripts/run_sensitivity.py --dry-run
 
-# Run full sweep (requires GPU)
+# smoke / deterministic CI-sized execution
 python scripts/run_sensitivity.py \
-    --environment CartPole-v1 \
-    --seeds 0,1,2 \
-    --steps 100000 \
+    --task-id atari100k_pong \
+    --env-backend gymnasium \
+    --model-profile ci \
+    --seeds 0 \
+    --steps 12 \
     --output reports/parity/sensitivity/dreamerv3_sensitivity.json
 
-# Render report from results
+# render markdown from existing results
 python scripts/run_sensitivity.py \
     --report-from reports/parity/sensitivity/dreamerv3_sensitivity.json \
     --output-md docs/reference/hyperparameter-sensitivity.md
