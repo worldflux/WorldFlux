@@ -895,6 +895,7 @@ def test_prompt_user_configuration_prefers_inquirer_result(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config = _base_context()
+    monkeypatch.setattr(cli, "_is_interactive_terminal", lambda: True)
     monkeypatch.setattr(cli, "_prompt_with_inquirer", lambda: config)
     monkeypatch.setattr(
         cli, "_prompt_with_rich", lambda: pytest.fail("rich fallback should not be called")
