@@ -234,6 +234,12 @@ def _parse_args() -> argparse.Namespace:
         default="",
         help="Comma-separated post-run actions (e.g. paper_comparison,plot_curves).",
     )
+    parser.add_argument(
+        "--history-equivalence-report",
+        action="append",
+        default=[],
+        help="Optional prior equivalence_report.json path(s) used for multi-run stability checks.",
+    )
     return parser.parse_args()
 
 
@@ -2229,6 +2235,11 @@ def _execute_phase(
                     str(equivalence_report),
                     "--output",
                     str(local_root / "stability_report.json"),
+                    *[
+                        item
+                        for history_path in args.history_equivalence_report
+                        for item in ("--history-equivalence-report", str(history_path))
+                    ],
                 ],
             )
         except RuntimeError as exc:
@@ -2315,6 +2326,7 @@ def _execute_phase(
             "merge_summary": str(merge_summary),
             "evidence_bundle": "",
         },
+        "history_equivalence_reports": list(args.history_equivalence_report),
         "s3_final_prefix": final_prefix,
         "errors": {
             "stats_or_report": stats_error,

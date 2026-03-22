@@ -1260,6 +1260,67 @@ def test_parity_proof_report_runs_completeness_stats_and_markdown(
     assert "Parity Proof Report" in result.stdout
 
 
+def test_parity_proof_report_passes_history_reports_to_stability_script(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    run_root = tmp_path / "run_hist"
+    run_root.mkdir(parents=True)
+    runs = run_root / "parity_runs.jsonl"
+    runs.write_text("", encoding="utf-8")
+    history = tmp_path / "history_equivalence_report.json"
+    history.write_text("{}", encoding="utf-8")
+
+    captured: dict[str, list[str]] = {}
+
+    def _run(script_name: str, args: list[str]) -> str:
+        if script_name == "stats_equivalence.py":
+            Path(args[args.index("--output") + 1]).write_text(
+                json.dumps(
+                    {
+                        "global": {
+                            "parity_pass_final": True,
+                            "validity_pass": True,
+                            "missing_pairs": 0,
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            Path(args[args.index("--validity-report") + 1]).write_text("{}", encoding="utf-8")
+        elif script_name == "validate_matrix_completeness.py":
+            Path(args[args.index("--output") + 1]).write_text(
+                '{"missing_pairs":0,"pass":true}', encoding="utf-8"
+            )
+        elif script_name == "report_markdown.py":
+            Path(args[args.index("--output") + 1]).write_text("# Proof\n", encoding="utf-8")
+        elif script_name == "stability_report.py":
+            captured["args"] = list(args)
+            Path(args[args.index("--output") + 1]).write_text(
+                json.dumps({"schema_version": "parity.stability.v1", "status": "stable"}),
+                encoding="utf-8",
+            )
+        return ""
+
+    monkeypatch.setattr(cli, "_run_parity_proof_script", _run)
+
+    result = runner.invoke(
+        cli.app,
+        [
+            "parity",
+            "proof-report",
+            str(tmp_path / "manifest.yaml"),
+            "--runs",
+            str(runs),
+            "--history-equivalence-report",
+            str(history),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "--history-equivalence-report" in captured["args"]
+    assert str(history) in captured["args"]
+
+
 def test_parity_proof_combined_runs_all_phases(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

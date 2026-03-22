@@ -126,6 +126,8 @@ def _run_proof_report_pipeline(
     manifest: Path,
     runs_path: Path,
     report_root: Path,
+    *,
+    history_equivalence_reports: list[Path] | None = None,
 ) -> tuple[Path, Path, Path, Path, Path]:
     """Run the proof-report pipeline (coverage → equivalence → markdown).
 
@@ -193,6 +195,11 @@ def _run_proof_report_pipeline(
             str(equivalence_report),
             "--output",
             str(stability_report),
+            *[
+                item
+                for history_path in (history_equivalence_reports or [])
+                for item in ("--history-equivalence-report", str(history_path))
+            ],
         ],
     )
 
@@ -488,6 +495,11 @@ def parity_proof_report(
         "--output-dir",
         help="Output directory for coverage/equivalence reports (defaults to runs parent).",
     ),
+    history_equivalence_report: list[Path] | None = typer.Option(
+        None,
+        "--history-equivalence-report",
+        help="Optional prior equivalence_report.json path(s) used for multi-run stability checks.",
+    ),
 ) -> None:
     """Generate proof-grade completeness + equivalence + markdown reports."""
     resolved_runs = runs.resolve()
@@ -497,7 +509,10 @@ def parity_proof_report(
 
     try:
         _, _, equivalence_report, markdown_report, stability_report = _run_proof_report_pipeline(
-            manifest, resolved_runs, report_root
+            manifest,
+            resolved_runs,
+            report_root,
+            history_equivalence_reports=history_equivalence_report,
         )
     except ParityError as exc:
         console.print(f"[wf.fail]Parity proof-report failed:[/wf.fail] {exc}")
@@ -552,6 +567,11 @@ def parity_proof_combined(
         False,
         "--enforce/--no-enforce",
         help="Exit non-zero when final parity verdict fails.",
+    ),
+    history_equivalence_report: list[Path] | None = typer.Option(
+        None,
+        "--history-equivalence-report",
+        help="Optional prior equivalence_report.json path(s) used for multi-run stability checks.",
     ),
 ) -> None:
     """Run proof-grade parity verification (proof-run + proof-report) in a single step."""
@@ -616,7 +636,10 @@ def parity_proof_combined(
 
     try:
         _, _, equivalence_report, markdown_report, stability_report = _run_proof_report_pipeline(
-            resolved_manifest, runs_path, report_root
+            resolved_manifest,
+            runs_path,
+            report_root,
+            history_equivalence_reports=history_equivalence_report,
         )
     except ParityError as exc:
         console.print(f"[wf.fail]Verify proof-report failed:[/wf.fail] {exc}")
