@@ -72,6 +72,28 @@ def _env_to_task_filter(env: str) -> str:
     return value
 
 
+def _degraded_guidance_lines(cfg: Any, degraded_modes: list[str]) -> list[str]:
+    normalized = {str(mode).strip().lower() for mode in degraded_modes}
+    if "env_collection_unavailable" not in normalized:
+        return []
+
+    environment = str(getattr(cfg, "environment", "")).strip().lower()
+    if environment == "atari":
+        return [
+            "Cause: live Atari environment collection was unavailable, so training fell back to smoke-only data.",
+            "Next: install `gymnasium[atari]` and `ale-py`, or run `uv sync --extra training --extra atari` before retrying.",
+        ]
+    if environment == "mujoco":
+        return [
+            "Cause: MuJoCo environment collection was unavailable, so training fell back to smoke-only data.",
+            "Next: install `gymnasium[mujoco]` and `mujoco`, or run `uv sync --extra training --extra mujoco` before retrying.",
+        ]
+    return [
+        "Cause: environment-backed data collection was unavailable, so training fell back to smoke-only data.",
+        "Next: install the required environment extras and rerun before treating this as meaningful local training.",
+    ]
+
+
 def _load_module_from_file(path: Path, *, namespace: str) -> ModuleType:
     digest = hashlib.sha256(str(path.resolve()).encode("utf-8")).hexdigest()[:12]
     module_name = f"worldflux_cli_{namespace}_{digest}"
@@ -629,6 +651,7 @@ def train(
             "[wf.label]Warning:[/wf.label]     degraded via "
             + ", ".join(mode.replace("_", "-") for mode in degraded_modes)
         )
+        summary_lines.extend(_degraded_guidance_lines(cfg, degraded_modes))
     if elapsed is not None:
         summary_lines.append(f"[wf.label]Elapsed:[/wf.label]     {elapsed:.1f}s")
     if throughput is not None:

@@ -813,6 +813,47 @@ def render_inference_py(context: dict[str, Any]) -> str:
 
 def render_readme_md(context: dict[str, Any]) -> str:
     """Render ``README.md`` content."""
+    environment = str(context["environment"]).strip().lower()
+    model_type = str(context["model_type"]).strip().lower()
+    if environment == "atari" and model_type.startswith("dreamer"):
+        setup_command = "uv sync --extra training --extra atari"
+        lane_summary = (
+            "This project is configured for the DreamerV3 newcomer flow: "
+            "contract-smoke first, then Atari-backed meaningful local training."
+        )
+        lane_details = (
+            "- In the first pass, `worldflux train` may fall back to smoke-only data if Atari extras are missing.\n"
+            "- In that case, `worldflux verify --mode quick` may return a workflow warning even though the command completed and artifacts are usable.\n"
+            "- The real-environment target for this scaffold is `ALE/Breakout-v5`."
+        )
+        next_lane = (
+            "Once `gymnasium[atari]` and `ale-py` are installed, rerun `worldflux train` and confirm "
+            '`outputs/run_manifest.json` shows `run_classification = "meaningful_local_training"` with no degraded modes.'
+        )
+    elif environment == "mujoco" and model_type == "tdmpc2":
+        setup_command = "uv sync --extra training"
+        lane_summary = (
+            "This project is configured for the TD-MPC2 newcomer smoke flow. "
+            "The guaranteed MVP path is contract-smoke first."
+        )
+        lane_details = (
+            "- `worldflux train` should complete locally even when MuJoCo extras are not installed.\n"
+            "- `worldflux verify --mode quick` validates artifact compatibility first; a statistical miss in contract-smoke is a workflow warning, not an onboarding failure.\n"
+            "- MuJoCo real-environment collection is a next-stage workflow for this scaffold."
+        )
+        next_lane = (
+            "When you are ready for MuJoCo collection, install `gymnasium[mujoco]` and `mujoco`, "
+            "or run `uv sync --extra training --extra mujoco`, then rerun training."
+        )
+    else:
+        setup_command = "uv sync --extra training"
+        lane_summary = "This project follows the WorldFlux contract-smoke newcomer flow."
+        lane_details = (
+            "- `worldflux train` creates artifacts first.\n"
+            "- `worldflux verify --mode quick` checks compatibility before you treat the run as a quality signal."
+        )
+        next_lane = "Move to a real environment-backed run only after `outputs/run_manifest.json` shows a non-degraded local training classification."
+
     return (
         dedent(
             f"""
@@ -820,7 +861,15 @@ def render_readme_md(context: dict[str, Any]) -> str:
 
         Generated with `worldflux init`.
 
+        {lane_summary}
+
         ## Quick Start
+
+        Install the recommended extras for this lane:
+
+        ```bash
+        {setup_command}
+        ```
 
         ```bash
         # Train your model
@@ -843,6 +892,10 @@ def render_readme_md(context: dict[str, Any]) -> str:
         ```bash
         worldflux verify --target ./outputs --mode quick
         ```
+
+        In the contract-smoke lane, quick verify separates workflow success from
+        statistical quality. A warning means the command completed and artifacts
+        are interpretable, but the run is not yet a strong quality signal.
 
         Run inference or imagination checks:
 
@@ -885,8 +938,8 @@ def render_readme_md(context: dict[str, Any]) -> str:
         Run parity verification against a baseline:
 
         ```bash
-        # Newcomer-safe local verification
-        worldflux verify --target ./outputs/checkpoint_best.pt --mode quick
+        # Newcomer-safe local verification for the scaffold lane
+        worldflux verify --target ./outputs --mode quick
 
         # Demo mode (instant synthetic results for presentations; not proof)
         worldflux verify --target ./outputs/checkpoint_best.pt --demo --mode proof
@@ -894,6 +947,12 @@ def render_readme_md(context: dict[str, Any]) -> str:
         # Proof-mode verification (advanced; requires parity/proof prerequisites)
         worldflux verify --target ./outputs/checkpoint_best.pt
         ```
+
+        Lane notes:
+
+        {lane_details}
+
+        {next_lane}
 
         Delegated backend notes:
 

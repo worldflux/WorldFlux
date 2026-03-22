@@ -78,9 +78,10 @@ worldflux verify --target ./outputs --mode quick
 This is the supported first verification path for local projects.
 It is intentionally different from proof-mode parity workflows.
 
-Quick verify may still return a failing non-inferiority verdict if the run is too short.
-For this lane, the important thing is that the command executes and produces a
-structured result.
+Quick verify may still miss the synthetic threshold if the run is too short.
+In the contract-smoke lane, that should be interpreted as a workflow warning:
+the command executed, artifacts are interpretable, but the run is not yet a
+strong quality signal.
 
 Check `outputs/run_manifest.json` after the run. In the smoke lane you should
 expect:
@@ -94,10 +95,11 @@ expect:
 
 Once the smoke lane passes, switch to a real environment-backed run:
 
-1. Set `data.source = "gym"` in `worldflux.toml`
-2. Set an explicit environment id such as `ALE/Breakout-v5` or `HalfCheetah-v5`
-3. Increase `training.total_steps` to a value that is meaningful for your local test
-4. Rerun `worldflux train`
+1. For the guaranteed DreamerV3 lane, install Atari extras with `uv sync --extra training --extra atari`
+2. Set `data.source = "gym"` in `worldflux.toml`
+3. Set `data.gym_env = "ALE/Breakout-v5"`
+4. Increase `training.total_steps` to a value that is meaningful for your local test
+5. Rerun `worldflux train`
 
 This lane is successful only if `outputs/run_manifest.json` shows:
 

@@ -87,6 +87,19 @@ def test_generated_train_template_uses_training_phase_with_gameplay_unavailable(
     assert "Interrupted while waiting for dashboard shutdown." in content
 
 
+def test_generated_readme_explains_smoke_lane_and_environment_dependencies(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "generated"
+    generate_project(target, _context(), force=False)
+
+    content = (target / "README.md").read_text(encoding="utf-8")
+    assert "contract-smoke" in content
+    assert "warning" in content.lower()
+    assert "uv sync --extra training --extra atari" in content
+    assert "ALE/Breakout-v5" in content
+
+
 def _mujoco_context() -> dict[str, object]:
     return {
         "project_name": "mujoco-demo",
