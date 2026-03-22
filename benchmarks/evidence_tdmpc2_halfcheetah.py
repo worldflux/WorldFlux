@@ -11,7 +11,6 @@ import sys
 from pathlib import Path
 
 import numpy as np
-import torch
 
 BENCHMARKS_DIR = Path(__file__).resolve().parent
 if str(BENCHMARKS_DIR) not in sys.path:
@@ -27,6 +26,7 @@ from common import (  # noqa: E402
 )
 
 from worldflux import create_world_model  # noqa: E402
+from worldflux.evals.env_policy import collect_env_policy_rollout  # noqa: E402
 from worldflux.training import Trainer, TrainingConfig  # noqa: E402
 from worldflux.training.mujoco_collection import (  # noqa: E402
     collect_mujoco_dataset,
@@ -78,41 +78,6 @@ def _prepare_buffer_and_manifest(
     return buffer, manifest_path, manifest
 
 
-def _collect_policy_returns(
-    model,
-    *,
-    env_name: str,
-    episodes: int,
-    seed: int,
-) -> list[float]:
-    try:
-        import gymnasium as gym
-    except ImportError as exc:  # pragma: no cover - optional dependency guard
-        raise RuntimeError("gymnasium is required for policy-return evaluation.") from exc
-
-    returns: list[float] = []
-    env = gym.make(env_name)
-    try:
-        for episode in range(episodes):
-            obs, _ = env.reset(seed=seed + episode)
-            done = False
-            total_reward = 0.0
-            while not done:
-                with torch.no_grad():
-                    obs_tensor = torch.as_tensor(obs, dtype=torch.float32).unsqueeze(0)
-                    state = model.encode(obs_tensor)
-                    action = model._policy(state.tensors["latent"])  # type: ignore[attr-defined]
-                action_np = action.squeeze(0).detach().cpu().numpy()
-                next_obs, reward, terminated, truncated, _ = env.step(action_np)
-                total_reward += float(reward)
-                done = bool(terminated or truncated)
-                obs = next_obs
-            returns.append(total_reward)
-    finally:
-        env.close()
-    return returns
-
-
 def _write_returns_jsonl(path: Path, rows: list[dict[str, object]]) -> None:
     path.write_text(
         "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows),
@@ -143,6 +108,7 @@ def _write_report(
     env_name: str,
     manifest_path: Path,
     curve_rows: list[dict[str, object]],
+    provenance: dict[str, object],
 ) -> None:
     latest = curve_rows[-1]
     lines = [
@@ -154,6 +120,8 @@ def _write_report(
         f"- final_loss: `{latest['loss']}`",
         f"- final_mean_return: `{latest['mean_return']}`",
         f"- final_std_return: `{latest['std_return']}`",
+        f"- eval_mode: `{provenance.get('eval_mode', 'env_policy')}`",
+        f"- policy_impl: `{provenance.get('policy_impl', 'cem_planner_eval')}`",
         "",
         "This benchmark is an evidence lane artifact bundle, not a public SOTA claim.",
         "",
@@ -203,18 +171,27 @@ def main(argv: list[str] | None = None) -> int:
         checkpoints: list[dict[str, object]] = []
         best_mean_return = -float("inf")
         best_checkpoint_path = output_dir / "checkpoint_best.pt"
+        latest_rollout_provenance: dict[str, object] = {
+            "policy_impl": "cem_planner_eval",
+            "eval_mode": "env_policy",
+            "seed_schedule": [],
+        }
 
         eval_episodes = 3 if mode == "quick" else 5
         for step_target in _milestones_for_mode(mode):
             if step_target > trainer.state.global_step:
                 trainer.train(buffer, num_steps=step_target)
             loss = float(trainer.evaluate(buffer, num_batches=2)["loss"])
-            episode_returns = _collect_policy_returns(
+            rollout = collect_env_policy_rollout(
                 model,
-                env_name=str(args.env),
+                env_id=str(args.env),
+                family="tdmpc2",
                 episodes=eval_episodes,
                 seed=int(args.seed) + step_target,
+                device=str(args.device),
             )
+            episode_returns = rollout.episode_returns
+            latest_rollout_provenance = dict(rollout.provenance)
             mean_return = float(np.mean(episode_returns))
             std_return = float(np.std(episode_returns))
             curve_rows.append(
@@ -242,6 +219,7 @@ def main(argv: list[str] | None = None) -> int:
                         "tag": "best",
                     }
                 )
+                latest_rollout_provenance["checkpoint_path"] = str(best_checkpoint_path.resolve())
 
         _write_returns_jsonl(returns_path, return_rows)
         _write_learning_curve(curve_path, curve_rows)
@@ -251,6 +229,7 @@ def main(argv: list[str] | None = None) -> int:
             env_name=str(args.env),
             manifest_path=manifest_path,
             curve_rows=curve_rows,
+            provenance=latest_rollout_provenance,
         )
 
         summary = {
@@ -258,6 +237,12 @@ def main(argv: list[str] | None = None) -> int:
             "mode": mode,
             "model": "tdmpc2:5m",
             "env": args.env,
+            "eval_mode": latest_rollout_provenance.get("eval_mode", "env_policy"),
+            "policy_impl": latest_rollout_provenance.get("policy_impl", "cem_planner_eval"),
+            "seed_schedule": latest_rollout_provenance.get("seed_schedule", []),
+            "checkpoint_path": latest_rollout_provenance.get(
+                "checkpoint_path", str(best_checkpoint_path.resolve())
+            ),
             "dataset_manifest": str(manifest_path.resolve()),
             "collector_policy": manifest.get("collector_policy"),
             "final_step": curve_rows[-1]["step"],

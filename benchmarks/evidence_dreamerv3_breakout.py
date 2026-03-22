@@ -27,6 +27,7 @@ from common import (  # noqa: E402
 )
 
 from worldflux import create_world_model  # noqa: E402
+from worldflux.evals.env_policy import collect_env_policy_rollout  # noqa: E402
 from worldflux.training import ReplayBuffer, Trainer, TrainingConfig  # noqa: E402
 from worldflux.training.dataset_manifest import (  # noqa: E402
     build_dataset_manifest,
@@ -222,40 +223,6 @@ def _prepare_buffer_and_manifest(
     )
 
 
-def _collect_policy_returns(
-    model,
-    *,
-    env_name: str,
-    episodes: int,
-    seed: int,
-) -> list[float]:
-    del model
-    try:
-        import ale_py
-        import gymnasium as gym
-
-        gym.register_envs(ale_py)
-    except ImportError as exc:  # pragma: no cover - optional dependency guard
-        raise RuntimeError("gymnasium + ale_py are required for Atari evaluation.") from exc
-
-    returns: list[float] = []
-    env = gym.make(env_name, render_mode=None)
-    try:
-        for episode in range(episodes):
-            _, _ = env.reset(seed=seed + episode)
-            done = False
-            total_reward = 0.0
-            while not done:
-                action = int(env.action_space.sample())
-                _, reward, terminated, truncated, _ = env.step(action)
-                total_reward += float(reward)
-                done = bool(terminated or truncated)
-            returns.append(total_reward)
-    finally:
-        env.close()
-    return returns
-
-
 def _write_returns_jsonl(path: Path, rows: list[dict[str, object]]) -> None:
     path.write_text(
         "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows),
@@ -287,6 +254,7 @@ def _write_report(
     env_name: str,
     manifest_path: Path,
     curve_rows: list[dict[str, object]],
+    provenance: dict[str, object],
 ) -> None:
     latest = curve_rows[-1]
     lines = [
@@ -298,6 +266,8 @@ def _write_report(
         f"- final_loss: `{latest['loss']}`",
         f"- final_mean_return: `{latest['mean_return']}`",
         f"- final_std_return: `{latest['std_return']}`",
+        f"- eval_mode: `{provenance.get('eval_mode', 'env_policy')}`",
+        f"- policy_impl: `{provenance.get('policy_impl', 'candidate_actor_stateful_eval')}`",
         "",
         "This benchmark is a reproducible evidence bundle, not a benchmark, SOTA claim, or proof claim.",
         "",
@@ -329,6 +299,7 @@ def main(argv: list[str] | None = None) -> int:
             obs_shape=buffer.obs_shape,
             action_dim=buffer.action_dim,
             device=str(args.device),
+            actor_critic=True,
         )
         trainer = Trainer(
             model,
@@ -354,18 +325,29 @@ def main(argv: list[str] | None = None) -> int:
         checkpoints: list[dict[str, object]] = []
         best_mean_return = -float("inf")
         best_checkpoint_path = output_dir / "checkpoint_best.pt"
+        latest_rollout_provenance: dict[str, object] = {
+            "policy_impl": "candidate_actor_stateful_eval",
+            "eval_mode": "env_policy",
+            "seed_schedule": [],
+        }
 
         eval_episodes = 3 if mode == "quick" else 5
         for step_target in _milestones_for_mode(mode):
             if step_target > trainer.state.global_step:
                 trainer.train(buffer, num_steps=step_target)
             loss = float(trainer.evaluate(buffer, num_batches=2)["loss"])
-            episode_returns = _collect_policy_returns(
+            rollout = collect_env_policy_rollout(
                 model,
-                env_name=str(args.env),
+                env_id=str(args.env),
+                family="dreamer",
                 episodes=eval_episodes,
                 seed=int(args.seed) + step_target,
+                device=str(args.device),
+                policy_impl="actor",
+                allow_fallback=False,
             )
+            episode_returns = rollout.episode_returns
+            latest_rollout_provenance = dict(rollout.provenance)
             mean_return = float(np.mean(episode_returns))
             std_return = float(np.std(episode_returns))
             curve_rows.append(
@@ -391,6 +373,7 @@ def main(argv: list[str] | None = None) -> int:
             if mean_return >= best_mean_return:
                 best_mean_return = mean_return
                 checkpoint_path.replace(best_checkpoint_path)
+                latest_rollout_provenance["checkpoint_path"] = str(best_checkpoint_path.resolve())
 
         _write_returns_jsonl(returns_path, return_rows)
         _write_learning_curve(curve_path, curve_rows)
@@ -400,6 +383,7 @@ def main(argv: list[str] | None = None) -> int:
             env_name=str(args.env),
             manifest_path=manifest_path,
             curve_rows=curve_rows,
+            provenance=latest_rollout_provenance,
         )
 
         summary = {
@@ -408,6 +392,15 @@ def main(argv: list[str] | None = None) -> int:
             "seed": int(args.seed),
             "model": "dreamerv3:size12m",
             "env": str(args.env),
+            "eval_mode": latest_rollout_provenance.get("eval_mode", "env_policy"),
+            "policy_impl": latest_rollout_provenance.get(
+                "policy_impl", "candidate_actor_stateful_eval"
+            ),
+            "seed_schedule": latest_rollout_provenance.get("seed_schedule", []),
+            "checkpoint_path": latest_rollout_provenance.get(
+                "checkpoint_path", str(best_checkpoint_path.resolve())
+            ),
+            "collector_policy": manifest.get("collector_policy"),
             "success": True,
             "artifacts": {
                 "summary": str(summary_path.resolve()),

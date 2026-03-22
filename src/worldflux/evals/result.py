@@ -60,7 +60,13 @@ class EvalReport:
             "mode": self.mode,
         }
         provenance = dict(self.provenance)
-        if self.mode == "real":
+        if self.mode == "dataset_replay":
+            payload["dataset_replay_provenance"] = provenance
+            payload["real_provenance"] = provenance
+        elif self.mode == "env_policy":
+            payload["env_policy_provenance"] = provenance
+            payload["real_provenance"] = provenance
+        elif self.mode == "real":
             payload["real_provenance"] = provenance
         else:
             if not provenance:

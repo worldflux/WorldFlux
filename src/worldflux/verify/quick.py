@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+import warnings
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -148,6 +149,13 @@ def _normalize_quick_verify_tier(tier: str | QuickVerifyTier) -> QuickVerifyTier
     if isinstance(tier, QuickVerifyTier):
         return tier
     normalized = str(tier).strip().lower()
+    if normalized in {QuickVerifyTier.OFFLINE.value, QuickVerifyTier.REAL_ENV_SMOKE.value}:
+        warnings.warn(
+            f"quick_verify tier {normalized!r} is deprecated; using 'synthetic' semantics.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return QuickVerifyTier.SYNTHETIC
     for candidate in QuickVerifyTier:
         if candidate.value == normalized:
             return candidate
@@ -193,6 +201,7 @@ def quick_verify(
     from worldflux.parity.stats import non_inferiority_test
 
     start = time.monotonic()
+    requested_tier = str(tier.value if isinstance(tier, QuickVerifyTier) else tier).strip().lower()
     verification_tier = _normalize_quick_verify_tier(tier)
 
     # Load baseline statistics
@@ -246,6 +255,8 @@ def quick_verify(
 
     stats = {
         "verification_tier": verification_tier.value,
+        "verification_tier_requested": requested_tier,
+        "verification_tier_effective": verification_tier.value,
         "mean_drop_ratio": ni_result.mean_drop_ratio,
         "ci_upper_ratio": ni_result.ci_upper_ratio,
         "ci_lower_ratio": ni_result.ci_lower_ratio,

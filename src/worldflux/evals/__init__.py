@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+from .env_policy import EnvPolicyRollout, collect_env_policy_rollout
 from .metrics import (
     imagination_coherence,
     latent_consistency,
@@ -15,9 +16,11 @@ from .result import EvalReport, EvalResult
 from .suite import SUITE_CONFIGS, run_eval_suite
 
 __all__ = [
+    "EnvPolicyRollout",
     "EvalReport",
     "EvalResult",
     "SUITE_CONFIGS",
+    "collect_env_policy_rollout",
     "imagination_coherence",
     "latent_consistency",
     "latent_utilization",

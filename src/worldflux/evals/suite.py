@@ -25,6 +25,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_REAL_EVAL_MODES = {"dataset_replay", "env_policy"}
+
 SUITE_CONFIGS: dict[str, list[str]] = {
     "quick": ["reconstruction_fidelity", "latent_consistency"],
     "standard": [
@@ -121,12 +123,17 @@ def run_eval_suite(
     model.eval()
 
     eval_mode = str(mode).strip().lower() or "synthetic"
-    if eval_mode not in {"synthetic", "real"}:
-        raise ValueError(f"Unknown evaluation mode {mode!r}. Expected 'synthetic' or 'real'.")
-
     if eval_mode == "real":
+        provenance_kind = str((provenance or {}).get("kind", "")).strip().lower()
+        eval_mode = "env_policy" if provenance_kind == "env_policy" else "dataset_replay"
+    if eval_mode not in {"synthetic", *_REAL_EVAL_MODES}:
+        raise ValueError(
+            f"Unknown evaluation mode {mode!r}. Expected 'synthetic', 'dataset_replay', or 'env_policy'."
+        )
+
+    if eval_mode in _REAL_EVAL_MODES:
         if data is None:
-            raise ValueError("real evaluation data is required when mode='real'.")
+            raise ValueError(f"real evaluation data is required when mode={eval_mode!r}.")
         eval_data = data
     else:
         eval_data = _generate_synthetic_data(

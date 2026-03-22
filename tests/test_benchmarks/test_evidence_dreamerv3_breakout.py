@@ -8,6 +8,7 @@ import importlib.util
 import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 from worldflux import create_world_model
 from worldflux.training.data import create_random_buffer
@@ -64,14 +65,28 @@ def test_quick_mode_writes_evidence_artifacts(tmp_path, monkeypatch) -> None:
         "_prepare_buffer_and_manifest",
         lambda *args, **kwargs: (buffer, manifest_path, json.loads(manifest_path.read_text())),
     )
+    captured: dict[str, object] = {}
+
+    def _fake_create_world_model(*args, **kwargs):
+        captured["kwargs"] = dict(kwargs)
+        return create_world_model(
+            "dreamer:ci", obs_shape=(3, 64, 64), action_dim=6, actor_critic=True
+        )
+
+    monkeypatch.setattr(mod, "create_world_model", _fake_create_world_model)
     monkeypatch.setattr(
         mod,
-        "create_world_model",
-        lambda *args, **kwargs: create_world_model(
-            "dreamer:ci", obs_shape=(3, 64, 64), action_dim=6
+        "collect_env_policy_rollout",
+        lambda *args, **kwargs: SimpleNamespace(
+            episode_returns=[1.0, 2.0, 3.0],
+            provenance={
+                "policy_impl": "candidate_actor_stateful_eval",
+                "eval_mode": "env_policy",
+                "seed_schedule": [7, 9, 11],
+                "checkpoint_path": str(tmp_path / "checkpoint_best.pt"),
+            },
         ),
     )
-    monkeypatch.setattr(mod, "_collect_policy_returns", lambda *args, **kwargs: [1.0, 2.0, 3.0])
 
     exit_code = mod.main(["--quick", "--output-dir", str(tmp_path)])
 
@@ -85,3 +100,9 @@ def test_quick_mode_writes_evidence_artifacts(tmp_path, monkeypatch) -> None:
     summary = json.loads((tmp_path / "summary.json").read_text(encoding="utf-8"))
     assert summary["benchmark"] == "dreamerv3-breakout-evidence"
     assert summary["artifacts"]["dataset_manifest"] == str(manifest_path.resolve())
+    assert summary["policy_impl"] == "candidate_actor_stateful_eval"
+    assert summary["eval_mode"] == "env_policy"
+    assert summary["seed_schedule"] == [7, 9, 11]
+    assert summary["checkpoint_path"] == str(tmp_path / "checkpoint_best.pt")
+    assert summary["collector_policy"] == "random"
+    assert captured["kwargs"]["actor_critic"] is True

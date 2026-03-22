@@ -7,6 +7,7 @@ from __future__ import annotations
 import subprocess
 import sys
 import textwrap
+import warnings
 from pathlib import Path
 
 import pytest
@@ -39,7 +40,7 @@ class _MiniModel(torch.nn.Module):
         )
 
 
-def test_quick_verify_supports_offline_tier(
+def test_quick_verify_normalizes_deprecated_offline_tier(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     target = tmp_path / "model"
@@ -50,9 +51,38 @@ def test_quick_verify_supports_offline_tier(
         lambda target_path, device: _MiniModel(),
     )
 
-    result = quick_verify(str(target), env="atari/pong", tier="offline", episodes=3, horizon=4)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        result = quick_verify(str(target), env="atari/pong", tier="offline", episodes=3, horizon=4)
+
     assert result.protocol_version
-    assert result.stats["verification_tier"] == "offline"
+    assert result.stats["verification_tier_requested"] == "offline"
+    assert result.stats["verification_tier_effective"] == "synthetic"
+    assert any(issubclass(w.category, DeprecationWarning) for w in caught)
+
+
+def test_quick_verify_normalizes_real_env_smoke_alias(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    target = tmp_path / "model"
+    target.mkdir()
+
+    monkeypatch.setattr(
+        "worldflux.verify.quick._load_model_from_target",
+        lambda target_path, device: _MiniModel(),
+    )
+
+    with pytest.warns(DeprecationWarning, match="synthetic"):
+        result = quick_verify(
+            str(target),
+            env="atari/pong",
+            tier="real_env_smoke",
+            episodes=2,
+            horizon=4,
+        )
+
+    assert result.stats["verification_tier_requested"] == "real_env_smoke"
+    assert result.stats["verification_tier_effective"] == "synthetic"
 
 
 def test_quick_verify_rejects_unknown_tier(tmp_path: Path) -> None:
