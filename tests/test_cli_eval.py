@@ -37,7 +37,13 @@ def _fake_report(*, mode: str) -> EvalReport:
         report,
         mode=mode,
         provenance={
-            "kind": "synthetic" if mode == "synthetic" else "dataset_manifest",
+            "kind": (
+                "synthetic"
+                if mode == "synthetic"
+                else "dataset_manifest"
+                if mode == "dataset_replay"
+                else "env_policy"
+            ),
             "env_id": "mujoco/HalfCheetah-v5",
         },
     )
@@ -55,13 +61,17 @@ def test_eval_json_includes_synthetic_provenance(monkeypatch: pytest.MonkeyPatch
     assert '"synthetic_provenance"' in result.output
 
 
-def test_eval_real_mode_requires_dataset_manifest_or_env_id() -> None:
-    result = runner.invoke(cli.app, ["eval", "dreamer:ci", "--mode", "real", "--format", "json"])
+def test_eval_dataset_replay_mode_requires_dataset_manifest() -> None:
+    result = runner.invoke(
+        cli.app, ["eval", "dreamer:ci", "--mode", "dataset_replay", "--format", "json"]
+    )
     assert result.exit_code == 1
-    assert "dataset manifest" in result.output.lower() or "env id" in result.output.lower()
+    assert "dataset manifest" in result.output.lower()
 
 
-def test_eval_real_mode_emits_real_provenance(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+def test_eval_dataset_replay_mode_emits_dataset_replay_provenance(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
     manifest = tmp_path / "dataset_manifest.json"
     manifest.write_text(
         '{"schema_version":"worldflux.dataset.manifest.v1","env_id":"mujoco/HalfCheetah-v5"}',
@@ -69,7 +79,7 @@ def test_eval_real_mode_emits_real_provenance(monkeypatch: pytest.MonkeyPatch, t
     )
 
     monkeypatch.setattr(
-        "worldflux.cli._eval._load_real_eval_data",
+        "worldflux.cli._eval._load_dataset_replay_eval_data",
         lambda *args, **kwargs: (
             {
                 "obs": None,
@@ -81,8 +91,85 @@ def test_eval_real_mode_emits_real_provenance(monkeypatch: pytest.MonkeyPatch, t
     )
     monkeypatch.setattr(
         "worldflux.evals.run_eval_suite",
-        lambda *args, **kwargs: _fake_report(mode="real"),
+        lambda *args, **kwargs: _fake_report(mode="dataset_replay"),
     )
+
+    result = runner.invoke(
+        cli.app,
+        [
+            "eval",
+            "dreamer:ci",
+            "--mode",
+            "dataset_replay",
+            "--dataset-manifest",
+            str(manifest),
+            "--format",
+            "json",
+        ],
+    )
+    assert result.exit_code == 0
+    assert '"mode": "dataset_replay"' in result.output
+    assert '"dataset_replay_provenance"' in result.output
+    assert '"real_provenance"' in result.output
+
+
+def test_eval_env_policy_mode_emits_env_policy_provenance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "worldflux.cli._eval._load_env_policy_eval_data",
+        lambda *args, **kwargs: (
+            {"obs": None, "actions": None, "rewards": None},
+            {"kind": "env_policy", "env_id": "ALE/Breakout-v5", "policy_impl": "candidate_actor"},
+        ),
+    )
+    monkeypatch.setattr(
+        "worldflux.evals.run_eval_suite",
+        lambda *args, **kwargs: _fake_report(mode="env_policy"),
+    )
+
+    result = runner.invoke(
+        cli.app,
+        [
+            "eval",
+            "dreamer:ci",
+            "--mode",
+            "env_policy",
+            "--env-id",
+            "ALE/Breakout-v5",
+            "--format",
+            "json",
+        ],
+    )
+    assert result.exit_code == 0
+    assert '"mode": "env_policy"' in result.output
+    assert '"env_policy_provenance"' in result.output
+    assert '"real_provenance"' in result.output
+
+
+def test_eval_real_alias_warns_and_resolves_to_dataset_replay(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    manifest = tmp_path / "dataset_manifest.json"
+    manifest.write_text(
+        '{"schema_version":"worldflux.dataset.manifest.v1","env_id":"mujoco/HalfCheetah-v5"}',
+        encoding="utf-8",
+    )
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        "worldflux.cli._eval._load_dataset_replay_eval_data",
+        lambda *args, **kwargs: (
+            {"obs": None, "actions": None, "rewards": None},
+            {"kind": "dataset_manifest", "env_id": "mujoco/HalfCheetah-v5"},
+        ),
+    )
+
+    def _fake_run_eval_suite(*args, **kwargs):
+        captured["mode"] = kwargs["mode"]
+        return _fake_report(mode="dataset_replay")
+
+    monkeypatch.setattr("worldflux.evals.run_eval_suite", _fake_run_eval_suite)
 
     result = runner.invoke(
         cli.app,
@@ -98,5 +185,5 @@ def test_eval_real_mode_emits_real_provenance(monkeypatch: pytest.MonkeyPatch, t
         ],
     )
     assert result.exit_code == 0
-    assert '"mode": "real"' in result.output
-    assert '"real_provenance"' in result.output
+    assert captured["mode"] == "dataset_replay"
+    assert "deprecated" in result.output.lower()

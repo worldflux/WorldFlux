@@ -16,6 +16,7 @@ make ci                      # Full local CI gate
 ## Workflow
 
 - Run `make ci` after changes to verify before marking done.
+- When a user asks to push a finished branch, treat `push` as `push + gh pr create` by default unless they explicitly say not to open a PR yet.
 - New `.py` files must include `from __future__ import annotations`.
 - `uv.lock` is committed and hash-verified in CI. Run `uv lock` after dependency changes.
 

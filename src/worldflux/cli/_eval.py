@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import json
+import warnings
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +15,8 @@ import typer
 
 from ._app import app, console
 from ._rich_output import metric_table
+
+_EVAL_MODES = {"synthetic", "dataset_replay", "env_policy"}
 
 
 @app.command("eval", rich_help_panel="Quality & Evaluation")
@@ -25,17 +28,20 @@ def eval_cmd(
     mode: str = typer.Option(
         "synthetic",
         "--mode",
-        help="synthetic (compatibility gate) or real (dataset/env-backed evaluation).",
+        help=(
+            "synthetic (compatibility gate), dataset_replay (replay-backed proxy eval), "
+            "or env_policy (learned-policy env rollout)."
+        ),
     ),
     dataset_manifest: Path | None = typer.Option(
         None,
         "--dataset-manifest",
-        help="Dataset manifest JSON for real evaluation mode.",
+        help="Dataset manifest JSON for dataset_replay mode.",
     ),
     env_id: str | None = typer.Option(
         None,
         "--env-id",
-        help="Gymnasium environment id for real evaluation mode when no dataset manifest is provided.",
+        help="Gymnasium environment id for env_policy mode.",
     ),
     device: str = typer.Option("cpu", "--device"),
     output: Path | None = typer.Option(None, "--output", "-o"),
@@ -46,15 +52,18 @@ def eval_cmd(
     [dim]Examples:[/dim]
       worldflux eval dreamer:ci --suite quick
       worldflux eval ./outputs --suite standard --device cuda
-      worldflux eval tdmpc2:ci --mode real --dataset-manifest data/halfcheetah.manifest.json -o results.json
+      worldflux eval tdmpc2:ci --mode dataset_replay --dataset-manifest data/halfcheetah.manifest.json -o results.json
     """
     from rich.status import Status
 
     from worldflux.evals import SUITE_CONFIGS, run_eval_suite
 
-    eval_mode = str(mode).strip().lower() or "synthetic"
-    if eval_mode not in {"synthetic", "real"}:
-        console.print(f"[wf.fail]Unknown eval mode:[/wf.fail] {mode}. Expected synthetic or real.")
+    eval_mode = _normalize_eval_mode(mode, dataset_manifest=dataset_manifest, env_id=env_id)
+    if eval_mode not in _EVAL_MODES:
+        console.print(
+            "[wf.fail]Unknown eval mode:[/wf.fail] "
+            f"{mode}. Expected synthetic, dataset_replay, or env_policy."
+        )
         raise typer.Exit(code=1)
 
     if suite not in SUITE_CONFIGS:
@@ -89,23 +98,37 @@ def eval_cmd(
 
     eval_data = None
     provenance: dict[str, Any] = {"kind": "synthetic", "label": "synthetic evaluation input"}
-    if eval_mode == "real":
-        if dataset_manifest is None and not str(env_id or "").strip():
+    if eval_mode == "dataset_replay":
+        if dataset_manifest is None:
             console.print(
-                "[wf.fail]Real evaluation requires a dataset manifest or env id.[/wf.fail]"
+                "[wf.fail]dataset_replay evaluation requires a dataset manifest.[/wf.fail]"
             )
             raise typer.Exit(code=1)
         try:
-            eval_data, provenance = _load_real_eval_data(
+            eval_data, provenance = _load_dataset_replay_eval_data(
                 model,  # type: ignore[arg-type]
-                dataset_manifest=dataset_manifest,
-                env_id=env_id,
+                manifest_path=dataset_manifest,
                 device=device,
                 batch_size=4,
                 horizon=10,
             )
         except (RuntimeError, ValueError, FileNotFoundError) as exc:
-            console.print(f"[wf.fail]Failed to load real evaluation data:[/wf.fail] {exc}")
+            console.print(f"[wf.fail]Failed to load dataset_replay data:[/wf.fail] {exc}")
+            raise typer.Exit(code=1) from None
+    elif eval_mode == "env_policy":
+        if not str(env_id or "").strip():
+            console.print("[wf.fail]env_policy evaluation requires an env id.[/wf.fail]")
+            raise typer.Exit(code=1)
+        try:
+            eval_data, provenance = _load_env_policy_eval_data(
+                model,  # type: ignore[arg-type]
+                env_id=str(env_id).strip(),
+                device=device,
+                batch_size=4,
+                horizon=10,
+            )
+        except (RuntimeError, ValueError, FileNotFoundError) as exc:
+            console.print(f"[wf.fail]Failed to load env_policy data:[/wf.fail] {exc}")
             raise typer.Exit(code=1) from None
 
     with Status(
@@ -153,35 +176,32 @@ def eval_cmd(
         raise typer.Exit(code=1)
 
 
-def _load_real_eval_data(
-    model,
+def _normalize_eval_mode(
+    mode: str,
     *,
     dataset_manifest: Path | None,
     env_id: str | None,
-    device: str,
-    batch_size: int,
-    horizon: int,
-) -> tuple[dict[str, torch.Tensor], dict[str, object]]:
+) -> str:
+    normalized = str(mode).strip().lower() or "synthetic"
+    if normalized != "real":
+        return normalized
+
+    warnings.warn(
+        "'real' eval mode is deprecated; use 'dataset_replay' or 'env_policy'.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    console.print(
+        "[wf.warn]The eval mode `real` is deprecated; use `dataset_replay` or `env_policy`.[/wf.warn]"
+    )
     if dataset_manifest is not None:
-        return _load_real_eval_data_from_manifest(
-            model,
-            manifest_path=dataset_manifest,
-            device=device,
-            batch_size=batch_size,
-            horizon=horizon,
-        )
+        return "dataset_replay"
     if str(env_id or "").strip():
-        return _collect_real_eval_data_from_env(
-            model,
-            env_id=str(env_id).strip(),
-            device=device,
-            batch_size=batch_size,
-            horizon=horizon,
-        )
-    raise ValueError("Real evaluation requires a dataset manifest or env id.")
+        return "env_policy"
+    return "real"
 
 
-def _load_real_eval_data_from_manifest(
+def _load_dataset_replay_eval_data(
     model,
     *,
     manifest_path: Path,
@@ -189,6 +209,7 @@ def _load_real_eval_data_from_manifest(
     batch_size: int,
     horizon: int,
 ) -> tuple[dict[str, torch.Tensor], dict[str, object]]:
+    del model
     from worldflux.training import ReplayBuffer
     from worldflux.training.dataset_manifest import (
         load_dataset_manifest,
@@ -231,7 +252,7 @@ def _buffer_to_eval_data(
     }
 
 
-def _collect_real_eval_data_from_env(
+def _load_env_policy_eval_data(
     model,
     *,
     env_id: str,
@@ -239,46 +260,27 @@ def _collect_real_eval_data_from_env(
     batch_size: int,
     horizon: int,
 ) -> tuple[dict[str, torch.Tensor], dict[str, object]]:
-    try:
-        import gymnasium as gym
-    except ImportError as exc:  # pragma: no cover - optional dependency guard
-        raise RuntimeError("gymnasium is required for env-backed real evaluation.") from exc
+    from worldflux.evals.env_policy import collect_env_policy_rollout
 
-    config = getattr(model, "config", None)
-    obs_shape = tuple(getattr(config, "obs_shape", (4,)))
-    action_dim = int(getattr(config, "action_dim", 1))
-
-    obs_batch = np.zeros((batch_size, *obs_shape), dtype=np.float32)
-    actions = np.zeros((horizon, batch_size, action_dim), dtype=np.float32)
-    rewards = np.zeros((horizon, batch_size), dtype=np.float32)
-
-    env = gym.make(env_id)
-    try:
-        for batch_idx in range(batch_size):
-            obs, _ = env.reset(seed=42 + batch_idx)
-            obs_batch[batch_idx] = _fit_observation(obs, obs_shape)
-            for step in range(horizon):
-                action = env.action_space.sample()
-                actions[step, batch_idx] = _encode_action(action, action_dim)
-                next_obs, reward, terminated, truncated, _ = env.step(action)
-                rewards[step, batch_idx] = float(reward)
-                if terminated or truncated:
-                    obs, _ = env.reset(seed=42 + batch_idx + step + 1)
-                else:
-                    obs = next_obs
-    finally:
-        env.close()
-
-    provenance = {
-        "kind": "env_protocol",
-        "env_id": env_id,
-        "batch_size": batch_size,
-        "horizon": horizon,
-    }
+    rollout = collect_env_policy_rollout(
+        model,
+        env_id=env_id,
+        episodes=batch_size,
+        horizon=horizon,
+        seed=42,
+        device=device,
+        allow_fallback=False,
+    )
+    assert rollout.obs is not None
+    assert rollout.actions is not None
+    assert rollout.rewards is not None
+    provenance = dict(rollout.provenance)
+    provenance["batch_size"] = batch_size
+    provenance["horizon"] = horizon
     return {
-        "obs": torch.as_tensor(obs_batch, device=device),
-        "actions": torch.as_tensor(actions, device=device),
-        "rewards": torch.as_tensor(rewards, device=device),
+        "obs": rollout.obs,
+        "actions": rollout.actions,
+        "rewards": rollout.rewards,
     }, provenance
 
 

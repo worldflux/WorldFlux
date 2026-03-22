@@ -1,7 +1,7 @@
 # Benchmarks
 
-WorldFlux separates synthetic smoke benchmarks from evidence-oriented real
-evaluation lanes.
+WorldFlux separates synthetic smoke benchmarks from evidence-oriented
+`env_policy` lanes.
 
 ## Synthetic Smoke Benchmarks
 
@@ -97,6 +97,12 @@ Artifacts:
 - `report.md`
 - dataset manifest + replay buffer bundle
 
+Evidence semantics:
+
+- `eval_mode = env_policy`
+- `policy_impl = candidate_actor_stateful_eval`
+- learned-policy Atari rollout only; random env sampling is invalid evidence
+
 ### Evidence Lane 2: TD-MPC2 HalfCheetah
 
 ```bash
@@ -123,6 +129,12 @@ Evidence lane artifacts:
 - `checkpoint_index.json`
 - `report.md`
 - dataset manifest + replay buffer bundle
+
+Evidence semantics:
+
+- `eval_mode = env_policy`
+- `policy_impl = cem_planner_eval`
+- learned-policy MuJoCo rollout only; replay/data collection provenance is recorded separately
 
 These lanes are intended to produce reproducible evidence bundles, not SOTA or
 paper-parity claims.

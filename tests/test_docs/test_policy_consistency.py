@@ -147,3 +147,18 @@ def test_config_reference_moves_unsupported_training_knobs_out_of_main_flow() ->
     config_ref = _read("docs/reference/config.md")
     assert "- `ema_decay`" not in config_ref
     assert "Advanced/Internal training knobs" in config_ref
+
+
+def test_model_evaluation_docs_use_explicit_eval_semantics() -> None:
+    guide = _read("docs/guides/model-evaluation.md")
+    benchmarks = _read("docs/reference/benchmarks.md")
+
+    assert "`dataset_replay`" in guide
+    assert "`env_policy`" in guide
+    assert "`real`:" not in guide
+    assert "`offline`" not in guide
+    assert "`real_env_smoke`" not in guide
+    assert "`dataset_replay_provenance`" in guide
+    assert "`env_policy_provenance`" in guide
+    assert "env_policy" in benchmarks
+    assert "synthetic smoke benchmarks" in benchmarks.lower()
