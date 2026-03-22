@@ -409,6 +409,10 @@ def _print_configuration_summary(context: dict[str, Any], target_path: Path, for
 
 
 def _confirm_generation() -> bool:
+    import worldflux.cli as _cli  # support monkeypatch on cli namespace
+
+    if not _cli._is_interactive_terminal():
+        return bool(Confirm.ask("Proceed and generate files?", default=True))
     try:
         from InquirerPy import inquirer
     except ModuleNotFoundError:
@@ -773,9 +777,10 @@ def _prompt_with_rich() -> dict[str, Any]:
 def _prompt_user_configuration() -> dict[str, Any]:
     import worldflux.cli as _cli  # support monkeypatch on cli namespace
 
-    config = _cli._prompt_with_inquirer()
-    if config is not None:
-        return config
+    if _cli._is_interactive_terminal():
+        config = _cli._prompt_with_inquirer()
+        if config is not None:
+            return config
     return _cli._prompt_with_rich()
 
 

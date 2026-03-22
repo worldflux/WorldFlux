@@ -878,6 +878,18 @@ def test_confirm_generation_falls_back_to_rich_when_inquirer_missing(
     assert cli._confirm_generation() is True
 
 
+def test_confirm_generation_skips_inquirer_when_terminal_is_not_interactive(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(cli, "_is_interactive_terminal", lambda: False)
+    monkeypatch.setattr(
+        cli.Confirm,
+        "ask",
+        staticmethod(lambda *_args, **_kwargs: True),
+    )
+    assert cli._confirm_generation() is True
+
+
 def test_prompt_user_configuration_prefers_inquirer_result(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -892,6 +904,20 @@ def test_prompt_user_configuration_prefers_inquirer_result(
 def test_prompt_user_configuration_falls_back_to_rich(monkeypatch: pytest.MonkeyPatch) -> None:
     config = _base_context("rich-fallback")
     monkeypatch.setattr(cli, "_prompt_with_inquirer", lambda: None)
+    monkeypatch.setattr(cli, "_prompt_with_rich", lambda: config)
+    assert cli._prompt_user_configuration() == config
+
+
+def test_prompt_user_configuration_skips_inquirer_when_terminal_is_not_interactive(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _base_context("non-interactive")
+    monkeypatch.setattr(cli, "_is_interactive_terminal", lambda: False)
+    monkeypatch.setattr(
+        cli,
+        "_prompt_with_inquirer",
+        lambda: pytest.fail("inquirer prompt should not run without a tty"),
+    )
     monkeypatch.setattr(cli, "_prompt_with_rich", lambda: config)
     assert cli._prompt_user_configuration() == config
 
