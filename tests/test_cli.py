@@ -1122,7 +1122,18 @@ def test_resolve_proof_manifest_uses_tdmpc2_canonical_backend_by_default(
     assert captured["allow_official_only"] is False
 
 
-def test_parity_proof_run_tdmpc2_without_manifest_blocks() -> None:
+def test_parity_proof_run_tdmpc2_without_manifest_uses_proof_path(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    calls: list[tuple[str, list[str]]] = []
+
+    def _run(script_name: str, args: list[str]) -> str:
+        calls.append((script_name, list(args)))
+        return ""
+
+    monkeypatch.setattr(cli, "_run_parity_proof_script", _run)
+
     result = runner.invoke(
         cli.app,
         [
@@ -1132,12 +1143,15 @@ def test_parity_proof_run_tdmpc2_without_manifest_blocks() -> None:
             "tdmpc2",
             "--backend",
             "official_tdmpc2_torch_subprocess",
+            "--output-dir",
+            str(tmp_path),
             "--seed-list",
             ",".join(str(i) for i in range(20)),
         ],
     )
-    assert result.exit_code == 2
-    assert "tdmpc2_architecture_mismatch_open" in result.stdout
+    assert result.exit_code == 0
+    assert calls[0][0] == "run_parity_matrix.py"
+    assert "tdmpc2_architecture_mismatch_open" not in result.stdout
 
 
 def test_parity_proof_run_tdmpc2_resolves_canonical_backend_when_omitted(
@@ -1198,6 +1212,7 @@ def test_parity_proof_report_runs_completeness_stats_and_markdown(
     (run_root / "run_context.json").write_text('{"seeds":[0]}', encoding="utf-8")
     equivalence = run_root / "equivalence_report.json"
     markdown = run_root / "equivalence_report.md"
+    stability = run_root / "stability_report.json"
 
     calls: list[str] = []
 
@@ -1222,6 +1237,12 @@ def test_parity_proof_report_runs_completeness_stats_and_markdown(
         if script_name == "report_markdown.py":
             output = Path(args[args.index("--output") + 1])
             output.write_text("# Proof\n", encoding="utf-8")
+        if script_name == "stability_report.py":
+            output = Path(args[args.index("--output") + 1])
+            output.write_text(
+                json.dumps({"schema_version": "parity.stability.v1", "status": "single_run"}),
+                encoding="utf-8",
+            )
         if script_name == "validate_matrix_completeness.py":
             output = Path(args[args.index("--output") + 1])
             output.write_text('{"missing_pairs":0,"pass":true}', encoding="utf-8")
@@ -1245,9 +1266,11 @@ def test_parity_proof_report_runs_completeness_stats_and_markdown(
         "validate_matrix_completeness.py",
         "stats_equivalence.py",
         "report_markdown.py",
+        "stability_report.py",
     ]
     assert equivalence.exists()
     assert markdown.exists()
+    assert stability.exists()
     assert "Parity Proof Report" in result.stdout
 
 
@@ -1297,6 +1320,12 @@ def test_parity_proof_combined_runs_all_phases(
         if script_name == "report_markdown.py":
             Path(args[args.index("--output") + 1]).write_text("# Proof\n", encoding="utf-8")
             return ""
+        if script_name == "stability_report.py":
+            Path(args[args.index("--output") + 1]).write_text(
+                json.dumps({"schema_version": "parity.stability.v1", "status": "single_run"}),
+                encoding="utf-8",
+            )
+            return ""
         raise AssertionError(f"unexpected script: {script_name}")
 
     monkeypatch.setattr(cli, "_run_parity_proof_script", _run)
@@ -1320,6 +1349,7 @@ def test_parity_proof_combined_runs_all_phases(
         "validate_matrix_completeness.py",
         "stats_equivalence.py",
         "report_markdown.py",
+        "stability_report.py",
     ]
     run_args = calls[0][1]
     assert "--seed-list" in run_args
@@ -1329,6 +1359,7 @@ def test_parity_proof_combined_runs_all_phases(
     assert (output_dir / "coverage_report.json").exists()
     assert (output_dir / "equivalence_report.json").exists()
     assert (output_dir / "equivalence_report.md").exists()
+    assert (output_dir / "stability_report.json").exists()
 
 
 def test_parity_proof_combined_resolves_manifest_when_omitted(
@@ -1367,6 +1398,12 @@ def test_parity_proof_combined_resolves_manifest_when_omitted(
             return ""
         if script_name == "report_markdown.py":
             Path(args[args.index("--output") + 1]).write_text("# Proof\n", encoding="utf-8")
+            return ""
+        if script_name == "stability_report.py":
+            Path(args[args.index("--output") + 1]).write_text(
+                json.dumps({"schema_version": "parity.stability.v1", "status": "single_run"}),
+                encoding="utf-8",
+            )
             return ""
         raise AssertionError(f"unexpected script: {script_name}")
 
@@ -1427,6 +1464,12 @@ def test_parity_proof_combined_enforce_exits_on_failed_verdict(
             return ""
         if script_name == "report_markdown.py":
             Path(args[args.index("--output") + 1]).write_text("# Proof\n", encoding="utf-8")
+            return ""
+        if script_name == "stability_report.py":
+            Path(args[args.index("--output") + 1]).write_text(
+                json.dumps({"schema_version": "parity.stability.v1", "status": "single_run"}),
+                encoding="utf-8",
+            )
             return ""
         raise AssertionError(f"unexpected script: {script_name}")
 

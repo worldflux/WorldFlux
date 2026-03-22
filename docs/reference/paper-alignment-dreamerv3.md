@@ -33,6 +33,18 @@ WorldFlux currently encodes the following DreamerV3-aligned defaults in code:
 These values are surfaced through `DreamerV3Config` and
 `DreamerV3WorldModel.reference_profile()`.
 
+## Proof Compare Status
+
+`dreamerv3:official_xl` is the canonical WorldFlux profile for proof-grade
+official comparison. The proof pipeline expects:
+
+- official system: `official_dreamerv3_jax_subprocess`
+- WorldFlux system: `worldflux_dreamerv3_jax_subprocess`
+- backend profile: `official_xl`
+
+Proof completion is not inferred from local smoke runs. It is judged from the
+proof artifact set headed by `equivalence_report.json` and `stability_report.json`.
+
 ## What This Page Does Not Claim
 
 - This page does not, by itself, prove paper-level benchmark parity.

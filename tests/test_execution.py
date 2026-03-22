@@ -79,9 +79,12 @@ def test_resolve_execution_manifest_dreamer_compare_incomplete_before_20_seeds(
     assert resolution.early_result.reason_code == "minimum_proof_not_reached"
 
 
-def test_resolve_execution_manifest_tdmpc2_compare_blocked(tmp_path: Path) -> None:
+def test_resolve_execution_manifest_tdmpc2_compare_uses_canonical_manifest(tmp_path: Path) -> None:
     scripts_root = tmp_path / "scripts" / "parity"
-    (scripts_root / "manifests").mkdir(parents=True, exist_ok=True)
+    manifests_root = scripts_root / "manifests"
+    manifests_root.mkdir(parents=True, exist_ok=True)
+    manifest_path = manifests_root / "official_vs_worldflux_full_v2.yaml"
+    manifest_path.write_text("schema_version: parity.suite.v2\n", encoding="utf-8")
     request = BackendExecutionRequest(
         backend="official_tdmpc2_torch_subprocess",
         family="tdmpc2",
@@ -94,10 +97,8 @@ def test_resolve_execution_manifest_tdmpc2_compare_blocked(tmp_path: Path) -> No
         device="cpu",
     )
     resolution = resolve_execution_manifest(request, scripts_root=scripts_root)
-    assert resolution.manifest_path is None
-    assert resolution.early_result is not None
-    assert resolution.early_result.status == "blocked"
-    assert resolution.early_result.reason_code == "tdmpc2_architecture_mismatch_open"
+    assert resolution.early_result is None
+    assert resolution.manifest_path == manifest_path.resolve()
 
 
 def test_resolve_execution_manifest_tdmpc2_compare_allowed_when_alignment_report_passes(
@@ -242,6 +243,7 @@ def test_normalize_distributed_proof_summary_marks_success(tmp_path: Path) -> No
     validity_json = tmp_path / "validity_report.json"
     merge_summary = tmp_path / "merge_summary.json"
     markdown_report = tmp_path / "equivalence_report.md"
+    stability_report = tmp_path / "stability_report.json"
     evidence_bundle = tmp_path / "evidence_bundle.zip"
     eq_json.write_text(
         json.dumps({"global": {"parity_pass_final": True, "validity_pass": True}}),
@@ -252,9 +254,7 @@ def test_normalize_distributed_proof_summary_marks_success(tmp_path: Path) -> No
     validity_json.write_text('{"pass": true}', encoding="utf-8")
     merge_summary.write_text('{"merged_records": 2}', encoding="utf-8")
     markdown_report.write_text("# report\n", encoding="utf-8")
-    markdown_report.write_text("# report\n", encoding="utf-8")
-    markdown_report.write_text("# report\n", encoding="utf-8")
-    markdown_report.write_text("# report\n", encoding="utf-8")
+    stability_report.write_text('{"schema_version":"parity.stability.v1"}', encoding="utf-8")
     evidence_bundle.write_text("zip", encoding="utf-8")
     summary = {
         "run_id": "proof_run",
@@ -268,6 +268,7 @@ def test_normalize_distributed_proof_summary_marks_success(tmp_path: Path) -> No
             "phase_progress": str(phase_progress),
             "validity_report": str(validity_json),
             "merge_summary": str(merge_summary),
+            "stability_report": str(stability_report),
             "evidence_bundle": str(evidence_bundle),
         },
         "errors": {"stats_or_report": ""},
@@ -289,6 +290,7 @@ def test_normalize_distributed_proof_summary_prefers_declared_evidence_bundle_pa
     validity_json = tmp_path / "validity_report.json"
     merge_summary = tmp_path / "merge_summary.json"
     markdown_report = tmp_path / "equivalence_report.md"
+    stability_report = tmp_path / "stability_report.json"
     evidence_bundle = tmp_path / "nested" / "proof_bundle.zip"
     evidence_bundle.parent.mkdir(parents=True, exist_ok=True)
     eq_json.write_text(
@@ -300,6 +302,7 @@ def test_normalize_distributed_proof_summary_prefers_declared_evidence_bundle_pa
     validity_json.write_text('{"pass": true}', encoding="utf-8")
     merge_summary.write_text('{"merged_records": 2}', encoding="utf-8")
     markdown_report.write_text("# report\n", encoding="utf-8")
+    stability_report.write_text('{"schema_version":"parity.stability.v1"}', encoding="utf-8")
     evidence_bundle.write_text("zip", encoding="utf-8")
     summary = {
         "run_id": "proof_run",
@@ -313,6 +316,7 @@ def test_normalize_distributed_proof_summary_prefers_declared_evidence_bundle_pa
             "phase_progress": str(phase_progress),
             "validity_report": str(validity_json),
             "merge_summary": str(merge_summary),
+            "stability_report": str(stability_report),
             "evidence_bundle": str(evidence_bundle),
         },
         "errors": {"stats_or_report": ""},
@@ -363,6 +367,7 @@ def test_normalize_distributed_proof_summary_requires_evidence_bundle(
     validity_json = tmp_path / "validity_report.json"
     merge_summary = tmp_path / "merge_summary.json"
     markdown_report = tmp_path / "equivalence_report.md"
+    stability_report = tmp_path / "stability_report.json"
     eq_json.write_text(
         json.dumps({"global": {"parity_pass_final": True, "validity_pass": True}}),
         encoding="utf-8",
@@ -372,6 +377,7 @@ def test_normalize_distributed_proof_summary_requires_evidence_bundle(
     validity_json.write_text('{"pass": true}', encoding="utf-8")
     merge_summary.write_text('{"merged_records": 2}', encoding="utf-8")
     markdown_report.write_text("# report\n", encoding="utf-8")
+    stability_report.write_text('{"schema_version":"parity.stability.v1"}', encoding="utf-8")
     summary = {
         "run_id": "proof_run",
         "manifest": "/tmp/manifest.yaml",
@@ -384,6 +390,7 @@ def test_normalize_distributed_proof_summary_requires_evidence_bundle(
             "phase_progress": str(phase_progress),
             "validity_report": str(validity_json),
             "merge_summary": str(merge_summary),
+            "stability_report": str(stability_report),
             "evidence_bundle": str(tmp_path / "evidence_bundle.zip"),
         },
         "errors": {"stats_or_report": ""},
@@ -405,6 +412,7 @@ def test_normalize_distributed_proof_summary_requires_validity_and_component_mat
     validity_json = tmp_path / "validity_report.json"
     merge_summary = tmp_path / "merge_summary.json"
     markdown_report = tmp_path / "equivalence_report.md"
+    stability_report = tmp_path / "stability_report.json"
     eq_json.write_text(
         json.dumps(
             {
@@ -422,6 +430,7 @@ def test_normalize_distributed_proof_summary_requires_validity_and_component_mat
     validity_json.write_text('{"pass": false}', encoding="utf-8")
     merge_summary.write_text('{"merged_records": 2}', encoding="utf-8")
     markdown_report.write_text("# report\n", encoding="utf-8")
+    stability_report.write_text('{"schema_version":"parity.stability.v1"}', encoding="utf-8")
     summary = {
         "run_id": "proof_run",
         "manifest": "/tmp/manifest.yaml",
@@ -434,6 +443,7 @@ def test_normalize_distributed_proof_summary_requires_validity_and_component_mat
             "phase_progress": str(phase_progress),
             "validity_report": str(validity_json),
             "merge_summary": str(merge_summary),
+            "stability_report": str(stability_report),
         },
         "errors": {"stats_or_report": ""},
     }
@@ -480,6 +490,50 @@ def test_normalize_distributed_proof_summary_requires_validity_and_merge_summary
     assert result.status == "failed"
     assert result.reason_code == "artifact_missing"
     assert "validity_report.json" in result.message or "merge_summary.json" in result.message
+
+
+def test_normalize_distributed_proof_summary_requires_stability_report(
+    tmp_path: Path,
+) -> None:
+    eq_json = tmp_path / "equivalence_report.json"
+    coverage_json = tmp_path / "coverage_report.json"
+    phase_progress = tmp_path / "phase_progress.json"
+    validity_json = tmp_path / "validity_report.json"
+    merge_summary = tmp_path / "merge_summary.json"
+    markdown_report = tmp_path / "equivalence_report.md"
+    evidence_bundle = tmp_path / "evidence_bundle.zip"
+    eq_json.write_text(
+        json.dumps({"global": {"parity_pass_final": True, "validity_pass": True}}),
+        encoding="utf-8",
+    )
+    coverage_json.write_text('{"pass": true, "missing_pairs": 0}', encoding="utf-8")
+    phase_progress.write_text('{"proof_phase": "compare"}', encoding="utf-8")
+    validity_json.write_text('{"pass": true}', encoding="utf-8")
+    merge_summary.write_text('{"merged_records": 2}', encoding="utf-8")
+    markdown_report.write_text("# report\n", encoding="utf-8")
+    evidence_bundle.write_text("zip", encoding="utf-8")
+    summary = {
+        "run_id": "proof_run",
+        "manifest": "/tmp/manifest.yaml",
+        "failed_shards": 0,
+        "coverage": {"pass": True, "missing_pairs": 0, "rerun_command": ""},
+        "artifacts": {
+            "equivalence_report": str(eq_json),
+            "equivalence_markdown": str(markdown_report),
+            "coverage_report": str(coverage_json),
+            "phase_progress": str(phase_progress),
+            "validity_report": str(validity_json),
+            "merge_summary": str(merge_summary),
+            "evidence_bundle": str(evidence_bundle),
+        },
+        "errors": {"stats_or_report": ""},
+    }
+    summary_path = tmp_path / "orchestrator_summary.json"
+    result = normalize_distributed_proof_summary(summary, summary_path=summary_path)
+
+    assert result.status == "failed"
+    assert result.reason_code == "artifact_missing"
+    assert "stability_report.json" in result.message
 
 
 def test_normalize_distributed_proof_summary_requires_equivalence_markdown(

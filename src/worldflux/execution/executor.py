@@ -329,6 +329,7 @@ class ParityBackedExecutor:
         runs_jsonl = run_root / "parity_runs.jsonl"
         equivalence_json = run_root / "equivalence_report.json"
         equivalence_md = run_root / "equivalence_report.md"
+        stability_json = run_root / "stability_report.json"
 
         run_cmd = [
             sys.executable,
@@ -422,6 +423,32 @@ class ParityBackedExecutor:
                 next_action="Inspect report rendering inputs.",
             )
 
+        stability_cmd = [
+            sys.executable,
+            str(self.scripts_root / "stability_report.py"),
+            "--input",
+            str(runs_jsonl),
+            "--equivalence-report",
+            str(equivalence_json),
+            "--output",
+            str(stability_json),
+        ]
+        stability_result = self._run_subprocess(stability_cmd)
+        if stability_result.returncode != 0:
+            return BackendExecutionResult(
+                status="failed",
+                reason_code="subprocess_failed",
+                message=self._format_subprocess_failure(stability_cmd, stability_result),
+                backend=request.backend,
+                family=request.family,
+                mode=request.mode,
+                proof_phase="compare",
+                profile=request.profile,
+                run_id=run_id,
+                manifest_path=str(manifest_path),
+                next_action="Inspect stability report inputs and rerun proof reporting.",
+            )
+
         report_payload = json.loads(equivalence_json.read_text(encoding="utf-8"))
         global_block = report_payload.get("global", {})
         passed = (
@@ -459,6 +486,7 @@ class ParityBackedExecutor:
             summary_path=str(equivalence_json.resolve()),
             equivalence_report_json=str(equivalence_json.resolve()),
             equivalence_report_md=str(equivalence_md.resolve()),
+            stability_report_json=str(stability_json.resolve()),
             metrics=metrics,
             next_action=None if passed else "Inspect validity and equivalence reports.",
         )

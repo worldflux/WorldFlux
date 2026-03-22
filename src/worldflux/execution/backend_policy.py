@@ -10,7 +10,7 @@ from pathlib import Path
 
 from .contracts import BackendExecutionRequest, BackendExecutionResult
 
-TDMPC2_COMPARE_ENABLED = False
+TDMPC2_COMPARE_ENABLED = True
 DREAMER_MIN_LOCKED_SEEDS = 10
 DREAMER_MIN_PROOF_SEEDS = 20
 
@@ -108,6 +108,18 @@ def evaluate_family_policy(request: BackendExecutionRequest) -> BackendExecution
                 reason_code="tdmpc2_architecture_mismatch_open",
                 message="TD-MPC2 compare requires backend_profile='proof_5m'.",
                 next_action="Use tdmpc2:proof_5m / backend_profile=proof_5m for compare.",
+                manifest_path=str(report_path) if report_path is not None else None,
+            )
+        if report_status == "mismatched":
+            return blocked_result(
+                request,
+                reason_code="tdmpc2_architecture_mismatch_open",
+                message=(
+                    "TD-MPC2 compare is blocked because the latest alignment report is mismatched."
+                ),
+                next_action=(
+                    "Regenerate a passing TD-MPC2 alignment report or use the canonical proof_5m recipe."
+                ),
                 manifest_path=str(report_path) if report_path is not None else None,
             )
         if not TDMPC2_COMPARE_ENABLED and report_status != "aligned":

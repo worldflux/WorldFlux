@@ -1470,6 +1470,7 @@ def _assemble_evidence_bundle(*, summary_path: Path, summary: dict[str, Any]) ->
             artifacts.get("validity_report"),
             artifacts.get("equivalence_report"),
             artifacts.get("equivalence_markdown"),
+            artifacts.get("stability_report"),
             artifacts.get("merge_summary"),
             artifacts.get("phase_progress"),
         )
@@ -2217,6 +2218,19 @@ def _execute_phase(
                     str(equivalence_md),
                 ],
             )
+
+            stability_script = Path("scripts/parity/stability_report.py").resolve()
+            _run_local_script(
+                stability_script,
+                [
+                    "--input",
+                    str(merged_runs),
+                    "--equivalence-report",
+                    str(equivalence_report),
+                    "--output",
+                    str(local_root / "stability_report.json"),
+                ],
+            )
         except RuntimeError as exc:
             stats_failed = True
             stats_error = str(exc)
@@ -2236,6 +2250,7 @@ def _execute_phase(
         validity_report,
         equivalence_report,
         equivalence_md,
+        local_root / "stability_report.json",
         merge_summary,
     ):
         _upload_artifact(region=args.region, artifact=artifact, final_prefix=final_prefix)
@@ -2294,6 +2309,9 @@ def _execute_phase(
             "validity_report": str(validity_report) if validity_report.exists() else "",
             "equivalence_report": str(equivalence_report) if equivalence_report.exists() else "",
             "equivalence_markdown": str(equivalence_md) if equivalence_md.exists() else "",
+            "stability_report": str(local_root / "stability_report.json")
+            if (local_root / "stability_report.json").exists()
+            else "",
             "merge_summary": str(merge_summary),
             "evidence_bundle": "",
         },
