@@ -859,6 +859,7 @@ def test_confirm_generation_uses_inquirer_when_available(
     fake_inquirer = SimpleNamespace(
         confirm=lambda **_kwargs: SimpleNamespace(execute=lambda: False),
     )
+    monkeypatch.setattr(cli, "_is_interactive_terminal", lambda: True)
     monkeypatch.setitem(sys.modules, "InquirerPy", SimpleNamespace(inquirer=fake_inquirer))
     assert cli._confirm_generation() is False
 
