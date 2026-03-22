@@ -20,31 +20,27 @@ bundle that third parties can inspect.
 
 ## Current Program Status
 
-As of 2026-03-11, WorldFlux is intentionally not treating proof work as
-"100% complete".
+As of 2026-03-22, the proof-grade path is the primary parity surface for
+DreamerV3 and TD-MPC2.
 
-- The current active phase is `official-only` DreamerV3 bootstrap on the
-  official JAX stack.
-- The immediate goal is to lock the official Dreamer run set to `10` seeds and
-  then reach the `20`-seed minimum proof threshold.
-- Dreamer proof compare now has a JAX/JAX canonical path:
+- Dreamer proof compare uses the canonical JAX/JAX path:
   `official_dreamerv3_jax_subprocess` vs `worldflux_dreamerv3_jax_subprocess`.
-  Statistical comparison still depends on the official-only reproducibility pass
-  being stable enough to resume compare runs.
-- Product-facing factory/training surfaces now expose delegated backend handles
-  for family-native proof paths:
-  Dreamer defaults to the JAX subprocess family and TD-MPC2 defaults to the
-  Torch subprocess family when proof manifests are omitted.
-- TD-MPC2 is not parity-complete yet, but the aligned `proof_5m` path is now
-  conditionally runnable when a passing alignment report is available.
+- TD-MPC2 proof compare uses the canonical Torch/native path:
+  `official_tdmpc2_torch_subprocess` vs `worldflux_tdmpc2_native`.
+- When manifests are omitted, WorldFlux resolves the family-native proof
+  backend automatically.
+- Proof completion is judged from the generated artifact set, not from
+  newcomer smoke workflows:
+  `coverage_report.json`, `validity_report.json`, `equivalence_report.json`,
+  `equivalence_report.md`, `stability_report.json`, and `evidence_bundle.zip`.
 
-WorldFlux only treats proof work as "100%" when all of the following are true:
+WorldFlux only treats a proof run as complete when all of the following are true:
 
-- Dreamer official statistical proof is complete.
-- WorldFlux core surfaces operate as a real multi-backend product, not a
-  PyTorch-native implementation with backend shims.
-- TD-MPC2 architecture mismatch is resolved well enough to resume proof-grade
-  comparison on that family.
+- `global.parity_pass_final == true`
+- `global.validity_pass == true`
+- `global.missing_pairs == 0`
+- `global.component_match_pass == true` when the suite requires component matching
+- `stability_report.json` is present for the run
 
 ## Public Claims Policy
 
@@ -111,6 +107,7 @@ This emits:
 - `validity_report.json`
 - `equivalence_report.json`
 - `equivalence_report.md`
+- `stability_report.json`
 - `component_match_report.json` when required by the suite
 - `evidence_bundle.zip`
 
@@ -141,16 +138,21 @@ For official proof claims, check `equivalence_report.json`:
 
 If any key is false, the proof run fails.
 
+Then check `stability_report.json`:
+
+- `status == "stable"` for the current run
+- `rerun_consistency.verdict_flip_detected == false`
+- `rerun_consistency.pairwise_metric_sign_flip_detected == false`
+- `rerun_consistency.bayesian_frequentist_mismatch_detected == false`
+
 ### Important Scope Note
 
-The proof-grade command surface can execute official-vs-WorldFlux manifests,
-but that does not mean every family is currently in an active public-proof
-phase.
+`quick` / legacy parity and proof-grade parity are intentionally separate:
 
-- DreamerV3 is currently in `official-only` reproducibility hardening before
-  active WorldFlux comparison resumes.
-- TD-MPC2 remains on the proof roadmap. An aligned `proof_5m` path is runnable,
-  but that alone is not yet a final public parity claim.
+- `quick` is for local smoke and compatibility checks.
+- `legacy quick parity` is for older non-inferiority workflows.
+- `proof` is the official equivalence surface and the only parity path that
+  counts toward proof-grade claims.
 
 ## Campaign Helpers (Reproducible Exports)
 
