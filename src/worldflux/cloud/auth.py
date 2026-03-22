@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import json
 import os
+import stat
+import warnings
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +23,7 @@ def load_credentials() -> dict[str, Any]:
     path = credentials_path()
     if not path.exists():
         return {}
+    _warn_if_permissions_are_too_open(path)
     payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
         return {}
@@ -31,7 +34,9 @@ def save_credentials(payload: dict[str, Any]) -> None:
     """Persist credentials to disk."""
     path = credentials_path()
     path.parent.mkdir(parents=True, exist_ok=True)
+    _chmod_if_posix(path.parent, 0o700)
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    _chmod_if_posix(path, 0o600)
 
 
 def get_api_key() -> str | None:
@@ -47,3 +52,20 @@ def set_api_key(api_key: str) -> None:
     payload = load_credentials()
     payload["api_key"] = api_key.strip()
     save_credentials(payload)
+
+
+def _chmod_if_posix(path: Path, mode: int) -> None:
+    if os.name == "posix":
+        path.chmod(mode)
+
+
+def _warn_if_permissions_are_too_open(path: Path) -> None:
+    if os.name != "posix":
+        return
+    current_mode = stat.S_IMODE(path.stat().st_mode)
+    if current_mode & 0o077:
+        warnings.warn(
+            f"WorldFlux Cloud credential file permissions are too open: {oct(current_mode)}",
+            UserWarning,
+            stacklevel=2,
+        )
