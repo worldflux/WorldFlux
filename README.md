@@ -173,7 +173,10 @@ verification flow. It emits a shared `summary.json`, per-family imagination
 artifacts, and per-family `quick_verify.json` outputs.
 
 Treat this as a contract demonstration only. It is not a benchmark, paper
-reproduction, or public proof claim.
+reproduction, or public proof claim. In this demo, quick verify separates
+workflow completion from statistical quality. A per-family quick verify warning
+means the artifacts are structurally valid but the run is not yet a quality
+gate pass.
 
 ### Supported Surface
 
@@ -206,12 +209,19 @@ This lane is the current evidence-backed MVP surface for installation and
 contract validation. Treat it as a local compatibility workflow, not as a
 benchmark or public proof claim.
 
+In this lane, `worldflux verify --mode quick` may return a workflow warning
+instead of a hard failure when the synthetic threshold is missed. That warning
+means the command executed and the generated artifacts are interpretable, but
+you have not yet cleared a stronger quality gate.
+
 The meaningful-local-training lane starts after that smoke passes:
 
-1. set `data.source = "gym"` in `worldflux.toml`
-2. use a real environment id such as `ALE/Breakout-v5` or `HalfCheetah-v5`
-3. rerun `worldflux train`
-4. inspect `outputs/run_manifest.json` and confirm `run_classification` is
+1. for the guaranteed DreamerV3 lane, install Atari extras with
+   `uv sync --extra training --extra atari`
+2. set `data.source = "gym"` in `worldflux.toml`
+3. use `ALE/Breakout-v5`
+4. rerun `worldflux train`
+5. inspect `outputs/run_manifest.json` and confirm `run_classification` is
    `meaningful_local_training` with no `degraded_modes`
 
 The newcomer wheel-install smoke is exercised in CI on Linux and macOS; Windows
@@ -377,8 +387,8 @@ See the `examples/` directory:
 - `collect_mujoco.py` - MuJoCo dataset collection with dataset manifest support and policy-checkpoint collector path
 - `benchmarks/evidence_tdmpc2_halfcheetah.py` - Evidence-oriented TD-MPC2 benchmark that emits curves, returns, checkpoints, and report artifacts
 - `worldflux_quickstart.ipynb` - Interactive Colab notebook
-- `train_dreamer.py` - Training example
-- `train_tdmpc2.py` - Training example
+- `train_dreamer.py` - Family-specific manual Dreamer training example
+- `train_tdmpc2.py` - Family-specific manual TD-MPC2 training example
 - `visualize_imagination.py` - Imagination rollout visualization
 
 ```bash

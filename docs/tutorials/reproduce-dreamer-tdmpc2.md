@@ -36,6 +36,10 @@ This is the supported repository-level reproduction step for comparing
 DreamerV3 and TD-MPC2 under the same synthetic smoke conditions and the same
 quick verification flow.
 
+The emitted quick verify results separate workflow completion from statistical
+quality. A warning-level quick verify result still means the comparison demo
+produced interpretable artifacts and completed the contract-smoke lane.
+
 ## 3. Reproduce the newcomer project flow
 
 For a scaffolded project, generate a local project and run the same commands a
@@ -51,6 +55,13 @@ worldflux verify --target ./outputs --mode quick
 Repeat that flow once with a Dreamer-oriented setup and once with a TD-MPC2
 oriented setup if you want to compare both families under your own local
 conditions.
+
+For the guaranteed real-environment newcomer lane in this MVP, prioritize the
+Dreamer scaffold and install Atari extras first:
+
+```bash
+uv sync --extra training --extra atari
+```
 
 ## 4. Interpret the result correctly
 

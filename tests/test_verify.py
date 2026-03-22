@@ -518,6 +518,123 @@ allow_official_only = true
         assert captured["allow_official_only"] is True
         assert captured["proof_claim"] == "compare"
 
+    def test_quick_verify_json_contract_smoke_downgrades_statistical_failure_to_warning(
+        self,
+        runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        from worldflux.cli import app
+
+        target = tmp_path / "outputs"
+        target.mkdir()
+        (target / "run_manifest.json").write_text(
+            json.dumps(
+                {
+                    "run_classification": "contract_smoke",
+                    "support_surface": "supported",
+                    "data_mode": "offline",
+                    "degraded_modes": ["random_replay_fallback"],
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        fake_result = QuickVerifyResult(
+            passed=False,
+            target=str(target),
+            env="atari/pong",
+            episodes=10,
+            mean_score=0.1,
+            baseline_mean=0.85,
+            elapsed_seconds=0.1,
+            workflow_status="warning",
+            blocking=False,
+            stats={"margin_ratio": 0.15},
+            verdict_reason="statistical threshold not met",
+        )
+        monkeypatch.setattr("worldflux.verify.quick.quick_verify", lambda **kwargs: fake_result)
+
+        output_path = tmp_path / "quick.json"
+        result = runner.invoke(
+            app,
+            [
+                "verify",
+                "--target",
+                str(target),
+                "--mode",
+                "quick",
+                "--format",
+                "json",
+                "--output",
+                str(output_path),
+            ],
+        )
+        assert result.exit_code == 0
+        payload = json.loads(output_path.read_text(encoding="utf-8"))
+        assert payload["passed"] is False
+        assert payload["workflow_status"] == "warning"
+        assert payload["blocking"] is False
+
+    def test_quick_verify_json_meaningful_training_keeps_statistical_failure_blocking(
+        self,
+        runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        from worldflux.cli import app
+
+        target = tmp_path / "outputs"
+        target.mkdir()
+        (target / "run_manifest.json").write_text(
+            json.dumps(
+                {
+                    "run_classification": "meaningful_local_training",
+                    "support_surface": "supported",
+                    "data_mode": "online",
+                    "degraded_modes": [],
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        fake_result = QuickVerifyResult(
+            passed=False,
+            target=str(target),
+            env="atari/pong",
+            episodes=10,
+            mean_score=0.1,
+            baseline_mean=0.85,
+            elapsed_seconds=0.1,
+            workflow_status="fail",
+            blocking=True,
+            stats={"margin_ratio": 0.15},
+            verdict_reason="statistical threshold not met",
+        )
+        monkeypatch.setattr("worldflux.verify.quick.quick_verify", lambda **kwargs: fake_result)
+
+        output_path = tmp_path / "quick.json"
+        result = runner.invoke(
+            app,
+            [
+                "verify",
+                "--target",
+                str(target),
+                "--mode",
+                "quick",
+                "--format",
+                "json",
+                "--output",
+                str(output_path),
+            ],
+        )
+        assert result.exit_code == 1
+        payload = json.loads(output_path.read_text(encoding="utf-8"))
+        assert payload["workflow_status"] == "fail"
+        assert payload["blocking"] is True
+
     def test_verify_proof_mode_uses_canonical_backend_defaults_for_tdmpc2(
         self,
         runner: CliRunner,

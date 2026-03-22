@@ -281,6 +281,8 @@ def quick_verify(
         stats=stats,
         verdict_reason=ni_result.verdict_reason
         or f"{verification_tier.value} quick verification workload only",
+        workflow_status="pass" if passed else "fail",
+        blocking=not passed,
     )
 
 
