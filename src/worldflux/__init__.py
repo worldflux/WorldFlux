@@ -212,6 +212,10 @@ def __getattr__(name: str) -> object:
         module = import_module("worldflux.verify")
         globals()[name] = module
         return module
+    if name == "cloud":
+        module = import_module("worldflux.cloud")
+        globals()[name] = module
+        return module
     if name in _EXPORTS:
         return _load_export(name)
     if name in _DEPRECATED_IMPORTS:
@@ -231,7 +235,9 @@ def __getattr__(name: str) -> object:
 
 def __dir__() -> list[str]:
     return sorted(
-        set(__all__) | set(_DEPRECATED_IMPORTS) | {"core", "execution", "training", "verify"}
+        set(__all__)
+        | set(_DEPRECATED_IMPORTS)
+        | {"cloud", "core", "execution", "training", "verify"}
     )
 
 

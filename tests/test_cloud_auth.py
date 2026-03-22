@@ -12,6 +12,13 @@ import pytest
 from worldflux.cloud.auth import credentials_path, load_credentials, set_api_key
 
 
+def test_worldflux_top_level_exposes_cloud_package() -> None:
+    import worldflux
+    import worldflux.cloud as cloud_pkg
+
+    assert worldflux.cloud is cloud_pkg
+
+
 @pytest.mark.skipif(os.name != "posix", reason="permission bits are POSIX-specific")
 def test_set_api_key_persists_with_restricted_permissions(
     monkeypatch: pytest.MonkeyPatch, tmp_path
