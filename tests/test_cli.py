@@ -1122,18 +1122,7 @@ def test_resolve_proof_manifest_uses_tdmpc2_canonical_backend_by_default(
     assert captured["allow_official_only"] is False
 
 
-def test_parity_proof_run_tdmpc2_without_manifest_uses_proof_path(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    calls: list[tuple[str, list[str]]] = []
-
-    def _run(script_name: str, args: list[str]) -> str:
-        calls.append((script_name, list(args)))
-        return ""
-
-    monkeypatch.setattr(cli, "_run_parity_proof_script", _run)
-
+def test_parity_proof_run_tdmpc2_without_manifest_blocks_without_aligned_report() -> None:
     result = runner.invoke(
         cli.app,
         [
@@ -1143,15 +1132,12 @@ def test_parity_proof_run_tdmpc2_without_manifest_uses_proof_path(
             "tdmpc2",
             "--backend",
             "official_tdmpc2_torch_subprocess",
-            "--output-dir",
-            str(tmp_path),
             "--seed-list",
             ",".join(str(i) for i in range(20)),
         ],
     )
-    assert result.exit_code == 0
-    assert calls[0][0] == "run_parity_matrix.py"
-    assert "tdmpc2_architecture_mismatch_open" not in result.stdout
+    assert result.exit_code == 2
+    assert "tdmpc2_architecture_mismatch_open" in result.stdout
 
 
 def test_parity_proof_run_tdmpc2_resolves_canonical_backend_when_omitted(

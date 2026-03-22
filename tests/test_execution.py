@@ -79,7 +79,9 @@ def test_resolve_execution_manifest_dreamer_compare_incomplete_before_20_seeds(
     assert resolution.early_result.reason_code == "minimum_proof_not_reached"
 
 
-def test_resolve_execution_manifest_tdmpc2_compare_uses_canonical_manifest(tmp_path: Path) -> None:
+def test_resolve_execution_manifest_tdmpc2_compare_blocked_without_aligned_report(
+    tmp_path: Path,
+) -> None:
     scripts_root = tmp_path / "scripts" / "parity"
     manifests_root = scripts_root / "manifests"
     manifests_root.mkdir(parents=True, exist_ok=True)
@@ -97,8 +99,10 @@ def test_resolve_execution_manifest_tdmpc2_compare_uses_canonical_manifest(tmp_p
         device="cpu",
     )
     resolution = resolve_execution_manifest(request, scripts_root=scripts_root)
-    assert resolution.early_result is None
-    assert resolution.manifest_path == manifest_path.resolve()
+    assert resolution.manifest_path is None
+    assert resolution.early_result is not None
+    assert resolution.early_result.status == "blocked"
+    assert resolution.early_result.reason_code == "tdmpc2_architecture_mismatch_open"
 
 
 def test_resolve_execution_manifest_tdmpc2_compare_allowed_when_alignment_report_passes(
