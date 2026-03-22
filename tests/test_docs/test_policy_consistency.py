@@ -127,3 +127,23 @@ def test_public_surfaces_use_conservative_claim_language():
     assert "same quick verification flow" in comparison_tutorial
     assert "published evidence bundle" in parity
     assert "not a public proof claim" in parity
+
+
+def test_hyperparameter_sensitivity_doc_is_no_longer_template() -> None:
+    sensitivity = _read("docs/reference/hyperparameter-sensitivity.md")
+    assert "Template - to be populated" not in sensitivity
+    assert "Pending experiment" not in sensitivity
+    assert "atari100k_pong" in sensitivity
+
+
+def test_training_reference_isolates_unsupported_placeholders() -> None:
+    training_ref = _read("docs/api/training-reference.md")
+    assert "Advanced/Internal placeholders" in training_ref
+    assert "| `ema_decay` |" not in training_ref
+    assert "| `model_overrides` |" not in training_ref
+
+
+def test_config_reference_moves_unsupported_training_knobs_out_of_main_flow() -> None:
+    config_ref = _read("docs/reference/config.md")
+    assert "- `ema_decay`" not in config_ref
+    assert "Advanced/Internal training knobs" in config_ref

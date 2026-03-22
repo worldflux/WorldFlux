@@ -126,6 +126,23 @@ def test_generate_project_creates_expected_files(tmp_path: Path) -> None:
     assert 'id="progress-fill"' in dashboard_frontend
     assert "resolveProgressPercent" in dashboard_frontend
 
+    for relative_path in expected_files:
+        assert "TODO:" not in (target / relative_path).read_text(encoding="utf-8")
+
+
+def test_cookiecutter_templates_use_experimental_starter_labels_without_placeholder_names() -> None:
+    root = Path(scaffold_generator.__file__).resolve().parent / "cookiecutter"
+    config_template = (root / "config.py.j2").read_text(encoding="utf-8")
+    world_model_template = (root / "world_model.py.j2").read_text(encoding="utf-8")
+    package_init = (root / "__init__.py").read_text(encoding="utf-8")
+
+    assert "Experimental cookiecutter templates" in package_init
+    assert "TODO:" not in config_template
+    assert "TODO:" not in world_model_template
+    assert '"starter_stub_loss"' in world_model_template
+    assert '"starter_stub_metric"' in world_model_template
+    assert '"placeholder"' not in world_model_template
+
 
 def test_generate_project_rejects_non_empty_directory_without_force(tmp_path: Path) -> None:
     target = tmp_path / "existing"

@@ -8,6 +8,7 @@ import hashlib
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 from common import CurvePoint, curve_auc, curve_final_mean, deterministic_mock_curve, write_metrics
 
@@ -71,6 +72,12 @@ def _parse_args() -> argparse.Namespace:
         choices=["true", "false"],
     )
     parser.add_argument("--dreamer-lr", type=float, default=4e-5)
+    parser.add_argument(
+        "--dreamer-config-overrides-json",
+        type=str,
+        default="",
+        help="Structured Dreamer override payload for sensitivity runs.",
+    )
     return parser.parse_args()
 
 
@@ -103,6 +110,18 @@ def _parse_bool_arg(value: str) -> bool:
     return str(value).strip().lower() == "true"
 
 
+def _parse_json_object_arg(raw: str, *, label: str) -> dict[str, Any]:
+    if not str(raw).strip():
+        return {}
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"{label} must be valid JSON: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise SystemExit(f"{label} must decode to a JSON object.")
+    return payload
+
+
 def _eval_protocol_hash(
     *,
     family: str,
@@ -129,6 +148,10 @@ def main() -> int:
 
     resolved_device = _resolve_device(args.device)
     resolved_backend = _resolve_backend(args.family, args.env_backend)
+    dreamer_override_payload = _parse_json_object_arg(
+        args.dreamer_config_overrides_json,
+        label="--dreamer-config-overrides-json",
+    )
     protocol_hash = _eval_protocol_hash(
         family=args.family,
         task_id=args.task_id,
@@ -173,6 +196,8 @@ def main() -> int:
 
     try:
         if args.family == "dreamerv3":
+            if dreamer_override_payload and not isinstance(dreamer_override_payload, dict):
+                raise SystemExit("--dreamer-config-overrides-json must be a JSON object.")
             if int(args.train_steps_per_eval) > 0:
                 print(
                     "WARNING: --train-steps-per-eval is deprecated for Dreamer parity runs and is ignored. "
@@ -208,12 +233,20 @@ def main() -> int:
                     ),
                     train_chunk_size=_override_int(args.dreamer_train_chunk_size, 64),
                     model_profile=args.dreamer_model_profile,
-                    learning_rate_override=float(args.dreamer_lr),
+                    learning_rate_override=float(
+                        dreamer_override_payload.get("learning_rate_override", args.dreamer_lr)
+                    ),
                     dreamer_diagnostic=_parse_bool_arg(args.dreamer_diagnostic),
                     strict_official_semantics=True,
+                    model_config_overrides=dict(
+                        dreamer_override_payload.get("model_config_overrides", {})
+                    )
+                    or None,
                 )
             )
         else:
+            if dreamer_override_payload:
+                raise SystemExit("--dreamer-config-overrides-json is only supported for dreamerv3.")
             curve_raw, metadata = run_tdmpc2_native(
                 TDMPC2NativeRunConfig(
                     task_id=args.task_id,

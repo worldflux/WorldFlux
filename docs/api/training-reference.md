@@ -245,10 +245,16 @@ Configuration for training world models.
 | `prefetch_factor` | `int` | `2` | Number of batches to prefetch per worker. |
 | `optimizer` | `str` | `"adamw"` | Optimizer type: `"adamw"`, `"adam"`, or `"sgd"`. |
 | `scheduler` | `str` | `"none"` | LR scheduler: `"none"`, `"linear"`, `"cosine"`, or `"constant"`. |
-| `ema_decay` | `float \| None` | `None` | EMA decay rate (not yet implemented). |
 | `gradient_accumulation_steps` | `int` | `1` | Number of gradient accumulation steps. Effective batch size becomes `batch_size * gradient_accumulation_steps`. |
 | `auto_quality_check` | `bool` | `True` | Run a smoke-level quality check after training completes. |
-| `model_overrides` | `dict[str, Any]` | `{}` | Reserved for future trainer-level model patching. Currently unsupported by Trainer. |
+
+### Advanced/Internal placeholders
+
+The following config knobs exist in the broader type surface, but they are not
+part of the supported MVP training path:
+
+- `ema_decay`: reserved placeholder, rejected by `Trainer`
+- `model_overrides`: reserved trainer-level patch surface, currently unsupported
 
 ### Methods
 
