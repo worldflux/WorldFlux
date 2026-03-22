@@ -342,6 +342,7 @@ class ParityVerifier:
             stats.update(cls._extract_stats_from_report(report_payload))
             stats["equivalence_report_json"] = execution_result.equivalence_report_json
             stats["equivalence_report_md"] = execution_result.equivalence_report_md
+            stats["stability_report_json"] = execution_result.stability_report_json
 
         passed = execution_result.status == "succeeded"
         return VerifyResult(

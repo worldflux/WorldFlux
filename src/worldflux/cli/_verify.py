@@ -586,7 +586,12 @@ def _write_quick_evidence_bundle(*, output_dir: Path, payload: dict[str, Any]) -
 def _write_proof_evidence_bundle(*, output_dir: Path, result: VerifyResult, mode: str) -> None:
     stats = result.stats
     report_paths: list[Path] = []
-    for key in ("runs_jsonl", "equivalence_report_json", "equivalence_report_md"):
+    for key in (
+        "runs_jsonl",
+        "equivalence_report_json",
+        "equivalence_report_md",
+        "stability_report_json",
+    ):
         raw_value = str(stats.get(key, "")).strip()
         if not raw_value:
             continue

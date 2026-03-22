@@ -231,6 +231,21 @@ def test_aws_distributed_orchestrator_wait_mode_with_mocked_aws(
             out.write_text("# report\n", encoding="utf-8")
             return subprocess.CompletedProcess([str(script), *args], 0, stdout="", stderr="")
 
+        if script.name == "stability_report.py":
+            out = Path(args[args.index("--output") + 1])
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "parity.stability.v1",
+                        "status": "single_run",
+                        "task_count": 2,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess([str(script), *args], 0, stdout="", stderr="")
+
         raise AssertionError(f"unexpected script: {script}")
 
     monkeypatch.setattr(mod, "_run_cli", fake_run_cli)
@@ -265,6 +280,7 @@ def test_aws_distributed_orchestrator_wait_mode_with_mocked_aws(
     assert summary["artifacts"]["manifest"] == str(manifest_path.resolve())
     assert Path(summary["artifacts"]["equivalence_report"]).exists()
     assert Path(summary["artifacts"]["coverage_report"]).exists()
+    assert Path(summary["artifacts"]["stability_report"]).exists()
     assert Path(summary["artifacts"]["evidence_bundle"]).exists()
     assert summary["timing"]["timeout_risk"] in {"low", "medium", "high"}
     assert summary["execution_result"]["status"] in {"succeeded", "failed", "incomplete", "running"}

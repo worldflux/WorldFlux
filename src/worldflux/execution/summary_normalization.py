@@ -229,6 +229,7 @@ def normalize_distributed_proof_summary(
     validity_report_raw = str(artifacts.get("validity_report", "")).strip()
     merge_summary_raw = str(artifacts.get("merge_summary", "")).strip()
     equivalence_markdown_raw = str(artifacts.get("equivalence_markdown", "")).strip()
+    stability_report_raw = str(artifacts.get("stability_report", "")).strip()
     evidence_bundle_raw = str(artifacts.get("evidence_bundle", "")).strip()
     coverage_pass = bool(coverage.get("pass", False))
     missing_pairs = int(coverage.get("missing_pairs", 0) or 0)
@@ -244,6 +245,7 @@ def normalize_distributed_proof_summary(
         "validity_report_present": bool(validity_report_raw),
         "merge_summary_present": bool(merge_summary_raw),
         "equivalence_markdown_present": bool(equivalence_markdown_raw),
+        "stability_report_present": bool(stability_report_raw),
     }
 
     summary_path_value = str(summary_path.resolve()) if summary_path is not None else None
@@ -335,6 +337,7 @@ def normalize_distributed_proof_summary(
     validity_report_path = Path(validity_report_raw) if validity_report_raw else None
     merge_summary_path = Path(merge_summary_raw) if merge_summary_raw else None
     equivalence_markdown_path = Path(equivalence_markdown_raw) if equivalence_markdown_raw else None
+    stability_report_path = Path(stability_report_raw) if stability_report_raw else None
     if coverage_report_path is None or not coverage_report_path.exists():
         missing_artifacts.append("coverage_report.json")
     if phase_progress_path is None or not phase_progress_path.exists():
@@ -345,6 +348,8 @@ def normalize_distributed_proof_summary(
         missing_artifacts.append("merge_summary.json")
     if equivalence_markdown_path is None or not equivalence_markdown_path.exists():
         missing_artifacts.append("equivalence_report.md")
+    if stability_report_path is None or not stability_report_path.exists():
+        missing_artifacts.append("stability_report.json")
     if missing_artifacts:
         return BackendExecutionResult(
             status="failed",
@@ -428,6 +433,9 @@ def normalize_distributed_proof_summary(
             summary_path=summary_path_value,
             equivalence_report_json=str(report_path.resolve()),
             equivalence_report_md=str(artifacts.get("equivalence_markdown", "")).strip() or None,
+            stability_report_json=str(stability_report_path.resolve())
+            if stability_report_path is not None
+            else None,
             evidence_bundle=evidence_bundle_path,
             metrics=metrics,
             next_action=None,
@@ -449,6 +457,9 @@ def normalize_distributed_proof_summary(
         summary_path=summary_path_value,
         equivalence_report_json=str(report_path.resolve()),
         equivalence_report_md=str(artifacts.get("equivalence_markdown", "")).strip() or None,
+        stability_report_json=str(stability_report_path.resolve())
+        if stability_report_path is not None
+        else None,
         metrics=metrics,
         next_action="Inspect equivalence and validity reports.",
     )

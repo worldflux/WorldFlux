@@ -73,6 +73,7 @@ class BackendExecutionResult:
     summary_path: str | None = None
     equivalence_report_json: str | None = None
     equivalence_report_md: str | None = None
+    stability_report_json: str | None = None
     evidence_bundle: str | None = None
     artifact_manifest: dict[str, object] | None = None
     metrics: dict[str, Any] = field(default_factory=dict)

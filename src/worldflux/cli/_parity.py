@@ -126,11 +126,11 @@ def _run_proof_report_pipeline(
     manifest: Path,
     runs_path: Path,
     report_root: Path,
-) -> tuple[Path, Path, Path, Path]:
+) -> tuple[Path, Path, Path, Path, Path]:
     """Run the proof-report pipeline (coverage → equivalence → markdown).
 
     Returns:
-        Tuple of (coverage_report, validity_report, equivalence_report, markdown_report) paths.
+        Tuple of (coverage_report, validity_report, equivalence_report, markdown_report, stability_report) paths.
     """
     import worldflux.cli as _cli
 
@@ -138,6 +138,7 @@ def _run_proof_report_pipeline(
     validity_report = report_root / "validity_report.json"
     equivalence_report = report_root / "equivalence_report.json"
     markdown_report = report_root / "equivalence_report.md"
+    stability_report = report_root / "stability_report.json"
 
     seed_plan = runs_path.parent / "seed_plan.json"
     run_context = runs_path.parent / "run_context.json"
@@ -183,8 +184,19 @@ def _run_proof_report_pipeline(
             str(markdown_report),
         ],
     )
+    _cli._run_parity_proof_script(
+        "stability_report.py",
+        [
+            "--input",
+            str(runs_path),
+            "--equivalence-report",
+            str(equivalence_report),
+            "--output",
+            str(stability_report),
+        ],
+    )
 
-    return coverage_report, validity_report, equivalence_report, markdown_report
+    return coverage_report, validity_report, equivalence_report, markdown_report, stability_report
 
 
 # ---------------------------------------------------------------------------
@@ -484,7 +496,7 @@ def parity_proof_report(
     report_root.mkdir(parents=True, exist_ok=True)
 
     try:
-        _, _, equivalence_report, markdown_report = _run_proof_report_pipeline(
+        _, _, equivalence_report, markdown_report, stability_report = _run_proof_report_pipeline(
             manifest, resolved_runs, report_root
         )
     except ParityError as exc:
@@ -502,6 +514,7 @@ def parity_proof_report(
                 "Missing pairs": str(global_block.get("missing_pairs", "-")),
                 "JSON": str(equivalence_report),
                 "Markdown": str(markdown_report),
+                "Stability": str(stability_report),
             },
             title="Parity Proof Report",
             border="wf.border.success",
@@ -602,7 +615,7 @@ def parity_proof_combined(
     report_root.mkdir(parents=True, exist_ok=True)
 
     try:
-        _, _, equivalence_report, markdown_report = _run_proof_report_pipeline(
+        _, _, equivalence_report, markdown_report, stability_report = _run_proof_report_pipeline(
             resolved_manifest, runs_path, report_root
         )
     except ParityError as exc:
@@ -625,6 +638,7 @@ def parity_proof_combined(
                 "Missing pairs": str(global_block.get("missing_pairs", "-")),
                 "Equivalence JSON": str(equivalence_report),
                 "Markdown report": str(markdown_report),
+                "Stability report": str(stability_report),
             },
             title="Verify - Combined Summary",
             border="wf.border.success",
