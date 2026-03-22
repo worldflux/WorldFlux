@@ -48,8 +48,12 @@ def test_compare_unified_training_includes_verification_results_by_default(
     assert summary["success"] is True
     assert summary["models"]["dreamerv3"]["verification"]["target"]
     assert summary["models"]["dreamerv3"]["verification"]["verdict_reason"]
+    assert summary["models"]["dreamerv3"]["verification"]["workflow_status"]
+    assert "blocking" in summary["models"]["dreamerv3"]["verification"]
     assert summary["models"]["tdmpc2"]["verification"]["target"]
     assert summary["models"]["tdmpc2"]["verification"]["verdict_reason"]
+    assert summary["models"]["tdmpc2"]["verification"]["workflow_status"]
+    assert "blocking" in summary["models"]["tdmpc2"]["verification"]
 
 
 def test_compare_unified_training_allows_skipping_verification(tmp_path: Path) -> None:

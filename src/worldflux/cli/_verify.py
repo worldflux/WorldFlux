@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -16,7 +17,7 @@ from click.core import ParameterSource
 
 from worldflux.config_loader import load_config
 from worldflux.execution import resolve_proof_backend_defaults
-from worldflux.verify import ParityVerifier, VerifyResult
+from worldflux.verify import ParityVerifier, QuickVerifyResult, VerifyResult
 
 from ._app import app, console
 from ._rich_output import key_value_panel, result_banner
@@ -467,6 +468,8 @@ def _run_quick_verify(
             console.print(f"[wf.fail]Synthetic smoke verification failed:[/wf.fail] {exc}")
             raise typer.Exit(code=1) from None
 
+    qr = _apply_quick_verify_workflow_policy(qr, target=target)
+
     if format == "json":
         payload = qr.to_dict()
         json_str = json.dumps(payload, indent=2)
@@ -478,7 +481,7 @@ def _run_quick_verify(
             console.print(json_str)
         if evidence_bundle is not None:
             _write_quick_evidence_bundle(output_dir=evidence_bundle, payload=payload)
-        if not qr.passed:
+        if qr.blocking:
             raise typer.Exit(code=1)
         return
 
@@ -493,9 +496,13 @@ def _run_quick_verify(
         )
         badge_path = (output or Path("verify-badge.svg")).resolve()
         console.print(f"[wf.ok]Badge written to:[/wf.ok] {badge_path}")
+        console.print(
+            f"[wf.muted]Workflow verdict: {qr.workflow_status} | "
+            f"Quality verdict: {'pass' if qr.passed else 'fail'}[/wf.muted]"
+        )
         if evidence_bundle is not None:
             _write_quick_evidence_bundle(output_dir=evidence_bundle, payload=qr.to_dict())
-        if not qr.passed:
+        if qr.blocking:
             raise typer.Exit(code=1)
         return
 
@@ -503,10 +510,17 @@ def _run_quick_verify(
     if qr.passed:
         title = "\u2713 PASS: Synthetic Smoke Baseline Met"
     else:
-        title = "\u2717 FAIL: Synthetic Smoke Threshold Not Met"
+        title = (
+            "\u26a0 WARNING: Synthetic Smoke Threshold Not Met"
+            if qr.workflow_status == "warning"
+            else "\u2717 FAIL: Synthetic Smoke Threshold Not Met"
+        )
 
     stats = qr.stats
     lines = [
+        f"[wf.label]Workflow:[/wf.label]         {qr.workflow_status}",
+        f"[wf.label]Blocking:[/wf.label]         {str(qr.blocking).lower()}",
+        f"[wf.label]Quality verdict:[/wf.label]  {'pass' if qr.passed else 'fail'}",
         f"[wf.label]Mean score:[/wf.label]       {qr.mean_score:.4f}",
         f"[wf.label]Baseline mean:[/wf.label]    {qr.baseline_mean:.4f}",
         f"[wf.label]Episodes:[/wf.label]         {qr.episodes}",
@@ -517,11 +531,88 @@ def _run_quick_verify(
         f"[wf.label]Elapsed:[/wf.label]          {qr.elapsed_seconds:.3f}s",
         "[wf.label]Semantics:[/wf.label]        synthetic workload only; not proof-grade evidence",
     ]
-    console.print(result_banner(passed=qr.passed, title=title, lines=lines))
+    if qr.workflow_status == "warning":
+        lines.append(
+            "[wf.label]Interpretation:[/wf.label]  contract-smoke lane completed; treat this as "
+            "a compatibility warning, not a quality gate failure"
+        )
+    console.print(result_banner(passed=not qr.blocking, title=title, lines=lines))
     if evidence_bundle is not None:
         _write_quick_evidence_bundle(output_dir=evidence_bundle, payload=qr.to_dict())
-    if not qr.passed:
+    if qr.blocking:
         raise typer.Exit(code=1)
+
+
+def _resolve_quick_verify_manifest_path(target: str) -> Path | None:
+    target_path = Path(target).expanduser()
+    candidates: list[Path] = []
+    if target_path.is_dir():
+        candidates.append(target_path / "run_manifest.json")
+    elif target_path.is_file():
+        candidates.append(target_path.parent / "run_manifest.json")
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _load_quick_verify_manifest_context(target: str) -> dict[str, Any]:
+    manifest_path = _resolve_quick_verify_manifest_path(target)
+    if manifest_path is None:
+        return {}
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    return {
+        "run_classification": str(payload.get("run_classification", "")).strip().lower(),
+        "support_surface": str(payload.get("support_surface", "")).strip().lower(),
+        "data_mode": str(payload.get("data_mode", "")).strip().lower(),
+        "degraded_modes": list(payload.get("degraded_modes", []))
+        if isinstance(payload.get("degraded_modes", []), list)
+        else [],
+        "manifest_path": str(manifest_path),
+    }
+
+
+def _apply_quick_verify_workflow_policy(
+    result: QuickVerifyResult,
+    *,
+    target: str,
+) -> QuickVerifyResult:
+    context = _load_quick_verify_manifest_context(target)
+    stats = dict(result.stats)
+    if context:
+        stats["run_classification"] = context.get("run_classification", "")
+        stats["support_surface"] = context.get("support_surface", "")
+        stats["data_mode"] = context.get("data_mode", "")
+        stats["degraded_modes"] = list(context.get("degraded_modes", []))
+        stats["run_manifest"] = context.get("manifest_path", "")
+
+    if result.passed:
+        return replace(
+            result,
+            stats=stats,
+            workflow_status="pass",
+            blocking=False,
+        )
+
+    if context.get("run_classification") == "contract_smoke":
+        return replace(
+            result,
+            stats=stats,
+            workflow_status="warning",
+            blocking=False,
+        )
+
+    return replace(
+        result,
+        stats=stats,
+        workflow_status="fail",
+        blocking=True,
+    )
 
 
 def _write_evidence_manifest(

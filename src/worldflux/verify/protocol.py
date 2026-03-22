@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-PROTOCOL_VERSION = "1.0"
+PROTOCOL_VERSION = "1.1"
 
 
 @dataclass(frozen=True)
@@ -45,6 +45,10 @@ class QuickVerifyResult:
         Detailed statistical test results (TOST, Bayesian, etc.).
     verdict_reason:
         Human-readable reason for the pass/fail verdict.
+    workflow_status:
+        Workflow-level verdict for newcomer lanes. Distinct from ``passed``.
+    blocking:
+        Whether the current workflow verdict should produce a failing exit code.
     """
 
     passed: bool
@@ -57,6 +61,8 @@ class QuickVerifyResult:
     protocol_version: str = PROTOCOL_VERSION
     stats: dict[str, Any] = field(default_factory=dict)
     verdict_reason: str = ""
+    workflow_status: str = "pass"
+    blocking: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to a JSON-compatible dictionary."""
@@ -71,4 +77,6 @@ class QuickVerifyResult:
             "protocol_version": self.protocol_version,
             "stats": dict(self.stats),
             "verdict_reason": self.verdict_reason,
+            "workflow_status": self.workflow_status,
+            "blocking": self.blocking,
         }

@@ -61,6 +61,24 @@ def test_quick_verify_normalizes_deprecated_offline_tier(
     assert any(issubclass(w.category, DeprecationWarning) for w in caught)
 
 
+def test_quick_verify_result_exposes_workflow_fields(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    target = tmp_path / "model"
+    target.mkdir()
+
+    monkeypatch.setattr(
+        "worldflux.verify.quick._load_model_from_target",
+        lambda target_path, device: _MiniModel(),
+    )
+
+    result = quick_verify(str(target), env="atari/pong", episodes=3, horizon=4)
+
+    assert result.protocol_version == "1.1"
+    assert result.workflow_status in {"pass", "warning", "fail"}
+    assert isinstance(result.blocking, bool)
+
+
 def test_quick_verify_normalizes_real_env_smoke_alias(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
