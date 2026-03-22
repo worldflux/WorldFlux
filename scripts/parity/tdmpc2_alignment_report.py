@@ -80,10 +80,28 @@ def _artifact_semantics(metadata: dict[str, Any]) -> dict[str, bool]:
     }
 
 
+def _required_metrics(payload: dict[str, Any], metadata: dict[str, Any]) -> list[str]:
+    raw = metadata.get("required_metrics")
+    if not isinstance(raw, list):
+        return []
+    present_metrics = payload.get("metrics")
+    if not isinstance(present_metrics, dict):
+        present_metrics = {}
+    result: list[str] = []
+    for item in raw:
+        metric = str(item).strip()
+        if not metric:
+            continue
+        result.append(metric)
+    return result
+
+
 def main() -> int:
     args = _parse_args()
     official_metadata = _extract_metadata(_load_payload(args.official_input.resolve()))
-    worldflux_metadata = _extract_metadata(_load_payload(args.worldflux_input.resolve()))
+    official_payload = _load_payload(args.official_input.resolve())
+    worldflux_payload = _load_payload(args.worldflux_input.resolve())
+    worldflux_metadata = _extract_metadata(worldflux_payload)
 
     worldflux_profile = str(worldflux_metadata.get("model_profile", "")).strip().lower()
     worldflux_cfg = TDMPC2Config.from_size(worldflux_profile) if worldflux_profile else None
@@ -109,6 +127,13 @@ def main() -> int:
         name="worldflux.model_profile",
         expected=_WORLD_FLUX_CANONICAL,
         actual=worldflux_profile,
+    )
+    _compare_field(
+        checks=checks,
+        category="wrapper_metadata",
+        name="worldflux.canonical_compare_profile",
+        expected=_WORLD_FLUX_CANONICAL,
+        actual=str(worldflux_metadata.get("canonical_compare_profile", "")).strip().lower(),
     )
     if worldflux_cfg is not None:
         _compare_field(
@@ -166,6 +191,23 @@ def main() -> int:
             name=f"worldflux.{field}",
             expected=expected,
             actual=worldflux_artifacts.get(field),
+        )
+
+    required_metrics = _required_metrics(official_payload, official_metadata)
+    worldflux_metrics = (
+        worldflux_payload.get("metrics")
+        if isinstance(worldflux_payload.get("metrics"), dict)
+        else {}
+    )
+    if not isinstance(worldflux_metrics, dict):
+        worldflux_metrics = {}
+    for metric_name in required_metrics:
+        _compare_field(
+            checks=checks,
+            category="required_metrics",
+            name=f"worldflux.metrics.{metric_name}",
+            expected=True,
+            actual=metric_name in worldflux_metrics,
         )
 
     status = "aligned" if all(bool(check["pass"]) for check in checks) else "mismatched"

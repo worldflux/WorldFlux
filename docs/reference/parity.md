@@ -85,6 +85,9 @@ default:
 - Dreamer: `official_dreamerv3_jax_subprocess`
 - TD-MPC2: `official_tdmpc2_torch_subprocess`
 
+Operator sequence for AWS execution lives in
+`docs/operations/proof-parity-runbook.md`.
+
 ### Run Matrix
 
 ```bash

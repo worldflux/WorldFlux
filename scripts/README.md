@@ -48,6 +48,8 @@ Parity proof infrastructure for verifying WorldFlux model equivalence against re
 | `plot_learning_curves.py` | Plot learning curves from parity runs |
 | `aws_quota_planner.py` | Plan AWS quota requirements for cloud parity runs |
 | `aws_distributed_orchestrator.py` | Distributed orchestrator for AWS-based parity runs |
+| `launch_dreamerv3_parity.sh` | Launch DreamerV3 proof-grade AWS parity runs |
+| `launch_tdmpc2_parity.sh` | Launch TD-MPC2 proof-grade AWS parity runs |
 | `fetch_oracles.sh` | Fetch oracle reference data |
 | `setup_cloud_iam.sh` | Set up IAM roles for cloud parity infrastructure |
 | `launch_cloud_orchestrator.sh` | Launch the cloud-based parity orchestrator |

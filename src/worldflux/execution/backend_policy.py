@@ -10,7 +10,7 @@ from pathlib import Path
 
 from .contracts import BackendExecutionRequest, BackendExecutionResult
 
-TDMPC2_COMPARE_ENABLED = True
+TDMPC2_COMPARE_ENABLED = False
 DREAMER_MIN_LOCKED_SEEDS = 10
 DREAMER_MIN_PROOF_SEEDS = 20
 
@@ -122,14 +122,11 @@ def evaluate_family_policy(request: BackendExecutionRequest) -> BackendExecution
                 ),
                 manifest_path=str(report_path) if report_path is not None else None,
             )
-        if not TDMPC2_COMPARE_ENABLED and report_status != "aligned":
+        if report_status != "aligned":
             return blocked_result(
                 request,
                 reason_code="tdmpc2_architecture_mismatch_open",
-                message=(
-                    "TD-MPC2 compare is blocked because official 5m vs WorldFlux 5m "
-                    "architecture mismatch is still unresolved."
-                ),
+                message=("TD-MPC2 compare requires an aligned proof_5m alignment report."),
                 next_action=(
                     "Generate or refresh a passing TD-MPC2 alignment report before proof-grade comparison."
                 ),

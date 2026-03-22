@@ -27,3 +27,11 @@ def test_contributing_and_governance_reference_roadmap_and_release_process() -> 
 
     assert "docs/roadmap.md" in contributing
     assert "release-runbook" in governance
+
+
+def test_parity_docs_reference_proof_runbook() -> None:
+    parity = _read("docs/reference/parity.md")
+    readme = _read("scripts/README.md")
+
+    assert "docs/operations/proof-parity-runbook.md" in parity
+    assert "launch_tdmpc2_parity.sh" in readme

@@ -80,6 +80,8 @@ def _build_orchestrator_command(
         hooks.append("plot_curves")
     if hooks:
         cmd += ["--post-run-hooks", ",".join(hooks)]
+    for history_report in args.history_equivalence_report:
+        cmd += ["--history-equivalence-report", str(history_report)]
 
     return cmd
 
@@ -248,6 +250,12 @@ def main() -> int:
         action=argparse.BooleanOptionalAction,
         default=False,
         help="Generate learning curve plots after proof completes.",
+    )
+    parser.add_argument(
+        "--history-equivalence-report",
+        action="append",
+        default=[],
+        help="Optional prior equivalence_report.json path(s) used for multi-run stability checks.",
     )
 
     args = parser.parse_args()
